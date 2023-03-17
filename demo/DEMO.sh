@@ -1,8 +1,8 @@
 # Build the example resource driver
-./build.sh
+./build-driver.sh
 
-# Run minikube
-./minikube.sh
+# Create a test cluster
+./create-cluster.sh
 
 # Show current state of the cluster
 kubectl get pod -A
@@ -15,7 +15,7 @@ helm upgrade -i \
   ../deployments/helm/dra-example-driver
 
 # Show the initial node allocation state
-kubectl describe -n dra-example-driver nas/dra-example-driver
+kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
 
 # Deploy the 4 example apps discussed in the slides
 kubectl apply --filename=gpu-test{1,2,3,4}.yaml
@@ -45,7 +45,7 @@ for example in $(seq 1 4); do \
 done
 
 # Show the current node allocation state
-kubectl describe -n dra-example-driver nas/dra-example-driver
+kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
 
 # Delete all examples
 kubectl delete --wait=false --filename=gpu-test{1,2,3,4}.yaml
@@ -54,4 +54,4 @@ kubectl delete --wait=false --filename=gpu-test{1,2,3,4}.yaml
 kubectl get pod -A
 
 # Show the final node allocation state
-kubectl describe -n dra-example-driver nas/dra-example-driver
+kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
