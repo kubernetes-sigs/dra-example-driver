@@ -43,11 +43,7 @@ func (p *PerNodeClaimRequests) Exists(claimUID, node string) bool {
 	}
 
 	_, exists = p.requests[claimUID][node]
-	if !exists {
-		return false
-	}
-
-	return true
+	return exists
 }
 
 func (p *PerNodeClaimRequests) Get(claimUID, node string) nascrd.RequestedDevices {

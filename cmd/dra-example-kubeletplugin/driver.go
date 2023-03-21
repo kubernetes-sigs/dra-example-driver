@@ -101,7 +101,9 @@ func (d *driver) NodePrepareResource(ctx context.Context, req *drapbv1.NodePrepa
 
 		err = d.nasclient.Update(d.state.GetUpdatedSpec(&d.nascrd.Spec))
 		if err != nil {
-			d.state.Free(req.ClaimUid)
+			if err := d.state.Free(req.ClaimUid); err != nil {
+				klog.Errorf("Failed to free after claim '%v' Update() error: %v", req.ClaimUid, err)
+			}
 			return err
 		}
 

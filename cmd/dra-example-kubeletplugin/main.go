@@ -90,7 +90,9 @@ func NewCommand() *cobra.Command {
 		cmd.Flags().VisitAll(func(f *pflag.Flag) {
 			if !f.Changed && v.IsSet(f.Name) {
 				val := v.Get(f.Name)
-				cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val))
+				if err := cmd.Flags().Set(f.Name, fmt.Sprintf("%v", val)); err != nil {
+					klog.Errorf("Unable to bind environment variable to input flag: %v=%v", f.Name, val)
+				}
 			}
 		})
 		return nil
@@ -233,7 +235,11 @@ func StartPlugin(config *Config) error {
 	<-sigc
 
 	dp.Stop()
-	driver.Shutdown()
+
+	err = driver.Shutdown()
+	if err != nil {
+		klog.Errorf("Unable to cleanly shutdown driver: %v", err)
+	}
 
 	return nil
 }

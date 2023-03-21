@@ -26,7 +26,7 @@ CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
 
 CHECK_TARGETS := assert-fmt vet lint ineffassign misspell
-MAKE_TARGETS := binaries build check vendor fmt lint-internal test examples cmds coverage generate $(CHECK_TARGETS)
+MAKE_TARGETS := binaries build check vendor fmt test examples cmds coverage generate $(CHECK_TARGETS)
 
 TARGETS := $(MAKE_TARGETS) $(CMD_TARGETS)
 
@@ -79,12 +79,7 @@ ineffassign:
 	ineffassign $(MODULE)/...
 
 lint:
-# We use `go list -f '{{.Dir}}' $(MODULE)/...` to skip the `vendor` folder.
-	go list -f '{{.Dir}}' $(MODULE)/... | xargs golint -set_exit_status
-
-lint-internal:
-# We use `go list -f '{{.Dir}}' $(MODULE)/...` to skip the `vendor` folder.
-	go list -f '{{.Dir}}' $(MODULE)/internal/... | xargs golint -set_exit_status
+	golangci-lint run ./...
 
 misspell:
 	misspell $(MODULE)/...
@@ -148,6 +143,7 @@ $(DOCKER_TARGETS): docker-%: .build-image
 	@echo "Running 'make $(*)' in docker container $(BUILDIMAGE)"
 	$(DOCKER) run \
 		--rm \
+		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
 		-v $(PWD):$(PWD) \
@@ -162,6 +158,7 @@ PHONY: .shell
 	$(DOCKER) run \
 		--rm \
 		-ti \
+		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
 		-v $(PWD):$(PWD) \
