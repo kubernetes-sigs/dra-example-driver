@@ -1,0 +1,53 @@
+# One pod, one container
+# Asking for 4 distinct GPUs
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test4
+
+---
+apiVersion: gpu.resource.example.com/v1alpha1
+kind: GpuClaimParameters
+metadata:
+  namespace: gpu-test4
+  name: multiple-gpus
+spec:
+  count: 4
+
+---
+apiVersion: resource.k8s.io/v1alpha2
+kind: ResourceClaimTemplate
+metadata:
+  namespace: gpu-test4
+  name: multiple-gpus
+spec:
+  spec:
+    resourceClassName: gpu.example.com
+    parametersRef:
+      apiGroup: gpu.resource.example.com
+      kind: GpuClaimParameters
+      name: multiple-gpus
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test4
+  name: pod
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; sleep 9999"]
+    resources:
+      claims:
+      - name: gpus
+  resourceClaims:
+  - name: gpus
+    source:
+      resourceClaimTemplateName: multiple-gpus
