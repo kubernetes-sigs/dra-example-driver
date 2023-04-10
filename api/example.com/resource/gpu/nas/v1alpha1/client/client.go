@@ -99,3 +99,18 @@ func (c *Client) Get() error {
 	*c.nas = *crd
 	return nil
 }
+
+func (c *Client) ListNames() ([]string, error) {
+	naslist, err := c.client.NodeAllocationStates(c.nas.Namespace).List(
+		context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	nasnames := []string{}
+	for _, nas := range naslist.Items {
+		nasnames = append(nasnames, nas.Name)
+	}
+
+	return nasnames, nil
+}

@@ -44,7 +44,7 @@ func (g *gpudriver) ValidateClaimParameters(claimParams *gpucrd.GpuClaimParamete
 	return nil
 }
 
-func (g *gpudriver) Allocate(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim, claimParams *gpucrd.GpuClaimParametersSpec, class *resourcev1.ResourceClass, classParams *gpucrd.DeviceClassParametersSpec, selectedNode string) (OnSuccessCallback, error) {
+func (g *gpudriver) AllocateDelayed(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim, claimParams *gpucrd.GpuClaimParametersSpec, class *resourcev1.ResourceClass, classParams *gpucrd.DeviceClassParametersSpec, selectedNode string) (OnSuccessCallback, error) {
 	claimUID := string(claim.UID)
 
 	if !g.PendingAllocatedClaims.Exists(claimUID, selectedNode) {
@@ -57,6 +57,29 @@ func (g *gpudriver) Allocate(crd *nascrd.NodeAllocationState, claim *resourcev1.
 	}
 
 	return onSuccess, nil
+}
+
+func (g *gpudriver) AllocateImmediately(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim, claimParams *gpucrd.GpuClaimParametersSpec, class *resourcev1.ResourceClass, classParams *gpucrd.DeviceClassParametersSpec) error {
+	claimUID := string(claim.UID)
+
+	claimAllocation := &controller.ClaimAllocation{
+		Claim:           claim,
+		ClaimParameters: claimParams,
+		Class:           class,
+		ClassParameters: classParams,
+	}
+	cas := []*controller.ClaimAllocation{claimAllocation}
+
+	allocated := g.allocate(crd, cas)
+
+	if claimParams.Count != len(allocated[claimUID]) {
+		return fmt.Errorf("not enough resources")
+	}
+
+	requestedDevices := g.buildAllocatedGpuDevices(allocated[claimUID])
+	crd.Spec.AllocatedClaims[claimUID] = requestedDevices
+
+	return nil
 }
 
 func (g *gpudriver) Deallocate(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim) error {
@@ -73,7 +96,7 @@ func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.
 		}
 	})
 
-	allocated := g.allocate(crd, pod, gpucas, allcas, potentialNode)
+	allocated := g.allocate(crd, gpucas)
 	for _, ca := range gpucas {
 		claimUID := string(ca.Claim.UID)
 		claimParams := ca.ClaimParameters.(*gpucrd.GpuClaimParametersSpec)
@@ -85,20 +108,7 @@ func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.
 			return nil
 		}
 
-		var devices []nascrd.AllocatedGpu
-		for _, gpu := range allocated[claimUID] {
-			device := nascrd.AllocatedGpu{
-				UUID: gpu,
-			}
-			devices = append(devices, device)
-		}
-
-		allocatedDevices := nascrd.AllocatedDevices{
-			Gpu: &nascrd.AllocatedGpus{
-				Devices: devices,
-			},
-		}
-
+		allocatedDevices := g.buildAllocatedGpuDevices(allocated[claimUID])
 		g.PendingAllocatedClaims.Set(claimUID, potentialNode, allocatedDevices)
 		crd.Spec.AllocatedClaims[claimUID] = allocatedDevices
 	}
@@ -106,7 +116,7 @@ func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.
 	return nil
 }
 
-func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, gpucas []*controller.ClaimAllocation, allcas []*controller.ClaimAllocation, node string) map[string][]string {
+func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, gpucas []*controller.ClaimAllocation) map[string][]string {
 	available := make(map[string]*nascrd.AllocatableGpu)
 
 	for _, device := range crd.Spec.AllocatableDevices {
@@ -149,4 +159,23 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 	}
 
 	return allocated
+}
+
+func (g *gpudriver) buildAllocatedGpuDevices(allocated []string) nascrd.AllocatedDevices {
+
+	var devices []nascrd.AllocatedGpu
+	for _, gpu := range allocated {
+		device := nascrd.AllocatedGpu{
+			UUID: gpu,
+		}
+		devices = append(devices, device)
+	}
+
+	allocatedDevices := nascrd.AllocatedDevices{
+		Gpu: &nascrd.AllocatedGpus{
+			Devices: devices,
+		},
+	}
+
+	return allocatedDevices
 }

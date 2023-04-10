@@ -93,10 +93,24 @@ func (d driver) GetClaimParameters(ctx context.Context, claim *resourcev1.Resour
 }
 
 func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
+
 	if selectedNode == "" {
-		return nil, fmt.Errorf("TODO: immediate allocations not yet supported")
+		allocationResult, err := d.allocateImmediateClaim(claim, claimParameters, class, classParameters)
+		if err != nil {
+			return nil, fmt.Errorf("error performing immediate allocation: %v", err)
+		}
+		return allocationResult, nil
 	}
 
+	allocationResult, err := d.allocateDelayedClaim(claim, claimParameters, class, classParameters, selectedNode)
+	if err != nil {
+		return nil, fmt.Errorf("error performing delayed allocation: %v", err)
+	}
+
+	return allocationResult, nil
+}
+
+func (d driver) allocateDelayedClaim(claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
 	d.lock.Get(selectedNode).Lock()
 	defer d.lock.Get(selectedNode).Unlock()
 
@@ -128,7 +142,7 @@ func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, c
 	classParams := classParameters.(*gpucrd.DeviceClassParametersSpec)
 	switch claimParams := claimParameters.(type) {
 	case *gpucrd.GpuClaimParametersSpec:
-		onSuccess, err = d.gpu.Allocate(crd, claim, claimParams, class, classParams, selectedNode)
+		onSuccess, err = d.gpu.AllocateDelayed(crd, claim, claimParams, class, classParams, selectedNode)
 	default:
 		err = fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
 	}
@@ -144,6 +158,70 @@ func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, c
 	onSuccess()
 
 	return buildAllocationResult(selectedNode, true), nil
+}
+
+func (d driver) allocateImmediateClaim(claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}) (*resourcev1.AllocationResult, error) {
+	crdconfig := &nascrd.NodeAllocationStateConfig{
+		Namespace: d.namespace,
+	}
+	crd := nascrd.NewNodeAllocationState(crdconfig)
+
+	client := nasclient.New(crd, d.clientset.NasV1alpha1())
+
+	nasnames, err := client.ListNames()
+	if err != nil {
+		return nil, fmt.Errorf("error retrieving list of NodeAllocationState objects: %v", err)
+	}
+
+	for _, nodename := range nasnames {
+		allocationResult, err := d.allocateImmediateClaimOnNode(claim, claimParameters, class, classParameters, nodename)
+		if err == nil {
+			return allocationResult, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no suitable node found")
+}
+
+func (d driver) allocateImmediateClaimOnNode(claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, nodename string) (*resourcev1.AllocationResult, error) {
+	d.lock.Get(nodename).Lock()
+	defer d.lock.Get(nodename).Unlock()
+
+	crdconfig := &nascrd.NodeAllocationStateConfig{
+		Namespace: d.namespace,
+		Name:      nodename,
+	}
+
+	crd := nascrd.NewNodeAllocationState(crdconfig)
+
+	client := nasclient.New(crd, d.clientset.NasV1alpha1())
+	err := client.Get()
+	if err != nil {
+		return nil, fmt.Errorf("retrieving NodeAllocationState CRD for node %v: %v", nodename, err)
+	}
+
+	if crd.Spec.AllocatedClaims == nil {
+		crd.Spec.AllocatedClaims = make(map[string]nascrd.AllocatedDevices)
+	}
+
+	classParams := classParameters.(*gpucrd.DeviceClassParametersSpec)
+	switch claimParams := claimParameters.(type) {
+	case *gpucrd.GpuClaimParametersSpec:
+		err = d.gpu.AllocateImmediately(crd, claim, claimParams, class, classParams)
+		if err != nil {
+			return nil, fmt.Errorf("could not find suitable devices: %v", err)
+		}
+	default:
+		return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
+	}
+
+	// sync ResourceClaimAllocations from allocations
+	err = client.Update(&crd.Spec)
+	if err != nil {
+		return nil, fmt.Errorf("updating NodeAllocationState CRD: %v", err)
+	}
+
+	return buildAllocationResult(nodename, true), nil
 }
 
 func (d driver) Deallocate(ctx context.Context, claim *resourcev1.ResourceClaim) error {
