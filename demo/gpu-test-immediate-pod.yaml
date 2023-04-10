@@ -1,0 +1,20 @@
+# Pod for gpu-test-immediate-claim.yaml
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test-immediate
+  name: pod0
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; sleep 9999"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    source:
+      resourceClaimName: immediate-claim
