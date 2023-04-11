@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GOLANG_VERSION ?= 1.19.2
+GOLANG_VERSION ?= 1.20.3
 
 DRIVER_NAME := dra-example-driver
 MODULE := github.com/kubernetes-sigs/$(DRIVER_NAME)
