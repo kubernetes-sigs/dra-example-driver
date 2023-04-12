@@ -294,7 +294,6 @@ Finally, you can run the following to cleanup your environment and delete the
 `kind` cluster started previously:
 ```bash
 ./delete-cluster.sh
-...
 ```
 
 ## Anatomy of a DRA resource driver
