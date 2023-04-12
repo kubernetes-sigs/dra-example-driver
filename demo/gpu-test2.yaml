@@ -22,7 +22,7 @@ apiVersion: v1
 kind: Pod
 metadata:
   namespace: gpu-test2
-  name: pod
+  name: pod0
 spec:
   containers:
   - name: ctr0
