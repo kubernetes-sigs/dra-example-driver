@@ -67,28 +67,22 @@ type PreparedGpu struct {
 	UUID string `json:"uuid"`
 }
 
-// PreparedDevice represents a prepared device on a node
-type PreparedDevice struct {
-	Gpu *PreparedGpu `json:"gpu,omitempty"`
+// PreparedGpus represents a set of prepared GPUs on a node
+type PreparedGpus struct {
+	Devices []PreparedGpu `json:"devices"`
 }
 
-// Type returns the type of PreparedDevice this represents
-func (d PreparedDevice) Type() string {
+// PreparedDevices represents a set of prepared devices on a node
+type PreparedDevices struct {
+	Gpu *PreparedGpus `json:"gpu,omitempty"`
+}
+
+// Type returns the type of PreparedDevices this represents
+func (d PreparedDevices) Type() string {
 	if d.Gpu != nil {
 		return GpuDeviceType
 	}
 	return UnknownDeviceType
-}
-
-// PreparedDevices represents a list of prepared devices on a node
-type PreparedDevices []PreparedDevice
-
-// Type returns the type of PreparedDevices this represents
-func (d PreparedDevices) Type() string {
-	if len(d) == 0 {
-		return UnknownDeviceType
-	}
-	return d[0].Type()
 }
 
 // NodeAllocationStateSpec is the spec for the NodeAllocationState CRD

@@ -96,7 +96,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.registry.SpecDB().WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices PreparedDevices) error {
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices *PreparedDevices) error {
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUid)
 
 	spec := &cdispec.Spec{
@@ -105,14 +105,14 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices PreparedDevi
 	}
 
 	gpuIdx := 0
-	for _, device := range devices {
-		switch device.Type() {
-		case nascrd.GpuDeviceType:
+	switch devices.Type() {
+	case nascrd.GpuDeviceType:
+		for _, device := range devices.Gpu.Devices {
 			cdiDevice := cdispec.Device{
-				Name: device.gpu.uuid,
+				Name: device.uuid,
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
-						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.gpu.uuid),
+						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.uuid),
 					},
 				},
 			}
@@ -135,15 +135,15 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUid string) error {
 	return cdi.registry.SpecDB().RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUid string, devices PreparedDevices) []string {
+func (cdi *CDIHandler) GetClaimDevices(claimUid string, devices *PreparedDevices) []string {
 	cdiDevices := []string{
 		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
 
-	for _, device := range devices {
-		switch device.Type() {
-		case nascrd.GpuDeviceType:
-			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.gpu.uuid)
+	switch devices.Type() {
+	case nascrd.GpuDeviceType:
+		for _, device := range devices.Gpu.Devices {
+			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.uuid)
 			cdiDevices = append(cdiDevices, cdiDevice)
 		}
 	}

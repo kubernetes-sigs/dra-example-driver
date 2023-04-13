@@ -58,17 +58,14 @@ spec:
                 type: array
               allocatedClaims:
                 additionalProperties:
-                  description: AllocatedDevices represents a list of requests for
-                    devices to be allocated
+                  description: AllocatedDevices represents a set of allocated devices
                   properties:
                     gpu:
-                      description: AllocatedGpus represents a set of GPUs being requested
-                        for allocation
+                      description: AllocatedGpus represents a set of allocated GPUs
                       properties:
                         devices:
                           items:
-                            description: AllocatedGpu represents a GPU being requested
-                              for allocation
+                            description: AllocatedGpu represents an allocated GPU
                             properties:
                               uuid:
                                 type: string
@@ -81,23 +78,28 @@ spec:
                 type: object
               preparedClaims:
                 additionalProperties:
-                  description: PreparedDevices represents a list of allocated devices
+                  description: PreparedDevices represents a set of allocated devices
                     on a node
-                  items:
-                    description: PreparedDevice represents an allocated device on
-                      a node
-                    properties:
-                      gpu:
-                        description: PreparedGpu represents an allocated GPU on a
-                          node
-                        properties:
-                          uuid:
-                            type: string
-                        required:
-                        - uuid
-                        type: object
-                    type: object
-                  type: array
+                  properties:
+                    gpu:
+                      description: PreparedGpus represents a set of prepared GPUs
+                        on a node
+                      properties:
+                        devices:
+                          items:
+                            description: PreparedGpu represents a prepared GPU on
+                              a node
+                            properties:
+                              uuid:
+                                type: string
+                            required:
+                            - uuid
+                            type: object
+                          type: array
+                      required:
+                      - devices
+                      type: object
+                  type: object
                 type: object
             type: object
           status:
