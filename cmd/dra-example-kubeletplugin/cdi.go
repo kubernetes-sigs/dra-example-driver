@@ -96,7 +96,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.registry.SpecDB().WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices AllocatedDevices) error {
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices PreparedDevices) error {
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUid)
 
 	spec := &cdispec.Spec{
@@ -135,7 +135,7 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUid string) error {
 	return cdi.registry.SpecDB().RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUid string, devices AllocatedDevices) []string {
+func (cdi *CDIHandler) GetClaimDevices(claimUid string, devices PreparedDevices) []string {
 	cdiDevices := []string{
 		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}

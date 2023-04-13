@@ -24,19 +24,19 @@ import (
 )
 
 type AllocatableDevices map[string]*AllocatableDeviceInfo
-type AllocatedDevices map[string]AllocatedDeviceInfo
-type ClaimAllocations map[string]AllocatedDevices
+type PreparedDevices map[string]PreparedDeviceInfo
+type PreparedClaims map[string]PreparedDevices
 
 type GpuInfo struct {
 	uuid  string
 	model string
 }
 
-type AllocatedDeviceInfo struct {
+type PreparedDeviceInfo struct {
 	gpu *GpuInfo
 }
 
-func (i AllocatedDeviceInfo) Type() string {
+func (i PreparedDeviceInfo) Type() string {
 	if i.gpu != nil {
 		return nascrd.GpuDeviceType
 	}
@@ -51,7 +51,7 @@ type DeviceState struct {
 	sync.Mutex
 	cdi         *CDIHandler
 	allocatable AllocatableDevices
-	allocated   ClaimAllocations
+	prepared    PreparedClaims
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -73,64 +73,64 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	state := &DeviceState{
 		cdi:         cdi,
 		allocatable: allocatable,
-		allocated:   make(ClaimAllocations),
+		prepared:    make(PreparedClaims),
 	}
 
-	err = state.syncAllocatedDevicesFromCRDSpec(&config.nascrd.Spec)
+	err = state.syncPreparedDevicesFromCRDSpec(&config.nascrd.Spec)
 	if err != nil {
-		return nil, fmt.Errorf("unable to sync allocated devices from CRD: %v", err)
+		return nil, fmt.Errorf("unable to sync prepared devices from CRD: %v", err)
 	}
 
 	return state, nil
 }
 
-func (s *DeviceState) Allocate(claimUid string, request nascrd.RequestedDevices) ([]string, error) {
+func (s *DeviceState) Prepare(claimUid string, allocation nascrd.AllocatedDevices) ([]string, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if len(s.allocated[claimUid]) != 0 {
-		return s.cdi.GetClaimDevices(claimUid, s.allocated[claimUid]), nil
+	if len(s.prepared[claimUid]) != 0 {
+		return s.cdi.GetClaimDevices(claimUid, s.prepared[claimUid]), nil
 	}
 
-	s.allocated[claimUid] = make(AllocatedDevices)
+	s.prepared[claimUid] = make(PreparedDevices)
 
 	var err error
-	switch request.Type() {
+	switch allocation.Type() {
 	case nascrd.GpuDeviceType:
-		err = s.allocateGpus(claimUid, request.Gpu.Devices)
+		err = s.prepareGpus(claimUid, allocation.Gpu.Devices)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("allocation failed: %v", err)
 	}
 
-	err = s.cdi.CreateClaimSpecFile(claimUid, s.allocated[claimUid])
+	err = s.cdi.CreateClaimSpecFile(claimUid, s.prepared[claimUid])
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
 	}
 
-	return s.cdi.GetClaimDevices(claimUid, s.allocated[claimUid]), nil
+	return s.cdi.GetClaimDevices(claimUid, s.prepared[claimUid]), nil
 }
 
-func (s *DeviceState) Free(claimUid string) error {
+func (s *DeviceState) Unprepare(claimUid string) error {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.allocated[claimUid] == nil {
+	if s.prepared[claimUid] == nil {
 		return nil
 	}
 
-	for _, device := range s.allocated[claimUid] {
+	for _, device := range s.prepared[claimUid] {
 		var err error
 		switch device.Type() {
 		case nascrd.GpuDeviceType:
-			err = s.freeGpu(device.gpu)
+			err = s.unprepareGpu(device.gpu)
 		}
 		if err != nil {
-			return fmt.Errorf("free failed: %v", err)
+			return fmt.Errorf("unprepare failed: %v", err)
 		}
 	}
 
-	delete(s.allocated, claimUid)
+	delete(s.prepared, claimUid)
 
 	err := s.cdi.DeleteClaimSpecFile(claimUid)
 	if err != nil {
@@ -146,29 +146,29 @@ func (s *DeviceState) GetUpdatedSpec(inspec *nascrd.NodeAllocationStateSpec) *na
 
 	outspec := inspec.DeepCopy()
 	s.syncAllocatableDevicesToCRDSpec(outspec)
-	s.syncAllocatedDevicesToCRDSpec(outspec)
+	s.syncPreparedDevicesToCRDSpec(outspec)
 	return outspec
 }
 
-func (s *DeviceState) allocateGpus(claimUid string, devices []nascrd.RequestedGpu) error {
+func (s *DeviceState) prepareGpus(claimUid string, devices []nascrd.AllocatedGpu) error {
 	for _, device := range devices {
 		if _, exists := s.allocatable[device.UUID]; !exists {
-			return fmt.Errorf("requested GPU does not exist: %v", device.UUID)
+			return fmt.Errorf("allocated GPU does not exist: %v", device.UUID)
 		}
 
-		allocated := AllocatedDevices{
-			device.UUID: AllocatedDeviceInfo{
+		prepared := PreparedDevices{
+			device.UUID: PreparedDeviceInfo{
 				gpu: s.allocatable[device.UUID].GpuInfo,
 			},
 		}
 
-		s.allocated[claimUid][device.UUID] = allocated[device.UUID]
+		s.prepared[claimUid][device.UUID] = prepared[device.UUID]
 	}
 
 	return nil
 }
 
-func (s *DeviceState) freeGpu(gpu *GpuInfo) error {
+func (s *DeviceState) unprepareGpu(gpu *GpuInfo) error {
 	return nil
 }
 
@@ -191,41 +191,41 @@ func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocatio
 	spec.AllocatableDevices = allocatable
 }
 
-func (s *DeviceState) syncAllocatedDevicesFromCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
+func (s *DeviceState) syncPreparedDevicesFromCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
 	gpus := s.allocatable
 
-	allocated := make(ClaimAllocations)
-	for claim, devices := range spec.ClaimAllocations {
-		allocated[claim] = make(AllocatedDevices)
+	prepared := make(PreparedClaims)
+	for claim, devices := range spec.PreparedClaims {
+		prepared[claim] = make(PreparedDevices)
 		for _, d := range devices {
 			switch d.Type() {
 			case nascrd.GpuDeviceType:
-				allocated[claim][d.Gpu.UUID] = AllocatedDeviceInfo{
+				prepared[claim][d.Gpu.UUID] = PreparedDeviceInfo{
 					gpu: gpus[d.Gpu.UUID].GpuInfo,
 				}
 			}
 		}
 	}
 
-	s.allocated = allocated
+	s.prepared = prepared
 	return nil
 }
 
-func (s *DeviceState) syncAllocatedDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) {
-	outcas := make(map[string]nascrd.AllocatedDevices)
-	for claim, devices := range s.allocated {
-		var allocated []nascrd.AllocatedDevice
+func (s *DeviceState) syncPreparedDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) {
+	outcas := make(map[string]nascrd.PreparedDevices)
+	for claim, devices := range s.prepared {
+		var prepared []nascrd.PreparedDevice
 		for uuid, device := range devices {
-			outdevice := nascrd.AllocatedDevice{}
+			outdevice := nascrd.PreparedDevice{}
 			switch device.Type() {
 			case nascrd.GpuDeviceType:
-				outdevice.Gpu = &nascrd.AllocatedGpu{
+				outdevice.Gpu = &nascrd.PreparedGpu{
 					UUID: uuid,
 				}
 			}
-			allocated = append(allocated, outdevice)
+			prepared = append(prepared, outdevice)
 		}
-		outcas[claim] = allocated
+		outcas[claim] = prepared
 	}
-	spec.ClaimAllocations = outcas
+	spec.PreparedClaims = outcas
 }

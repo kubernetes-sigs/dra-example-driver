@@ -92,17 +92,17 @@ func (d *driver) NodePrepareResource(ctx context.Context, req *drapbv1.NodePrepa
 	klog.Infof("NodePrepareResource is called: request: %+v", req)
 
 	var err error
-	var allocated []string
+	var prepared []string
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		allocated, err = d.Allocate(req.ClaimUid)
+		prepared, err = d.Prepare(req.ClaimUid)
 		if err != nil {
 			return fmt.Errorf("error allocating devices for claim '%v': %v", req.ClaimUid, err)
 		}
 
 		err = d.nasclient.Update(d.state.GetUpdatedSpec(&d.nascrd.Spec))
 		if err != nil {
-			if err := d.state.Free(req.ClaimUid); err != nil {
-				klog.Errorf("Failed to free after claim '%v' Update() error: %v", req.ClaimUid, err)
+			if err := d.state.Unprepare(req.ClaimUid); err != nil {
+				klog.Errorf("Failed to unprepare after claim '%v' Update() error: %v", req.ClaimUid, err)
 			}
 			return err
 		}
@@ -113,17 +113,17 @@ func (d *driver) NodePrepareResource(ctx context.Context, req *drapbv1.NodePrepa
 		return nil, fmt.Errorf("error preparing resource: %v", err)
 	}
 
-	klog.Infof("Allocated devices for claim '%v': %s", req.ClaimUid, allocated)
-	return &drapbv1.NodePrepareResourceResponse{CdiDevices: allocated}, nil
+	klog.Infof("Prepared devices for claim '%v': %s", req.ClaimUid, prepared)
+	return &drapbv1.NodePrepareResourceResponse{CdiDevices: prepared}, nil
 }
 
 func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnprepareResourceRequest) (*drapbv1.NodeUnprepareResourceResponse, error) {
 	klog.Infof("NodeUnprepareResource is called: request: %+v", req)
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := d.Free(req.ClaimUid)
+		err := d.Unprepare(req.ClaimUid)
 		if err != nil {
-			return fmt.Errorf("error freeing devices for claim '%v': %v", req.ClaimUid, err)
+			return fmt.Errorf("error unpreparing devices for claim '%v': %v", req.ClaimUid, err)
 		}
 
 		err = d.nasclient.Update(d.state.GetUpdatedSpec(&d.nascrd.Spec))
@@ -137,28 +137,28 @@ func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnp
 		return nil, fmt.Errorf("error unpreparing resource: %v", err)
 	}
 
-	klog.Infof("Freed devices for claim '%v'", req.ClaimUid)
+	klog.Infof("Unprepared devices for claim '%v'", req.ClaimUid)
 	return &drapbv1.NodeUnprepareResourceResponse{}, nil
 }
 
-func (d *driver) Allocate(claimUid string) ([]string, error) {
+func (d *driver) Prepare(claimUid string) ([]string, error) {
 	err := d.nasclient.Get()
 	if err != nil {
 		return nil, err
 	}
-	allocated, err := d.state.Allocate(claimUid, d.nascrd.Spec.ClaimRequests[claimUid])
+	prepared, err := d.state.Prepare(claimUid, d.nascrd.Spec.AllocatedClaims[claimUid])
 	if err != nil {
 		return nil, err
 	}
-	return allocated, nil
+	return prepared, nil
 }
 
-func (d *driver) Free(claimUid string) error {
+func (d *driver) Unprepare(claimUid string) error {
 	err := d.nasclient.Get()
 	if err != nil {
 		return err
 	}
-	err = d.state.Free(claimUid)
+	err = d.state.Unprepare(claimUid)
 	if err != nil {
 		return err
 	}

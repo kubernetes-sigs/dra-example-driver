@@ -28,12 +28,12 @@ import (
 )
 
 type gpudriver struct {
-	PendingClaimRequests *PerNodeClaimRequests
+	PendingAllocatedClaims *PerNodeAllocatedClaims
 }
 
 func NewGpuDriver() *gpudriver {
 	return &gpudriver{
-		PendingClaimRequests: NewPerNodeClaimRequests(),
+		PendingAllocatedClaims: NewPerNodeAllocatedClaims(),
 	}
 }
 
@@ -47,29 +47,29 @@ func (g *gpudriver) ValidateClaimParameters(claimParams *gpucrd.GpuClaimParamete
 func (g *gpudriver) Allocate(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim, claimParams *gpucrd.GpuClaimParametersSpec, class *resourcev1.ResourceClass, classParams *gpucrd.DeviceClassParametersSpec, selectedNode string) (OnSuccessCallback, error) {
 	claimUID := string(claim.UID)
 
-	if !g.PendingClaimRequests.Exists(claimUID, selectedNode) {
-		return nil, fmt.Errorf("no allocation requests generated for claim '%v' on node '%v' yet", claim.UID, selectedNode)
+	if !g.PendingAllocatedClaims.Exists(claimUID, selectedNode) {
+		return nil, fmt.Errorf("no allocations generated for claim '%v' on node '%v' yet", claim.UID, selectedNode)
 	}
 
-	crd.Spec.ClaimRequests[claimUID] = g.PendingClaimRequests.Get(claimUID, selectedNode)
+	crd.Spec.AllocatedClaims[claimUID] = g.PendingAllocatedClaims.Get(claimUID, selectedNode)
 	onSuccess := func() {
-		g.PendingClaimRequests.Remove(claimUID)
+		g.PendingAllocatedClaims.Remove(claimUID)
 	}
 
 	return onSuccess, nil
 }
 
 func (g *gpudriver) Deallocate(crd *nascrd.NodeAllocationState, claim *resourcev1.ResourceClaim) error {
-	g.PendingClaimRequests.Remove(string(claim.UID))
+	g.PendingAllocatedClaims.Remove(string(claim.UID))
 	return nil
 }
 
 func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.Pod, gpucas []*controller.ClaimAllocation, allcas []*controller.ClaimAllocation, potentialNode string) error {
-	g.PendingClaimRequests.VisitNode(potentialNode, func(claimUID string, request nascrd.RequestedDevices) {
-		if _, exists := crd.Spec.ClaimRequests[claimUID]; exists {
-			g.PendingClaimRequests.Remove(claimUID)
+	g.PendingAllocatedClaims.VisitNode(potentialNode, func(claimUID string, allocation nascrd.AllocatedDevices) {
+		if _, exists := crd.Spec.AllocatedClaims[claimUID]; exists {
+			g.PendingAllocatedClaims.Remove(claimUID)
 		} else {
-			crd.Spec.ClaimRequests[claimUID] = request
+			crd.Spec.AllocatedClaims[claimUID] = allocation
 		}
 	})
 
@@ -85,22 +85,22 @@ func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.
 			return nil
 		}
 
-		var devices []nascrd.RequestedGpu
+		var devices []nascrd.AllocatedGpu
 		for _, gpu := range allocated[claimUID] {
-			device := nascrd.RequestedGpu{
+			device := nascrd.AllocatedGpu{
 				UUID: gpu,
 			}
 			devices = append(devices, device)
 		}
 
-		requestedDevices := nascrd.RequestedDevices{
-			Gpu: &nascrd.RequestedGpus{
+		allocatedDevices := nascrd.AllocatedDevices{
+			Gpu: &nascrd.AllocatedGpus{
 				Devices: devices,
 			},
 		}
 
-		g.PendingClaimRequests.Set(claimUID, potentialNode, requestedDevices)
-		crd.Spec.ClaimRequests[claimUID] = requestedDevices
+		g.PendingAllocatedClaims.Set(claimUID, potentialNode, allocatedDevices)
+		crd.Spec.AllocatedClaims[claimUID] = allocatedDevices
 	}
 
 	return nil
@@ -116,10 +116,10 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 		}
 	}
 
-	for _, request := range crd.Spec.ClaimRequests {
-		switch request.Type() {
+	for _, allocation := range crd.Spec.AllocatedClaims {
+		switch allocation.Type() {
 		case nascrd.GpuDeviceType:
-			for _, device := range request.Gpu.Devices {
+			for _, device := range allocation.Gpu.Devices {
 				delete(available, device.UUID)
 			}
 		}
@@ -128,8 +128,8 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 	allocated := make(map[string][]string)
 	for _, ca := range gpucas {
 		claimUID := string(ca.Claim.UID)
-		if _, exists := crd.Spec.ClaimRequests[claimUID]; exists {
-			devices := crd.Spec.ClaimRequests[claimUID].Gpu.Devices
+		if _, exists := crd.Spec.AllocatedClaims[claimUID]; exists {
+			devices := crd.Spec.AllocatedClaims[claimUID].Gpu.Devices
 			for _, device := range devices {
 				allocated[claimUID] = append(allocated[claimUID], device.UUID)
 			}
