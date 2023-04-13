@@ -220,8 +220,7 @@ func (s *DeviceState) syncAllocatedDevicesToCRDSpec(spec *nascrd.NodeAllocationS
 			switch device.Type() {
 			case nascrd.GpuDeviceType:
 				outdevice.Gpu = &nascrd.AllocatedGpu{
-					UUID:        uuid,
-					ProductName: device.gpu.model,
+					UUID: uuid,
 				}
 			}
 			allocated = append(allocated, outdevice)

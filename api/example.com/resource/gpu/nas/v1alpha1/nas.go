@@ -41,8 +41,7 @@ func (d AllocatableDevice) Type() string {
 
 // AllocatedGpu represents an allocated GPU on a node
 type AllocatedGpu struct {
-	UUID        string `json:"uuid"`
-	ProductName string `json:"productname"`
+	UUID string `json:"uuid,omitempty"`
 }
 
 // AllocatedDevice represents an allocated device on a node
