@@ -22,6 +22,8 @@ The procedure below has been tested and verified on both Linux and Mac.
 
 ### Prerequisites
 
+* [GNU Make 3.81+](https://www.gnu.org/software/make/)
+* [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
 * [docker v20.10+](https://docs.docker.com/engine/install/)
 * [kind v0.17.0+](https://kind.sigs.k8s.io/docs/user/quick-start/)
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
@@ -127,12 +129,12 @@ And verify that they are coming up successfully:
 $ kubectl get pod -A
 NAMESPACE   NAME   READY   STATUS              RESTARTS   AGE
 ...
+gpu-test1   pod0   0/1     Pending             0          2s
 gpu-test1   pod1   0/1     Pending             0          2s
-gpu-test1   pod2   0/1     Pending             0          2s
-gpu-test2   pod    0/2     Pending             0          2s
+gpu-test2   pod0   0/2     Pending             0          2s
+gpu-test3   pod0   0/1     ContainerCreating   0          2s
 gpu-test3   pod1   0/1     ContainerCreating   0          2s
-gpu-test3   pod2   0/1     ContainerCreating   0          2s
-gpu-test4   pod    0/1     Pending             0          2s
+gpu-test4   pod0   0/1     Pending             0          2s
 ...
 ```
 
@@ -160,25 +162,25 @@ done
 This should produce output similar to the following:
 ```bash
 gpu-test1:
-pod1 ctr:
+pod0 ctr0:
 declare -x GPU_DEVICE_0="GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
-pod2 ctr:
+pod1 ctr0:
 declare -x GPU_DEVICE_0="GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744"
 
 gpu-test2:
-pod ctr0:
+pod0 ctr0:
 declare -x GPU_DEVICE_0="GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
-pod ctr1:
+pod0 ctr1:
 declare -x GPU_DEVICE_0="GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
 
 gpu-test3:
-pod1 ctr:
+pod0 ctr0:
 declare -x GPU_DEVICE_0="GPU-93d37703-997c-c46f-a531-755e3e0dc2ac"
-pod2 ctr:
+pod1 ctr0:
 declare -x GPU_DEVICE_0="GPU-93d37703-997c-c46f-a531-755e3e0dc2ac"
 
 gpu-test4:
-pod ctr:
+pod0 ctr0:
 declare -x GPU_DEVICE_0="GPU-18db0e85-99e9-c746-8531-ffeb86328b39"
 declare -x GPU_DEVICE_1="GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
 declare -x GPU_DEVICE_2="GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
@@ -245,12 +247,12 @@ Wait for them to terminate:
 $ kubectl get pod -A
 NAMESPACE   NAME   READY   STATUS        RESTARTS   AGE
 ...
+gpu-test1   pod0   1/1     Terminating   0          31m
 gpu-test1   pod1   1/1     Terminating   0          31m
-gpu-test1   pod2   1/1     Terminating   0          31m
-gpu-test2   pod    2/2     Terminating   0          31m 
-gpu-test3   pod1   1/1     Terminating   0          31m 
-gpu-test3   pod2   1/1     Terminating   0          31m 
-gpu-test4   pod    1/1     Terminating   0          31m 
+gpu-test2   pod0   2/2     Terminating   0          31m
+gpu-test3   pod0   1/1     Terminating   0          31m
+gpu-test3   pod1   1/1     Terminating   0          31m
+gpu-test4   pod0   1/1     Terminating   0          31m
 ...
 ```
 
@@ -292,7 +294,6 @@ Finally, you can run the following to cleanup your environment and delete the
 `kind` cluster started previously:
 ```bash
 ./delete-cluster.sh
-...
 ```
 
 ## Anatomy of a DRA resource driver
