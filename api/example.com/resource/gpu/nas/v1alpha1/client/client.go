@@ -100,17 +100,20 @@ func (c *Client) Get() error {
 	return nil
 }
 
-func (c *Client) ListNames() ([]string, error) {
-	naslist, err := c.client.NodeAllocationStates(c.nas.Namespace).List(
-		context.TODO(), metav1.ListOptions{})
+func (c *Client) Switch(newcrd *nascrd.NodeAllocationState) {
+	*c.nas = *newcrd
+}
+
+func (c *Client) GetAll() (map[string]*nascrd.NodeAllocationState, error) {
+	naslist, err := c.client.NodeAllocationStates(c.nas.Namespace).List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	nasnames := []string{}
+	nasmap := map[string]*nascrd.NodeAllocationState{}
 	for _, nas := range naslist.Items {
-		nasnames = append(nasnames, nas.Name)
+		nasmap[nas.Name] = &nas
 	}
 
-	return nasnames, nil
+	return nasmap, nil
 }

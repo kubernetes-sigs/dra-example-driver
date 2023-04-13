@@ -93,7 +93,6 @@ func (d driver) GetClaimParameters(ctx context.Context, claim *resourcev1.Resour
 }
 
 func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
-
 	if selectedNode == "" {
 		allocationResult, err := d.allocateImmediateClaim(claim, claimParameters, class, classParameters)
 		if err != nil {
@@ -167,15 +166,21 @@ func (d driver) allocateImmediateClaim(claim *resourcev1.ResourceClaim, claimPar
 	crd := nascrd.NewNodeAllocationState(crdconfig)
 
 	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-
-	nasnames, err := client.ListNames()
+	nasmap, err := client.GetAll()
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving list of NodeAllocationState objects: %v", err)
 	}
 
-	for _, nodename := range nasnames {
-		allocationResult, err := d.allocateImmediateClaimOnNode(claim, claimParameters, class, classParameters, nodename)
+	for nodename, nas := range nasmap {
+		allocationResult, err := d.allocateImmediateClaimOnNode(claim, claimParameters, class, classParameters, nodename, nas)
 		if err == nil {
+			// sync ResourceClaimAllocations from allocations
+			client.Switch(nas)
+			err := client.Update(&nas.Spec)
+			if err != nil {
+				return nil, fmt.Errorf("updating NodeAllocationState CRD: %v", err)
+			}
+
 			return allocationResult, nil
 		}
 	}
@@ -183,22 +188,9 @@ func (d driver) allocateImmediateClaim(claim *resourcev1.ResourceClaim, claimPar
 	return nil, fmt.Errorf("no suitable node found")
 }
 
-func (d driver) allocateImmediateClaimOnNode(claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, nodename string) (*resourcev1.AllocationResult, error) {
+func (d driver) allocateImmediateClaimOnNode(claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, nodename string, crd *nascrd.NodeAllocationState) (*resourcev1.AllocationResult, error) {
 	d.lock.Get(nodename).Lock()
 	defer d.lock.Get(nodename).Unlock()
-
-	crdconfig := &nascrd.NodeAllocationStateConfig{
-		Namespace: d.namespace,
-		Name:      nodename,
-	}
-
-	crd := nascrd.NewNodeAllocationState(crdconfig)
-
-	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get()
-	if err != nil {
-		return nil, fmt.Errorf("retrieving NodeAllocationState CRD for node %v: %v", nodename, err)
-	}
 
 	if crd.Spec.AllocatedClaims == nil {
 		crd.Spec.AllocatedClaims = make(map[string]nascrd.AllocatedDevices)
@@ -207,18 +199,12 @@ func (d driver) allocateImmediateClaimOnNode(claim *resourcev1.ResourceClaim, cl
 	classParams := classParameters.(*gpucrd.DeviceClassParametersSpec)
 	switch claimParams := claimParameters.(type) {
 	case *gpucrd.GpuClaimParametersSpec:
-		err = d.gpu.AllocateImmediately(crd, claim, claimParams, class, classParams)
+		err := d.gpu.AllocateImmediately(crd, claim, claimParams, class, classParams)
 		if err != nil {
 			return nil, fmt.Errorf("could not find suitable devices: %v", err)
 		}
 	default:
 		return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
-	}
-
-	// sync ResourceClaimAllocations from allocations
-	err = client.Update(&crd.Spec)
-	if err != nil {
-		return nil, fmt.Errorf("updating NodeAllocationState CRD: %v", err)
 	}
 
 	return buildAllocationResult(nodename, true), nil
