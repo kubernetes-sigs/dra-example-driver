@@ -78,7 +78,7 @@ spec:
                 type: object
               preparedClaims:
                 additionalProperties:
-                  description: PreparedDevices represents a set of allocated devices
+                  description: PreparedDevices represents a set of prepared devices
                     on a node
                   properties:
                     gpu:
