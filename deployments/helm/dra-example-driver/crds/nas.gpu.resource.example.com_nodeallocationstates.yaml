@@ -56,45 +56,44 @@ spec:
                       type: object
                   type: object
                 type: array
-              claimAllocations:
+              allocatedClaims:
                 additionalProperties:
-                  description: AllocatedDevices represents a list of allocated devices
-                    on a node
-                  items:
-                    description: AllocatedDevice represents an allocated device on
-                      a node
-                    properties:
-                      gpu:
-                        description: AllocatedGpu represents an allocated GPU on a
-                          node
-                        properties:
-                          productname:
-                            type: string
-                          uuid:
-                            type: string
-                        required:
-                        - productname
-                        - uuid
-                        type: object
-                    type: object
-                  type: array
-                type: object
-              claimRequests:
-                additionalProperties:
-                  description: RequestedDevices represents a list of requests for
-                    devices to be allocated
+                  description: AllocatedDevices represents a set of allocated devices
                   properties:
                     gpu:
-                      description: RequestedGpus represents a set of GPUs being requested
-                        for allocation
+                      description: AllocatedGpus represents a set of allocated GPUs
                       properties:
                         devices:
                           items:
-                            description: RequestedGpu represents a GPU being requested
-                              for allocation
+                            description: AllocatedGpu represents an allocated GPU
                             properties:
                               uuid:
                                 type: string
+                            type: object
+                          type: array
+                      required:
+                      - devices
+                      type: object
+                  type: object
+                type: object
+              preparedClaims:
+                additionalProperties:
+                  description: PreparedDevices represents a set of allocated devices
+                    on a node
+                  properties:
+                    gpu:
+                      description: PreparedGpus represents a set of prepared GPUs
+                        on a node
+                      properties:
+                        devices:
+                          items:
+                            description: PreparedGpu represents a prepared GPU on
+                              a node
+                            properties:
+                              uuid:
+                                type: string
+                            required:
+                            - uuid
                             type: object
                           type: array
                       required:

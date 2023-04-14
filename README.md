@@ -204,36 +204,30 @@ $ kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
 ...
 Spec:
   ...
-  Claim Allocations:
-    1c8364bc-b45e-4b26-b74b-d24aea518319:
+  Prepared Claims:
+    132ccf41-2ec6-4751-a0e5-94f3635a679a:
       Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744
+        Devices:
+          Uuid:  GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+    330d73e1-b5bb-40be-bc4b-2b940f1bf34f:
       Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+        Devices:
+          Uuid:  GPU-18db0e85-99e9-c746-8531-ffeb86328b39
+    d764a8d4-4481-4bc6-959b-27695f434953:
       Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+        Devices:
+          Uuid:  GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744
+          Uuid:  GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+          Uuid:  GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+          Uuid:  GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+    e811664d-e487-4eb7-9ac7-678c837cbb32:
       Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-    30a54813-002f-45f0-bac3-06ed401d31ad:
+        Devices:
+          Uuid:  GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+    ef07764f-8dc0-4c4b-a99f-328711702e63:
       Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-    37871101-7230-4b83-bda7-3d9e581ba515:
-      Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-    7c6ca074-26ca-40b7-b71a-e06903ca13b7:
-      Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-93d37703-997c-c46f-a531-755e3e0dc2ac
-    e16500f2-21c8-45e0-a6dc-280acfbcab4f:
-      Gpu:
-        Productname:  LATEST-GPU-MODEL
-        Uuid:         GPU-18db0e85-99e9-c746-8531-ffeb86328b39
+        Devices:
+          Uuid:  GPU-93d37703-997c-c46f-a531-755e3e0dc2ac
 ```
 
 Once you have verified everything is running correctly, delete all of the
