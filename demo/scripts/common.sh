@@ -33,11 +33,11 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 # The kubernetes tag to build the kind cluster from
 # From https://github.com/kubernetes/kubernetes/tags
-: ${KIND_K8S_TAG:="v1.27.0-beta.0"}
+: ${KIND_K8S_TAG:="v1.27.1"}
 
 # The containerd tag to patch the kind image with
 # From https://github.com/kind-ci/containerd-nightlies/releases
-: ${KIND_CONTAINERD_TAG:="containerd-1.7.0-beta.0-7-g8167751f5"}
+: ${KIND_CONTAINERD_TAG:="containerd-1.7.0-79-g2503bef58"}
 
 # The name of the kind cluster to create
 : ${KIND_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
