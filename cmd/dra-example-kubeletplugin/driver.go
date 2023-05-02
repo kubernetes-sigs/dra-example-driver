@@ -28,6 +28,8 @@ import (
 	nasclient "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
 )
 
+var _ drapbv1.NodeServer = &driver{}
+
 type driver struct {
 	nascrd    *nascrd.NodeAllocationState
 	nasclient *nasclient.Client
