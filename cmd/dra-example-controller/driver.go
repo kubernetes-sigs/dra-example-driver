@@ -45,7 +45,7 @@ type driver struct {
 	gpu       *gpudriver
 }
 
-var _ controller.Driver = (*driver)(nil)
+var _ controller.Driver = &driver{}
 
 func NewDriver(config *Config) *driver {
 	return &driver{

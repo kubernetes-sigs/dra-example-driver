@@ -20,8 +20,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/sirupsen/logrus"
-
 	cdiapi "github.com/container-orchestrated-devices/container-device-interface/pkg/cdi"
 	cdispec "github.com/container-orchestrated-devices/container-device-interface/specs-go"
 	nascrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
@@ -36,7 +34,6 @@ const (
 )
 
 type CDIHandler struct {
-	logger   *logrus.Logger
 	registry cdiapi.Registry
 }
 
@@ -50,12 +47,7 @@ func NewCDIHandler(config *Config) (*CDIHandler, error) {
 		return nil, fmt.Errorf("unable to refresh the CDI registry: %v", err)
 	}
 
-	logger := logrus.New()
-	logger.Out = os.Stdout
-	logger.Level = logrus.DebugLevel
-
 	handler := &CDIHandler{
-		logger:   logger,
 		registry: registry,
 	}
 
