@@ -51,7 +51,7 @@ func NewDriver(config *Config) *driver {
 	return &driver{
 		lock:      NewPerNodeMutex(),
 		namespace: config.namespace,
-		clientset: config.clientset.example,
+		clientset: config.clientSets.Example,
 		gpu:       NewGpuDriver(),
 	}
 }
