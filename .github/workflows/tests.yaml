@@ -1,0 +1,30 @@
+name: Run tests
+
+on: [ push, pull_request ]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    strategy:
+      matrix:
+        version: ['1.20' ]
+        platform: [ ubuntu-latest, macos-latest ]
+    runs-on: ${{ matrix.platform }}
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.version }}
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Update vendor modules
+      run: go mod vendor
+    - name: Build
+      run: make PREFIX=artifacts cmds
+    - name: List binaries
+      run: ls -al artifacts/
+    # no tests yet
+    # - name: Test
+    #   run: go test -v -race ./...
