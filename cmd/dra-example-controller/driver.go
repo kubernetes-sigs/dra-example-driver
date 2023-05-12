@@ -125,7 +125,8 @@ func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, c
 	}
 
 	var onSuccess OnSuccessCallback
-	classParams := classParameters.(*gpucrd.DeviceClassParametersSpec)
+	classParams, _ := classParameters.(*gpucrd.DeviceClassParametersSpec)
+
 	switch claimParams := claimParameters.(type) {
 	case *gpucrd.GpuClaimParametersSpec:
 		onSuccess, err = d.gpu.Allocate(crd, claim, claimParams, class, classParams, selectedNode)
