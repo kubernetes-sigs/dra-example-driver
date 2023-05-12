@@ -76,7 +76,7 @@ func (g *gpudriver) UnsuitableNode(crd *nascrd.NodeAllocationState, pod *corev1.
 	allocated := g.allocate(crd, pod, gpucas, allcas, potentialNode)
 	for _, ca := range gpucas {
 		claimUID := string(ca.Claim.UID)
-		claimParams := ca.ClaimParameters.(*gpucrd.GpuClaimParametersSpec)
+		claimParams, _ := ca.ClaimParameters.(*gpucrd.GpuClaimParametersSpec)
 
 		if claimParams.Count != len(allocated[claimUID]) {
 			for _, ca := range allcas {
@@ -136,7 +136,7 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 			continue
 		}
 
-		claimParams := ca.ClaimParameters.(*gpucrd.GpuClaimParametersSpec)
+		claimParams, _ := ca.ClaimParameters.(*gpucrd.GpuClaimParametersSpec)
 		var devices []string
 		for i := 0; i < claimParams.Count; i++ {
 			for _, device := range available {
