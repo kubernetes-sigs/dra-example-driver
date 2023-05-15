@@ -23,13 +23,13 @@ import (
 )
 
 var (
-	// SchemeBuilder initializes a scheme builder
+	// SchemeBuilder initializes a scheme builder.
 	SchemeBuilder = runtime.NewSchemeBuilder(addKnownTypes)
-	// AddToScheme is a global function that registers this API group & version to a scheme
+	// AddToScheme is a global function that registers this API group & version to a scheme.
 	AddToScheme = SchemeBuilder.AddToScheme
 )
 
-// SchemeGroupVersion is group version used to register these objects.
+// SchemeGroupVersion is group version used to register these objects..
 var SchemeGroupVersion = schema.GroupVersion{
 	Group:   GroupName,
 	Version: Version,

@@ -20,18 +20,18 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// AllocatableGpu represents an allocatable GPU on a node
+// AllocatableGpu represents an allocatable GPU on a node.
 type AllocatableGpu struct {
 	UUID        string `json:"uuid"`
 	ProductName string `json:"productName"`
 }
 
-// AllocatableDevice represents an allocatable device on a node
+// AllocatableDevice represents an allocatable device on a node.
 type AllocatableDevice struct {
 	Gpu *AllocatableGpu `json:"gpu,omitempty"`
 }
 
-// Type returns the type of AllocatableDevice this represents
+// Type returns the type of AllocatableDevice this represents.
 func (d AllocatableDevice) Type() string {
 	if d.Gpu != nil {
 		return GpuDeviceType
@@ -39,22 +39,22 @@ func (d AllocatableDevice) Type() string {
 	return UnknownDeviceType
 }
 
-// AllocatedGpu represents an allocated GPU
+// AllocatedGpu represents an allocated GPU.
 type AllocatedGpu struct {
 	UUID string `json:"uuid,omitempty"`
 }
 
-// AllocatedGpus represents a set of allocated GPUs
+// AllocatedGpus represents a set of allocated GPUs.
 type AllocatedGpus struct {
 	Devices []AllocatedGpu `json:"devices"`
 }
 
-// AllocatedDevices represents a set of allocated devices
+// AllocatedDevices represents a set of allocated devices.
 type AllocatedDevices struct {
 	Gpu *AllocatedGpus `json:"gpu,omitempty"`
 }
 
-// Type returns the type of AllocatedDevices this represents
+// Type returns the type of AllocatedDevices this represents.
 func (r AllocatedDevices) Type() string {
 	if r.Gpu != nil {
 		return GpuDeviceType
@@ -62,22 +62,22 @@ func (r AllocatedDevices) Type() string {
 	return UnknownDeviceType
 }
 
-// PreparedGpu represents a prepared GPU on a node
+// PreparedGpu represents a prepared GPU on a node.
 type PreparedGpu struct {
 	UUID string `json:"uuid"`
 }
 
-// PreparedGpus represents a set of prepared GPUs on a node
+// PreparedGpus represents a set of prepared GPUs on a node.
 type PreparedGpus struct {
 	Devices []PreparedGpu `json:"devices"`
 }
 
-// PreparedDevices represents a set of prepared devices on a node
+// PreparedDevices represents a set of prepared devices on a node.
 type PreparedDevices struct {
 	Gpu *PreparedGpus `json:"gpu,omitempty"`
 }
 
-// Type returns the type of PreparedDevices this represents
+// Type returns the type of PreparedDevices this represents.
 func (d PreparedDevices) Type() string {
 	if d.Gpu != nil {
 		return GpuDeviceType
@@ -85,7 +85,7 @@ func (d PreparedDevices) Type() string {
 	return UnknownDeviceType
 }
 
-// NodeAllocationStateSpec is the spec for the NodeAllocationState CRD
+// NodeAllocationStateSpec is the spec for the NodeAllocationState CRD.
 type NodeAllocationStateSpec struct {
 	AllocatableDevices []AllocatableDevice         `json:"allocatableDevices,omitempty"`
 	AllocatedClaims    map[string]AllocatedDevices `json:"allocatedClaims,omitempty"`
@@ -99,7 +99,7 @@ type NodeAllocationStateSpec struct {
 // +kubebuilder:resource:scope=Namespaced
 // +kubebuilder:resource:singular=nas
 
-// NodeAllocationState holds the state required for allocation on a node
+// NodeAllocationState holds the state required for allocation on a node.
 type NodeAllocationState struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -110,7 +110,7 @@ type NodeAllocationState struct {
 
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 
-// NodeAllocationStateList represents the "plural" of a NodeAllocationState CRD object
+// NodeAllocationStateList represents the "plural" of a NodeAllocationState CRD object.
 type NodeAllocationStateList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
