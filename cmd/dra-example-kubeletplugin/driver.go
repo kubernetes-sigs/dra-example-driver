@@ -143,24 +143,24 @@ func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnp
 	return &drapbv1.NodeUnprepareResourceResponse{}, nil
 }
 
-func (d *driver) Prepare(claimUid string) ([]string, error) {
+func (d *driver) Prepare(claimUID string) ([]string, error) {
 	err := d.nasclient.Get()
 	if err != nil {
 		return nil, err
 	}
-	prepared, err := d.state.Prepare(claimUid, d.nascrd.Spec.AllocatedClaims[claimUid])
+	prepared, err := d.state.Prepare(claimUID, d.nascrd.Spec.AllocatedClaims[claimUID])
 	if err != nil {
 		return nil, err
 	}
 	return prepared, nil
 }
 
-func (d *driver) Unprepare(claimUid string) error {
+func (d *driver) Unprepare(claimUID string) error {
 	err := d.nasclient.Get()
 	if err != nil {
 		return err
 	}
-	err = d.state.Unprepare(claimUid)
+	err = d.state.Unprepare(claimUID)
 	if err != nil {
 		return err
 	}

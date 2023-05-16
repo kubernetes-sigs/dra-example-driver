@@ -88,8 +88,8 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.registry.SpecDB().WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices *PreparedDevices) error {
-	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUid)
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDevices) error {
+	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
 
 	spec := &cdispec.Spec{
 		Kind:    cdiKind,
@@ -122,12 +122,12 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUid string, devices *PreparedDev
 	return cdi.registry.SpecDB().WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) DeleteClaimSpecFile(claimUid string) error {
-	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUid)
+func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
+	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
 	return cdi.registry.SpecDB().RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUid string, devices *PreparedDevices) []string {
+func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices) []string {
 	cdiDevices := []string{
 		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
