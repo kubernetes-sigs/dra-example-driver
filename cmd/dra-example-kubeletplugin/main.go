@@ -204,14 +204,15 @@ func StartPlugin(config *Config) error {
 	}
 
 	info, err := os.Stat(*config.flags.cdiRoot)
-	if err != nil && os.IsNotExist(err) {
+	switch {
+	case err != nil && os.IsNotExist(err):
 		err := os.MkdirAll(*config.flags.cdiRoot, 0750)
 		if err != nil {
 			return err
 		}
-	} else if err != nil {
+	case err != nil:
 		return err
-	} else if !info.IsDir() {
+	case !info.IsDir():
 		return fmt.Errorf("path for cdi file generation is not a directory: '%v'", err)
 	}
 

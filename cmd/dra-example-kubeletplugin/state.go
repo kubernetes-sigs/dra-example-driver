@@ -87,12 +87,12 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claimUid string, allocation nascrd.AllocatedDevices) ([]string, error) {
+func (s *DeviceState) Prepare(claimUID string, allocation nascrd.AllocatedDevices) ([]string, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.prepared[claimUid] != nil {
-		return s.cdi.GetClaimDevices(claimUid, s.prepared[claimUid]), nil
+	if s.prepared[claimUID] != nil {
+		return s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID]), nil
 	}
 
 	prepared := &PreparedDevices{}
@@ -100,44 +100,44 @@ func (s *DeviceState) Prepare(claimUid string, allocation nascrd.AllocatedDevice
 	var err error
 	switch allocation.Type() {
 	case nascrd.GpuDeviceType:
-		prepared.Gpu, err = s.prepareGpus(claimUid, allocation.Gpu)
+		prepared.Gpu, err = s.prepareGpus(claimUID, allocation.Gpu)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("allocation failed: %v", err)
 	}
 
-	err = s.cdi.CreateClaimSpecFile(claimUid, prepared)
+	err = s.cdi.CreateClaimSpecFile(claimUID, prepared)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
 	}
 
-	s.prepared[claimUid] = prepared
+	s.prepared[claimUID] = prepared
 
-	return s.cdi.GetClaimDevices(claimUid, s.prepared[claimUid]), nil
+	return s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID]), nil
 }
 
-func (s *DeviceState) Unprepare(claimUid string) error {
+func (s *DeviceState) Unprepare(claimUID string) error {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.prepared[claimUid] == nil {
+	if s.prepared[claimUID] == nil {
 		return nil
 	}
 
-	switch s.prepared[claimUid].Type() {
+	switch s.prepared[claimUID].Type() {
 	case nascrd.GpuDeviceType:
-		err := s.unprepareGpus(claimUid, s.prepared[claimUid])
+		err := s.unprepareGpus(claimUID, s.prepared[claimUID])
 		if err != nil {
 			return fmt.Errorf("unprepare failed: %v", err)
 		}
 	}
 
-	err := s.cdi.DeleteClaimSpecFile(claimUid)
+	err := s.cdi.DeleteClaimSpecFile(claimUID)
 	if err != nil {
 		return fmt.Errorf("unable to delete CDI spec file for claim: %v", err)
 	}
 
-	delete(s.prepared, claimUid)
+	delete(s.prepared, claimUID)
 
 	return nil
 }
@@ -152,7 +152,7 @@ func (s *DeviceState) GetUpdatedSpec(inspec *nascrd.NodeAllocationStateSpec) *na
 	return outspec
 }
 
-func (s *DeviceState) prepareGpus(claimUid string, allocated *nascrd.AllocatedGpus) (*PreparedGpus, error) {
+func (s *DeviceState) prepareGpus(claimUID string, allocated *nascrd.AllocatedGpus) (*PreparedGpus, error) {
 	prepared := &PreparedGpus{}
 
 	for _, device := range allocated.Devices {
@@ -168,7 +168,7 @@ func (s *DeviceState) prepareGpus(claimUid string, allocated *nascrd.AllocatedGp
 	return prepared, nil
 }
 
-func (s *DeviceState) unprepareGpus(claimUid string, devices *PreparedDevices) error {
+func (s *DeviceState) unprepareGpus(claimUID string, devices *PreparedDevices) error {
 	return nil
 }
 

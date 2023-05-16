@@ -267,7 +267,7 @@ func SetupHTTPEndpoint(config *Config) error {
 
 	listener, err := net.Listen("tcp", *config.flags.httpEndpoint)
 	if err != nil {
-		return fmt.Errorf("Listen on HTTP endpoint: %v", err)
+		return fmt.Errorf("listen on HTTP endpoint: %v", err)
 	}
 
 	go func() {

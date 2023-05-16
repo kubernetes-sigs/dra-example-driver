@@ -19,7 +19,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: NodeAllocationState holds the state required for allocation on
-          a node
+          a node.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -35,16 +35,16 @@ spec:
             type: object
           spec:
             description: NodeAllocationStateSpec is the spec for the NodeAllocationState
-              CRD
+              CRD.
             properties:
               allocatableDevices:
                 items:
                   description: AllocatableDevice represents an allocatable device
-                    on a node
+                    on a node.
                   properties:
                     gpu:
                       description: AllocatableGpu represents an allocatable GPU on
-                        a node
+                        a node.
                       properties:
                         productName:
                           type: string
@@ -58,14 +58,14 @@ spec:
                 type: array
               allocatedClaims:
                 additionalProperties:
-                  description: AllocatedDevices represents a set of allocated devices
+                  description: AllocatedDevices represents a set of allocated devices.
                   properties:
                     gpu:
-                      description: AllocatedGpus represents a set of allocated GPUs
+                      description: AllocatedGpus represents a set of allocated GPUs.
                       properties:
                         devices:
                           items:
-                            description: AllocatedGpu represents an allocated GPU
+                            description: AllocatedGpu represents an allocated GPU.
                             properties:
                               uuid:
                                 type: string
@@ -79,16 +79,16 @@ spec:
               preparedClaims:
                 additionalProperties:
                   description: PreparedDevices represents a set of prepared devices
-                    on a node
+                    on a node.
                   properties:
                     gpu:
                       description: PreparedGpus represents a set of prepared GPUs
-                        on a node
+                        on a node.
                       properties:
                         devices:
                           items:
                             description: PreparedGpu represents a prepared GPU on
-                              a node
+                              a node.
                             properties:
                               uuid:
                                 type: string
