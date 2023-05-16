@@ -19,7 +19,7 @@ spec:
     schema:
       openAPIV3Schema:
         description: DeviceClassParameters holds the set of parameters provided when
-          creating a resource class for this driver
+          creating a resource class for this driver.
         properties:
           apiVersion:
             description: 'APIVersion defines the versioned schema of this representation
@@ -35,12 +35,12 @@ spec:
             type: object
           spec:
             description: DeviceClassParametersSpec is the spec for the DeviceClassParametersSpec
-              CRD
+              CRD.
             properties:
               deviceSelector:
                 items:
                   description: DeviceSelector allows one to match on a specific type
-                    of Device as part of the class
+                    of Device as part of the class.
                   properties:
                     name:
                       type: string
