@@ -112,6 +112,8 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 		switch device.Type() {
 		case nascrd.GpuDeviceType:
 			available[device.Gpu.UUID] = device.Gpu
+		default:
+			// skip other devices
 		}
 	}
 
@@ -121,6 +123,8 @@ func (g *gpudriver) allocate(crd *nascrd.NodeAllocationState, pod *corev1.Pod, g
 			for _, device := range allocation.Gpu.Devices {
 				delete(available, device.UUID)
 			}
+		default:
+			// skip other devices
 		}
 	}
 

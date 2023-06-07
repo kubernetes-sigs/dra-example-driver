@@ -77,6 +77,7 @@ func (d driver) GetClaimParameters(ctx context.Context, claim *resourcev1.Resour
 	if claim.Spec.ParametersRef.APIGroup != DriverAPIGroup {
 		return nil, fmt.Errorf("incorrect API group: %v", claim.Spec.ParametersRef.APIGroup)
 	}
+
 	switch claim.Spec.ParametersRef.Kind {
 	case gpucrd.GpuClaimParametersKind:
 		gc, err := d.clientset.GpuV1alpha1().GpuClaimParameters(claim.Namespace).Get(ctx, claim.Spec.ParametersRef.Name, metav1.GetOptions{})
@@ -88,8 +89,9 @@ func (d driver) GetClaimParameters(ctx context.Context, claim *resourcev1.Resour
 			return nil, fmt.Errorf("error validating GpuClaimParameters called '%v' in namespace '%v': %v", claim.Spec.ParametersRef.Name, claim.Namespace, err)
 		}
 		return &gc.Spec, nil
+	default:
+		return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
 	}
-	return nil, fmt.Errorf("unknown ResourceClaim.ParametersRef.Kind: %v", claim.Spec.ParametersRef.Kind)
 }
 
 func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, claimParameters interface{}, class *resourcev1.ResourceClass, classParameters interface{}, selectedNode string) (*resourcev1.AllocationResult, error) {
@@ -244,18 +246,20 @@ func (d driver) unsuitableNode(ctx context.Context, pod *corev1.Pod, allcas []*c
 
 	perKindCas := make(map[string][]*controller.ClaimAllocation)
 	for _, ca := range allcas {
-		var kind string
-		switch ca.ClaimParameters.(type) {
-		case *gpucrd.GpuClaimParametersSpec:
-			kind = gpucrd.GpuClaimParametersKind
+		switch ca.Claim.Spec.ParametersRef.Kind {
+		case gpucrd.GpuClaimParametersKind:
+			perKindCas[gpucrd.GpuClaimParametersKind] = append(perKindCas[gpucrd.GpuClaimParametersKind], ca)
+		default:
+			return fmt.Errorf("unknown ResourceClaimParameters kind: %+v", ca.Claim.Spec.ParametersRef.Kind)
 		}
-		perKindCas[kind] = append(perKindCas[kind], ca)
 	}
 	for _, kind := range []string{gpucrd.GpuClaimParametersKind} {
 		var err error
 		switch kind {
 		case gpucrd.GpuClaimParametersKind:
 			err = d.gpu.UnsuitableNode(crd, pod, perKindCas[kind], allcas, potentialNode)
+		default:
+			err = fmt.Errorf("unknown ResourceClaimParameters kind: %+v", kind)
 		}
 		if err != nil {
 			return fmt.Errorf("error processing '%v': %v", kind, err)

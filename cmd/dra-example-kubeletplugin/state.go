@@ -92,7 +92,11 @@ func (s *DeviceState) Prepare(claimUID string, allocation nascrd.AllocatedDevice
 	defer s.Unlock()
 
 	if s.prepared[claimUID] != nil {
-		return s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID]), nil
+		cdiDevices, err := s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID])
+		if err != nil {
+			return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
+		}
+		return cdiDevices, nil
 	}
 
 	prepared := &PreparedDevices{}
@@ -101,6 +105,8 @@ func (s *DeviceState) Prepare(claimUID string, allocation nascrd.AllocatedDevice
 	switch allocation.Type() {
 	case nascrd.GpuDeviceType:
 		prepared.Gpu, err = s.prepareGpus(claimUID, allocation.Gpu)
+	default:
+		err = fmt.Errorf("unknown device type: %v", allocation.Type())
 	}
 	if err != nil {
 		return nil, fmt.Errorf("allocation failed: %v", err)
@@ -113,7 +119,11 @@ func (s *DeviceState) Prepare(claimUID string, allocation nascrd.AllocatedDevice
 
 	s.prepared[claimUID] = prepared
 
-	return s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID]), nil
+	cdiDevices, err := s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID])
+	if err != nil {
+		return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
+	}
+	return cdiDevices, nil
 }
 
 func (s *DeviceState) Unprepare(claimUID string) error {
@@ -130,6 +140,8 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		if err != nil {
 			return fmt.Errorf("unprepare failed: %v", err)
 		}
+	default:
+		return fmt.Errorf("unknown device type: %v", s.prepared[claimUID].Type())
 	}
 
 	err := s.cdi.DeleteClaimSpecFile(claimUID)
@@ -142,14 +154,22 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
-func (s *DeviceState) GetUpdatedSpec(inspec *nascrd.NodeAllocationStateSpec) *nascrd.NodeAllocationStateSpec {
+func (s *DeviceState) GetUpdatedSpec(inspec *nascrd.NodeAllocationStateSpec) (*nascrd.NodeAllocationStateSpec, error) {
 	s.Lock()
 	defer s.Unlock()
 
 	outspec := inspec.DeepCopy()
-	s.syncAllocatableDevicesToCRDSpec(outspec)
-	s.syncPreparedDevicesToCRDSpec(outspec)
-	return outspec
+	err := s.syncAllocatableDevicesToCRDSpec(outspec)
+	if err != nil {
+		return nil, fmt.Errorf("synching allocatable devices to CR spec: %v", err)
+	}
+
+	err = s.syncPreparedDevicesToCRDSpec(outspec)
+	if err != nil {
+		return nil, fmt.Errorf("synching prepared devices to CR spec: %v", err)
+	}
+
+	return outspec, nil
 }
 
 func (s *DeviceState) prepareGpus(claimUID string, allocated *nascrd.AllocatedGpus) (*PreparedGpus, error) {
@@ -172,7 +192,7 @@ func (s *DeviceState) unprepareGpus(claimUID string, devices *PreparedDevices) e
 	return nil
 }
 
-func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) {
+func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
 	gpus := make(map[string]nascrd.AllocatableDevice)
 	for _, device := range s.allocatable {
 		gpus[device.uuid] = nascrd.AllocatableDevice{
@@ -189,6 +209,8 @@ func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocatio
 	}
 
 	spec.AllocatableDevices = allocatable
+
+	return nil
 }
 
 func (s *DeviceState) syncPreparedDevicesFromCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
@@ -202,14 +224,17 @@ func (s *DeviceState) syncPreparedDevicesFromCRDSpec(spec *nascrd.NodeAllocation
 			for _, d := range devices.Gpu.Devices {
 				prepared[claim].Gpu.Devices = append(prepared[claim].Gpu.Devices, gpus[d.UUID].GpuInfo)
 			}
+		default:
+			return fmt.Errorf("unknown device type: %v", devices.Type())
 		}
 	}
 
 	s.prepared = prepared
+
 	return nil
 }
 
-func (s *DeviceState) syncPreparedDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) {
+func (s *DeviceState) syncPreparedDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
 	outcas := make(map[string]nascrd.PreparedDevices)
 	for claim, devices := range s.prepared {
 		var prepared nascrd.PreparedDevices
@@ -222,8 +247,13 @@ func (s *DeviceState) syncPreparedDevicesToCRDSpec(spec *nascrd.NodeAllocationSt
 				}
 				prepared.Gpu.Devices = append(prepared.Gpu.Devices, outdevice)
 			}
+		default:
+			return fmt.Errorf("unknown device type: %v", devices.Type())
 		}
 		outcas[claim] = prepared
 	}
+
 	spec.PreparedClaims = outcas
+
+	return nil
 }

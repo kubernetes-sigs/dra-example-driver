@@ -111,6 +111,8 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDev
 			spec.Devices = append(spec.Devices, cdiDevice)
 			gpuIdx++
 		}
+	default:
+		return fmt.Errorf("unknown device type: %v", devices.Type())
 	}
 
 	minVersion, err := cdiapi.MinimumRequiredVersion(spec)
@@ -127,7 +129,7 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	return cdi.registry.SpecDB().RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices) []string {
+func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices) ([]string, error) {
 	cdiDevices := []string{
 		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
@@ -138,7 +140,9 @@ func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices
 			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.uuid)
 			cdiDevices = append(cdiDevices, cdiDevice)
 		}
+	default:
+		return nil, fmt.Errorf("unknown device type: %v", devices.Type())
 	}
 
-	return cdiDevices
+	return cdiDevices, nil
 }
