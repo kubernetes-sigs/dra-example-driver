@@ -29,7 +29,8 @@ controller:
   priorityClassName: "system-node-critical"
   podAnnotations: {}
   podSecurityContext: {}
-  nodeSelector: {}
+  nodeSelector:
+    node-role.kubernetes.io/control-plane: ""
   tolerations:
   - key: node-role.kubernetes.io/master
     operator: Exists
