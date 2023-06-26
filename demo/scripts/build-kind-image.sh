@@ -43,38 +43,9 @@ trap cleanup EXIT
 # Set some build variables
 KIND_K8S_REPO="https://github.com/kubernetes/kubernetes.git "
 KIND_K8S_DIR="${TMP_DIR}/kubernetes-${KIND_K8S_TAG}"
-KIND_CONTAINERD_DIR="${TMP_DIR}/${KIND_CONTAINERD_TAG}"
-KIND_IMAGE_BASE="${KIND_IMAGE}-base"
-
-ARCH="$(uname -m)"
-ARCH="${ARCH/x86_64/amd64}"
-ARCH="${ARCH/aarch64/arm64}"
 
 # Checkout the version of kubernetes we want to build our kind image from
 git clone --depth 1 --branch ${KIND_K8S_TAG} ${KIND_K8S_REPO} ${KIND_K8S_DIR}
 
-# Download the artifacts for the version of containerd we want to install
-mkdir -p "${KIND_CONTAINERD_DIR}"
-curl -L --silent https://github.com/kind-ci/containerd-nightlies/releases/download/${KIND_CONTAINERD_TAG}/${KIND_CONTAINERD_TAG}-linux-${ARCH}.tar.gz | tar -C "${KIND_CONTAINERD_DIR}" -vzxf -
-curl -L --silent https://github.com/kind-ci/containerd-nightlies/releases/download/${KIND_CONTAINERD_TAG}/runc.${ARCH} > "${KIND_CONTAINERD_DIR}/runc"
-
 # Build the kind base image
-kind build node-image --image "${KIND_IMAGE_BASE}" "${KIND_K8S_DIR}"
-
-# Build a dockerfile to install the containerd artifacts
-# into the build image and update it to enable CDI
-cat > "${KIND_CONTAINERD_DIR}/Dockerfile" <<EOF
-FROM ${KIND_IMAGE_BASE}
-
-COPY bin/* /usr/local/bin/
-RUN chmod a+rx /usr/local/bin/*
-COPY runc /usr/local/sbin
-RUN chmod a+rx /usr/local/sbin/runc
-
-# Enable CDI as described in https://github.com/container-orchestrated-devices/container-device-interface#containerd-configuration
-RUN sed -i -e '/\[plugins."io.containerd.grpc.v1.cri"\]/a \ \ enable_cdi = true' /etc/containerd/config.toml
-EOF
-
-# Build the new image, tag it, and remove the kind base image
-docker build --tag "${KIND_IMAGE}" "${KIND_CONTAINERD_DIR}"
-docker image rm "${KIND_IMAGE_BASE}"
+kind build node-image --base-image "${KIND_IMAGE_BASE}" --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"
