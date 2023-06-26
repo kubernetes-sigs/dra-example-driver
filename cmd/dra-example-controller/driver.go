@@ -246,11 +246,11 @@ func (d driver) unsuitableNode(ctx context.Context, pod *corev1.Pod, allcas []*c
 
 	perKindCas := make(map[string][]*controller.ClaimAllocation)
 	for _, ca := range allcas {
-		switch ca.Claim.Spec.ParametersRef.Kind {
-		case gpucrd.GpuClaimParametersKind:
+		switch ca.ClaimParameters.(type) {
+		case *gpucrd.GpuClaimParametersSpec:
 			perKindCas[gpucrd.GpuClaimParametersKind] = append(perKindCas[gpucrd.GpuClaimParametersKind], ca)
 		default:
-			return fmt.Errorf("unknown ResourceClaimParameters kind: %+v", ca.Claim.Spec.ParametersRef.Kind)
+			return fmt.Errorf("unknown ResourceClaimParameters kind: %T", ca.ClaimParameters)
 		}
 	}
 	for _, kind := range []string{gpucrd.GpuClaimParametersKind} {
