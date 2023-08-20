@@ -21,8 +21,8 @@ package v1alpha1
 import (
 	"net/http"
 
-	v1alpha1 "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	"github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/scheme"
+	v1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/scheme"
 	rest "k8s.io/client-go/rest"
 )
 

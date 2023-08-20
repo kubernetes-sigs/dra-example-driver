@@ -15,7 +15,7 @@
 GOLANG_VERSION ?= 1.20.3
 
 DRIVER_NAME := dra-example-driver
-MODULE := github.com/kubernetes-sigs/$(DRIVER_NAME)
+MODULE := sigs.k8s.io/$(DRIVER_NAME)
 
 VERSION  ?= v0.1.0
 vVERSION := v$(VERSION:v%=%)

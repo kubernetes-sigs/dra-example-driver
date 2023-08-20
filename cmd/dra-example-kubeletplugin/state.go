@@ -20,7 +20,7 @@ import (
 	"fmt"
 	"sync"
 
-	nascrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 )
 
 type AllocatableDevices map[string]*AllocatableDeviceInfo
