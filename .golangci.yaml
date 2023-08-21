@@ -2,6 +2,7 @@
 linters:
   enable:
     - asciicheck
+    - contextcheck
     - forcetypeassert
     - gocritic
     - godot

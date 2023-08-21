@@ -36,16 +36,16 @@ type driver struct {
 	state     *DeviceState
 }
 
-func NewDriver(config *Config) (*driver, error) {
+func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	var d *driver
 	client := nasclient.New(config.nascr, config.exampleclient.NasV1alpha1())
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := client.GetOrCreate()
+		err := client.GetOrCreate(ctx)
 		if err != nil {
 			return err
 		}
 
-		err = client.UpdateStatus(nascrd.NodeAllocationStateStatusNotReady)
+		err = client.UpdateStatus(ctx, nascrd.NodeAllocationStateStatusNotReady)
 		if err != nil {
 			return err
 		}
@@ -60,12 +60,12 @@ func NewDriver(config *Config) (*driver, error) {
 			return fmt.Errorf("error getting updated CR spec: %v", err)
 		}
 
-		err = client.Update(updatedSpec)
+		err = client.Update(ctx, updatedSpec)
 		if err != nil {
 			return err
 		}
 
-		err = client.UpdateStatus(nascrd.NodeAllocationStateStatusReady)
+		err = client.UpdateStatus(ctx, nascrd.NodeAllocationStateStatusReady)
 		if err != nil {
 			return err
 		}
@@ -85,13 +85,13 @@ func NewDriver(config *Config) (*driver, error) {
 	return d, nil
 }
 
-func (d *driver) Shutdown() error {
+func (d *driver) Shutdown(ctx context.Context) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := d.nasclient.Get()
+		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
 		}
-		return d.nasclient.UpdateStatus(nascrd.NodeAllocationStateStatusNotReady)
+		return d.nasclient.UpdateStatus(ctx, nascrd.NodeAllocationStateStatusNotReady)
 	})
 }
 
@@ -101,7 +101,7 @@ func (d *driver) NodePrepareResource(ctx context.Context, req *drapbv1.NodePrepa
 	var err error
 	var prepared []string
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		prepared, err = d.Prepare(req.ClaimUid)
+		prepared, err = d.Prepare(ctx, req.ClaimUid)
 		if err != nil {
 			return fmt.Errorf("error allocating devices for claim '%v': %v", req.ClaimUid, err)
 		}
@@ -111,7 +111,7 @@ func (d *driver) NodePrepareResource(ctx context.Context, req *drapbv1.NodePrepa
 			return fmt.Errorf("error getting updated CR spec: %v", err)
 		}
 
-		err = d.nasclient.Update(updatedSpec)
+		err = d.nasclient.Update(ctx, updatedSpec)
 		if err != nil {
 			if err := d.state.Unprepare(req.ClaimUid); err != nil {
 				klog.Errorf("Failed to unprepare after claim '%v' Update() error: %v", req.ClaimUid, err)
@@ -133,7 +133,7 @@ func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnp
 	klog.Infof("NodeUnprepareResource is called: request: %+v", req)
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := d.Unprepare(req.ClaimUid)
+		err := d.Unprepare(ctx, req.ClaimUid)
 		if err != nil {
 			return fmt.Errorf("error unpreparing devices for claim '%v': %v", req.ClaimUid, err)
 		}
@@ -143,7 +143,7 @@ func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnp
 			return fmt.Errorf("error getting updated CR spec: %v", err)
 		}
 
-		err = d.nasclient.Update(updatedSpec)
+		err = d.nasclient.Update(ctx, updatedSpec)
 		if err != nil {
 			return err
 		}
@@ -158,8 +158,8 @@ func (d *driver) NodeUnprepareResource(ctx context.Context, req *drapbv1.NodeUnp
 	return &drapbv1.NodeUnprepareResourceResponse{}, nil
 }
 
-func (d *driver) Prepare(claimUID string) ([]string, error) {
-	err := d.nasclient.Get()
+func (d *driver) Prepare(ctx context.Context, claimUID string) ([]string, error) {
+	err := d.nasclient.Get(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -170,8 +170,8 @@ func (d *driver) Prepare(claimUID string) ([]string, error) {
 	return prepared, nil
 }
 
-func (d *driver) Unprepare(claimUID string) error {
-	err := d.nasclient.Get()
+func (d *driver) Unprepare(ctx context.Context, claimUID string) error {
+	err := d.nasclient.Get(ctx)
 	if err != nil {
 		return err
 	}

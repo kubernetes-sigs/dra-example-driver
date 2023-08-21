@@ -32,7 +32,6 @@ import (
 )
 
 const (
-	DriverName     = gpucrd.GroupName
 	DriverAPIGroup = gpucrd.GroupName
 )
 
@@ -109,7 +108,7 @@ func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, c
 	crd := nascrd.NewNodeAllocationState(crdconfig)
 
 	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get()
+	err := client.Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving node specific Gpu CRD: %v", err)
 	}
@@ -139,7 +138,7 @@ func (d driver) Allocate(ctx context.Context, claim *resourcev1.ResourceClaim, c
 		return nil, fmt.Errorf("unable to allocate devices on node '%v': %v", selectedNode, err)
 	}
 
-	err = client.Update(&crd.Spec)
+	err = client.Update(ctx, &crd.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("error updating NodeAllocationState CRD: %v", err)
 	}
@@ -165,7 +164,7 @@ func (d driver) Deallocate(ctx context.Context, claim *resourcev1.ResourceClaim)
 	crd := nascrd.NewNodeAllocationState(crdconfig)
 
 	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get()
+	err := client.Get(ctx)
 	if err != nil {
 		return fmt.Errorf("error retrieving node specific Gpu CRD: %v", err)
 	}
@@ -191,7 +190,7 @@ func (d driver) Deallocate(ctx context.Context, claim *resourcev1.ResourceClaim)
 
 	delete(crd.Spec.AllocatedClaims, string(claim.UID))
 
-	err = client.Update(&crd.Spec)
+	err = client.Update(ctx, &crd.Spec)
 	if err != nil {
 		return fmt.Errorf("error updating NodeAllocationState CRD: %v", err)
 	}
@@ -225,7 +224,7 @@ func (d driver) unsuitableNode(ctx context.Context, pod *corev1.Pod, allcas []*c
 	crd := nascrd.NewNodeAllocationState(crdconfig)
 
 	client := nasclient.New(crd, d.clientset.NasV1alpha1())
-	err := client.Get()
+	err := client.Get(ctx)
 	if err != nil {
 		for _, ca := range allcas {
 			ca.UnsuitableNodes = append(ca.UnsuitableNodes, potentialNode)
