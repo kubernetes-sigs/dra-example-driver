@@ -24,8 +24,8 @@ import (
 	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha2"
 
-	nascrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
-	nasclient "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
+	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	nasclient "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
 )
 
 var _ drapbv1.NodeServer = &driver{}

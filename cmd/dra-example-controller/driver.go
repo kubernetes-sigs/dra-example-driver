@@ -25,10 +25,10 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/dynamic-resource-allocation/controller"
 
-	nascrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
-	nasclient "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
-	gpucrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	clientset "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned"
+	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	nasclient "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1/client"
+	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	clientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
 )
 
 const (

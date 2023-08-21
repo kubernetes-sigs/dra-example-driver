@@ -19,8 +19,8 @@
 package fake
 
 import (
-	nasv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
-	gpuv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	nasv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	schema "k8s.io/apimachinery/pkg/runtime/schema"

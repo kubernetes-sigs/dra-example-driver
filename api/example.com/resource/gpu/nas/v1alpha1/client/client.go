@@ -22,8 +22,8 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	nascrd "github.com/kubernetes-sigs/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
-	nasclient "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
+	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	nasclient "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
 )
 
 type Client struct {

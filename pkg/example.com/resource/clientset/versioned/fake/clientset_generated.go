@@ -19,11 +19,11 @@
 package fake
 
 import (
-	clientset "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned"
-	gpuv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
-	fakegpuv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1/fake"
-	nasv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
-	fakenasv1alpha1 "github.com/kubernetes-sigs/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1/fake"
+	clientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
+	fakegpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1/fake"
+	nasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
+	fakenasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
