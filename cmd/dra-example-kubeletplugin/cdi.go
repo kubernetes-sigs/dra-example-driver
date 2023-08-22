@@ -39,7 +39,7 @@ type CDIHandler struct {
 
 func NewCDIHandler(config *Config) (*CDIHandler, error) {
 	registry := cdiapi.GetRegistry(
-		cdiapi.WithSpecDirs(*config.flags.cdiRoot),
+		cdiapi.WithSpecDirs(config.flags.cdiRoot),
 	)
 
 	err := registry.Refresh()

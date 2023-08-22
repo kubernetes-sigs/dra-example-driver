@@ -38,7 +38,7 @@ type driver struct {
 
 func NewDriver(config *Config) (*driver, error) {
 	var d *driver
-	client := nasclient.New(config.nascrd, config.exampleclient.NasV1alpha1())
+	client := nasclient.New(config.nascr, config.exampleclient.NasV1alpha1())
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		err := client.GetOrCreate()
 		if err != nil {
@@ -55,7 +55,7 @@ func NewDriver(config *Config) (*driver, error) {
 			return err
 		}
 
-		updatedSpec, err := state.GetUpdatedSpec(&config.nascrd.Spec)
+		updatedSpec, err := state.GetUpdatedSpec(&config.nascr.Spec)
 		if err != nil {
 			return fmt.Errorf("error getting updated CR spec: %v", err)
 		}
@@ -71,7 +71,7 @@ func NewDriver(config *Config) (*driver, error) {
 		}
 
 		d = &driver{
-			nascrd:    config.nascrd,
+			nascrd:    config.nascr,
 			nasclient: client,
 			state:     state,
 		}
