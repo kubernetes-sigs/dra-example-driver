@@ -35,8 +35,7 @@ import (
 )
 
 const (
-	DriverName     = gpucrd.GroupName
-	DriverAPIGroup = gpucrd.GroupName
+	DriverName = gpucrd.GroupName
 
 	PluginRegistrationPath = "/var/lib/kubelet/plugins_registry/" + DriverName + ".sock"
 	DriverPluginPath       = "/var/lib/kubelet/plugins/" + DriverName
@@ -87,14 +86,14 @@ func newApp() *cli.App {
 		ArgsUsage:       " ",
 		HideHelpCommand: true,
 		Flags:           cliFlags,
-		Before: func(ctx *cli.Context) error {
-			if ctx.Args().Len() > 0 {
-				return fmt.Errorf("arguments not supported: %v", ctx.Args().Slice())
+		Before: func(c *cli.Context) error {
+			if c.Args().Len() > 0 {
+				return fmt.Errorf("arguments not supported: %v", c.Args().Slice())
 			}
 			return flags.loggingConfig.Apply()
 		},
-		Action: func(*cli.Context) error {
-			ctx := context.Background()
+		Action: func(c *cli.Context) error {
+			ctx := c.Context
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
 			if err != nil {
 				return fmt.Errorf("create client: %v", err)
@@ -111,14 +110,14 @@ func newApp() *cli.App {
 				exampleclient: clientSets.Example,
 			}
 
-			return StartPlugin(config)
+			return StartPlugin(ctx, config)
 		},
 	}
 
 	return app
 }
 
-func StartPlugin(config *Config) error {
+func StartPlugin(ctx context.Context, config *Config) error {
 	err := os.MkdirAll(DriverPluginPath, 0750)
 	if err != nil {
 		return err
@@ -137,7 +136,7 @@ func StartPlugin(config *Config) error {
 		return fmt.Errorf("path for cdi file generation is not a directory: '%v'", err)
 	}
 
-	driver, err := NewDriver(config)
+	driver, err := NewDriver(ctx, config)
 	if err != nil {
 		return err
 	}
@@ -158,7 +157,7 @@ func StartPlugin(config *Config) error {
 
 	dp.Stop()
 
-	err = driver.Shutdown()
+	err = driver.Shutdown(ctx)
 	if err != nil {
 		klog.Errorf("Unable to cleanly shutdown driver: %v", err)
 	}

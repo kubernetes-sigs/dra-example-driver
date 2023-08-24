@@ -57,7 +57,6 @@ type Config struct {
 	namespace  string
 	flags      *Flags
 	clientSets flags.ClientSets
-	ctx        context.Context
 	mux        *http.ServeMux
 }
 
@@ -116,14 +115,14 @@ func newApp() *cli.App {
 		ArgsUsage:       " ",
 		HideHelpCommand: true,
 		Flags:           cliFlags,
-		Before: func(ctx *cli.Context) error {
-			if ctx.Args().Len() > 0 {
-				return fmt.Errorf("arguments not supported: %v", ctx.Args().Slice())
+		Before: func(c *cli.Context) error {
+			if c.Args().Len() > 0 {
+				return fmt.Errorf("arguments not supported: %v", c.Args().Slice())
 			}
 			return flags.loggingConfig.Apply()
 		},
-		Action: func(*cli.Context) error {
-			ctx := context.Background()
+		Action: func(c *cli.Context) error {
+			ctx := c.Context
 			mux := http.NewServeMux()
 
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
@@ -132,7 +131,6 @@ func newApp() *cli.App {
 			}
 
 			config := &Config{
-				ctx:        ctx,
 				mux:        mux,
 				flags:      flags,
 				namespace:  flags.nasConfig.Namespace,
@@ -146,7 +144,7 @@ func newApp() *cli.App {
 				}
 			}
 
-			err = StartController(config)
+			err = StartController(ctx, config)
 			if err != nil {
 				return fmt.Errorf("start controller: %v", err)
 			}
@@ -207,11 +205,11 @@ func SetupHTTPEndpoint(config *Config) error {
 	return nil
 }
 
-func StartController(config *Config) error {
+func StartController(ctx context.Context, config *Config) error {
 	driver := NewDriver(config)
 	informerFactory := informers.NewSharedInformerFactory(config.clientSets.Core, 0 /* resync period */)
-	ctrl := controller.New(config.ctx, DriverAPIGroup, driver, config.clientSets.Core, informerFactory)
-	informerFactory.Start(config.ctx.Done())
+	ctrl := controller.New(ctx, DriverAPIGroup, driver, config.clientSets.Core, informerFactory)
+	informerFactory.Start(ctx.Done())
 	ctrl.Run(config.flags.workers)
 	return nil
 }

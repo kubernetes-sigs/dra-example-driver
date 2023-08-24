@@ -17,7 +17,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -82,8 +81,8 @@ func newApp() *cli.App {
 			}
 			return loggingConfig.Apply()
 		},
-		Action: func(*cli.Context) error {
-			ctx := context.Background()
+		Action: func(c *cli.Context) error {
+			ctx := c.Context
 			clientSets, err := kubeClientConfig.NewClientSets()
 			if err != nil {
 				return fmt.Errorf("create client: %v", err)
@@ -96,11 +95,11 @@ func newApp() *cli.App {
 
 			client := nasclient.New(nascr, clientSets.Example.NasV1alpha1())
 			if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-				err := client.GetOrCreate()
+				err := client.GetOrCreate(ctx)
 				if err != nil {
 					return err
 				}
-				return client.UpdateStatus(status)
+				return client.UpdateStatus(ctx, status)
 			}); err != nil {
 				return err
 			}
