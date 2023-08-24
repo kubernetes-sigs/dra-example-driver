@@ -99,3 +99,21 @@ func (c *Client) Get(ctx context.Context) error {
 	*c.nas = *crd
 	return nil
 }
+
+func (c *Client) Switch(newcrd *nascrd.NodeAllocationState) {
+	*c.nas = *newcrd
+}
+
+func (c *Client) GetAll() (map[string]*nascrd.NodeAllocationState, error) {
+	naslist, err := c.client.NodeAllocationStates(c.nas.Namespace).List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	nasmap := map[string]*nascrd.NodeAllocationState{}
+	for _, nas := range naslist.Items {
+		nasmap[nas.Name] = &nas
+	}
+
+	return nasmap, nil
+}

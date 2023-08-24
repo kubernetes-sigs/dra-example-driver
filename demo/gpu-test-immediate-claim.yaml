@@ -1,0 +1,16 @@
+# Resource claim with immediate allocation, without waiting for pod to start scheduling
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test-immediate
+
+---
+apiVersion: resource.k8s.io/v1alpha2
+kind: ResourceClaim
+metadata:
+  namespace: gpu-test-immediate
+  name: immediate-claim
+spec:
+  allocationMode: Immediate
+  resourceClassName: gpu.example.com
