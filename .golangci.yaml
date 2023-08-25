@@ -14,3 +14,7 @@ linters:
 run:
   tests: true
   timeout: 1m
+
+linters-settings:
+  goimports:
+    local-prefixes: "sigs.k8s.io/dra-example-driver"
