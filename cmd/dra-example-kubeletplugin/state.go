@@ -220,7 +220,7 @@ func (s *DeviceState) syncPreparedDevicesFromCRDSpec(spec *nascrd.NodeAllocation
 	for claim, devices := range spec.PreparedClaims {
 		switch devices.Type() {
 		case nascrd.GpuDeviceType:
-			prepared[claim] = &PreparedDevices{}
+			prepared[claim] = &PreparedDevices{Gpu: &PreparedGpus{}}
 			for _, d := range devices.Gpu.Devices {
 				prepared[claim].Gpu.Devices = append(prepared[claim].Gpu.Devices, gpus[d.UUID].GpuInfo)
 			}
