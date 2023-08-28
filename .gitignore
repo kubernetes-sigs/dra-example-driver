@@ -2,6 +2,6 @@
 vendor/
 [._]*.sw[a-p]
 
-dra-example-controller
-dra-example-kubeletplugin
-set-nas-status
+./dra-example-controller
+./dra-example-kubeletplugin
+./set-nas-status
