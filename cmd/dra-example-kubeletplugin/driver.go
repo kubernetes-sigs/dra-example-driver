@@ -104,13 +104,13 @@ func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrep
 	// should be done outside of the loop, for instance updating the CR could
 	// be done once after all HW was prepared.
 	for _, claim := range req.Claims {
-		preparedResources.Claims[claim.Uid] = d.nodePrepareResources(ctx, claim)
+		preparedResources.Claims[claim.Uid] = d.nodePrepareResource(ctx, claim)
 	}
 
 	return preparedResources, nil
 }
 
-func (d *driver) nodePrepareResources(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
+func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
 	var err error
 	var prepared []string
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
