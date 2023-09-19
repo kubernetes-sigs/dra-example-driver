@@ -48,4 +48,4 @@ KIND_K8S_DIR="${TMP_DIR}/kubernetes-${KIND_K8S_TAG}"
 git clone --depth 1 --branch ${KIND_K8S_TAG} ${KIND_K8S_REPO} ${KIND_K8S_DIR}
 
 # Build the kind base image
-kind build node-image --base-image "${KIND_IMAGE_BASE}" --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"
+kind build node-image --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"
