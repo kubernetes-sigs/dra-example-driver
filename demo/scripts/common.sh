@@ -33,7 +33,12 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 # The kubernetes tag to build the kind cluster from
 # From https://github.com/kubernetes/kubernetes/tags
-: ${KIND_K8S_TAG:="v1.27.1"}
+: ${KIND_K8S_TAG:="v1.28.0"}
+
+# At present, kind has a new enough node image that we don't need to build our
+# own. This won't always be true and we may need to set the variable below to
+# 'true' from time to time as things change.
+: ${BUILD_KIND_IMAGE:="false"}
 
 # The name of the kind cluster to create
 : ${KIND_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
@@ -44,8 +49,6 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 # The derived name of the driver image to build
 : ${DRIVER_IMAGE:="${DRIVER_IMAGE_REGISTRY}/${DRIVER_IMAGE_NAME}:${DRIVER_IMAGE_TAG}"}
 
-# The derived name of the kind image to build
-: ${KIND_IMAGE_BASE_TAG:="v20230515-01914134-containerd_v1.7.1"}
-: ${KIND_IMAGE_BASE:="gcr.io/k8s-staging-kind/base:${KIND_IMAGE_BASE_TAG}"}
-: ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}-${KIND_IMAGE_BASE_TAG}"}
+# The name of the kind image to build / run
+: ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 

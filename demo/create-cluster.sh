@@ -28,7 +28,9 @@ set -o pipefail
 source "${CURRENT_DIR}/scripts/common.sh"
 
 # Build the kind image and create a test cluster
-${SCRIPTS_DIR}/build-kind-image.sh
+if [ "${BUILD_KIND_IMAGE}" = "true" ]; then
+	${SCRIPTS_DIR}/build-kind-image.sh
+fi
 ${SCRIPTS_DIR}/create-kind-cluster.sh
 
 # If a driver image already exists load it into the cluster
