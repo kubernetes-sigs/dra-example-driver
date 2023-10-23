@@ -35,7 +35,7 @@ subdirectory. All of the scripts and example Pod specs used in this demo are
 contained here, so take a moment to browse through the various files and see
 what's available:
 ```
-git clone https://sigs.k8s.io/dra-example-driver.git
+git clone https://github.com/kubernetes-sigs/dra-example-driver.git
 cd dra-example-driver/demo
 ```
 
