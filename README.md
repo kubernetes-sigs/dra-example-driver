@@ -24,7 +24,7 @@ The procedure below has been tested and verified on both Linux and Mac.
 
 * [GNU Make 3.81+](https://www.gnu.org/software/make/)
 * [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
-* [docker v20.10+](https://docs.docker.com/engine/install/)
+* [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/)
 * [kind v0.17.0+](https://kind.sigs.k8s.io/docs/user/quick-start/)
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
@@ -35,7 +35,7 @@ subdirectory. All of the scripts and example Pod specs used in this demo are
 contained here, so take a moment to browse through the various files and see
 what's available:
 ```
-git clone https://sigs.k8s.io/dra-example-driver.git
+git clone https://github.com/kubernetes-sigs/dra-example-driver.git
 cd dra-example-driver/demo
 ```
 
