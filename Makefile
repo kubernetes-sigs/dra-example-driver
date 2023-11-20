@@ -87,6 +87,13 @@ misspell:
 vet:
 	go vet $(MODULE)/...
 
+# Ensure that all log calls support contextual logging.
+test: logcheck
+.PHONY: logcheck
+logcheck:
+	(cd hack/tools && GOBIN=$(PWD) go install sigs.k8s.io/logtools/logcheck)
+	./logcheck -check-contextual -check-deprecations ./...
+
 COVERAGE_FILE := coverage.out
 test: build cmds
 	go test -v -coverprofile=$(COVERAGE_FILE) $(MODULE)/...

@@ -96,8 +96,8 @@ func (d *driver) Shutdown(ctx context.Context) error {
 }
 
 func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrepareResourcesRequest) (*drapbv1.NodePrepareResourcesResponse, error) {
-
-	klog.Infof("NodePrepareResource is called: number of claims: %d", len(req.Claims))
+	logger := klog.FromContext(ctx)
+	logger.Info("NodePrepareResource", "numClaims", len(req.Claims))
 	preparedResources := &drapbv1.NodePrepareResourcesResponse{Claims: map[string]*drapbv1.NodePrepareResourceResponse{}}
 
 	// In production version some common operations of d.nodeUnprepareResources
@@ -111,6 +111,7 @@ func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrep
 }
 
 func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
+	logger := klog.FromContext(ctx)
 	var err error
 	var prepared []string
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -127,7 +128,7 @@ func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) 
 		err = d.nasclient.Update(ctx, updatedSpec)
 		if err != nil {
 			if err := d.state.Unprepare(claim.Uid); err != nil {
-				klog.Errorf("Failed to unprepare after claim '%v' Update() error: %v", claim.Uid, err)
+				logger.Error(err, "Failed to unprepare after Update", "claim", claim.Uid)
 			}
 			return err
 		}
@@ -141,12 +142,13 @@ func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) 
 		}
 	}
 
-	klog.Infof("Prepared devices for claim '%v': %s", claim.Uid, prepared)
+	klog.FromContext(ctx).Info("Prepared devices", "claim", claim.Uid)
 	return &drapbv1.NodePrepareResourceResponse{CDIDevices: prepared}
 }
 
 func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUnprepareResourcesRequest) (*drapbv1.NodeUnprepareResourcesResponse, error) {
-	klog.Infof("NodeUnprepareResource is called: number of claims: %d", len(req.Claims))
+	logger := klog.FromContext(ctx)
+	logger.Info("NodeUnprepareResource", "numClaims", len(req.Claims))
 	unpreparedResources := &drapbv1.NodeUnprepareResourcesResponse{
 		Claims: map[string]*drapbv1.NodeUnprepareResourceResponse{},
 	}
@@ -186,7 +188,7 @@ func (d *driver) nodeUnprepareResource(ctx context.Context, claim *drapbv1.Claim
 		}
 	}
 
-	klog.Infof("Unprepared devices for claim '%v'", claim.Uid)
+	klog.FromContext(ctx).Info("Unprepared devices", "claim", claim.Uid)
 	return &drapbv1.NodeUnprepareResourceResponse{}
 }
 
