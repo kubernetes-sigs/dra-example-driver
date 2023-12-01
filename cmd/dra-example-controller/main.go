@@ -138,7 +138,7 @@ func newApp() *cli.App {
 			}
 
 			if flags.httpEndpoint != "" {
-				err = SetupHTTPEndpoint(config)
+				err = SetupHTTPEndpoint(ctx, config)
 				if err != nil {
 					return fmt.Errorf("create http endpoint: %v", err)
 				}
@@ -156,7 +156,9 @@ func newApp() *cli.App {
 	return app
 }
 
-func SetupHTTPEndpoint(config *Config) error {
+func SetupHTTPEndpoint(ctx context.Context, config *Config) error {
+	logger := klog.FromContext(ctx)
+	logger = klog.LoggerWithName(logger, "http-server")
 	if config.flags.metricsPath != "" {
 		// To collect metrics data from the metric handler itself, we
 		// let it register itself and then collect from that registry.
@@ -169,7 +171,7 @@ func SetupHTTPEndpoint(config *Config) error {
 		gatherers = append(gatherers, reg)
 
 		actualPath := path.Join("/", config.flags.metricsPath)
-		klog.InfoS("Starting metrics", "path", actualPath)
+		logger.Info("Starting metrics", "path", actualPath)
 		// This is similar to k8s.io/component-base/metrics HandlerWithReset
 		// except that we gather from multiple sources.
 		config.mux.Handle(actualPath,
@@ -180,7 +182,7 @@ func SetupHTTPEndpoint(config *Config) error {
 
 	if config.flags.profilePath != "" {
 		actualPath := path.Join("/", config.flags.profilePath)
-		klog.InfoS("Starting profiling", "path", actualPath)
+		logger.Info("Starting profiling", "path", actualPath)
 		config.mux.HandleFunc(actualPath, pprof.Index)
 		config.mux.HandleFunc(path.Join(actualPath, "cmdline"), pprof.Cmdline)
 		config.mux.HandleFunc(path.Join(actualPath, "profile"), pprof.Profile)
@@ -194,10 +196,10 @@ func SetupHTTPEndpoint(config *Config) error {
 	}
 
 	go func() {
-		klog.InfoS("Starting HTTP server", "endpoint", config.flags.httpEndpoint)
+		logger.Info("Starting HTTP server", "endpoint", config.flags.httpEndpoint)
 		err := http.Serve(listener, config.mux)
 		if err != nil {
-			klog.ErrorS(err, "HTTP server failed")
+			logger.Error(err, "HTTP server failed")
 			klog.FlushAndExit(klog.ExitFlushTimeout, 1)
 		}
 	}()
