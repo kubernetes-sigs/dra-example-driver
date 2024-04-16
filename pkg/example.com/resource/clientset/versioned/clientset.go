@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright 2024 The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,11 +22,11 @@ import (
 	"fmt"
 	"net/http"
 
-	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
-	nasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
 	discovery "k8s.io/client-go/discovery"
 	rest "k8s.io/client-go/rest"
 	flowcontrol "k8s.io/client-go/util/flowcontrol"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
+	nasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
 )
 
 type Interface interface {

@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright 2024 The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,13 +21,12 @@ package fake
 import (
 	"context"
 
-	v1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	labels "k8s.io/apimachinery/pkg/labels"
-	schema "k8s.io/apimachinery/pkg/runtime/schema"
 	types "k8s.io/apimachinery/pkg/types"
 	watch "k8s.io/apimachinery/pkg/watch"
 	testing "k8s.io/client-go/testing"
+	v1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 // FakeGpuClaimParameters implements GpuClaimParametersInterface
@@ -36,9 +35,9 @@ type FakeGpuClaimParameters struct {
 	ns   string
 }
 
-var gpuclaimparametersResource = schema.GroupVersionResource{Group: "gpu.resource.example.com", Version: "v1alpha1", Resource: "gpuclaimparameters"}
+var gpuclaimparametersResource = v1alpha1.SchemeGroupVersion.WithResource("gpuclaimparameters")
 
-var gpuclaimparametersKind = schema.GroupVersionKind{Group: "gpu.resource.example.com", Version: "v1alpha1", Kind: "GpuClaimParameters"}
+var gpuclaimparametersKind = v1alpha1.SchemeGroupVersion.WithKind("GpuClaimParameters")
 
 // Get takes name of the gpuClaimParameters, and returns the corresponding gpuClaimParameters object, and an error if there is any.
 func (c *FakeGpuClaimParameters) Get(ctx context.Context, name string, options v1.GetOptions) (result *v1alpha1.GpuClaimParameters, err error) {
