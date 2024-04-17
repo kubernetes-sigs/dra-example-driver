@@ -1,6 +1,6 @@
 module sigs.k8s.io/dra-example-driver
 
-go 1.20
+go 1.22.2
 
 require (
 	github.com/container-orchestrated-devices/container-device-interface v0.5.4

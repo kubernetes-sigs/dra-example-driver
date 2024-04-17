@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright 2024 The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,16 +19,16 @@
 package fake
 
 import (
-	clientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
-	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
-	fakegpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1/fake"
-	nasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
-	fakenasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1/fake"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/discovery"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/testing"
+	clientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1"
+	fakegpuv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/gpu/v1alpha1/fake"
+	nasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1"
+	fakenasv1alpha1 "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned/typed/nas/v1alpha1/fake"
 )
 
 // NewSimpleClientset returns a clientset that will respond with the provided objects.
