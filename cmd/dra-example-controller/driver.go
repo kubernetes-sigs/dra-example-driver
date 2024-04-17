@@ -33,6 +33,7 @@ import (
 
 const (
 	DriverAPIGroup = gpucrd.GroupName
+	DriverName     = gpucrd.GroupName
 )
 
 type OnSuccessCallback func()
