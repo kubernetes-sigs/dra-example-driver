@@ -1,4 +1,4 @@
-# Example Resource Driver for Dynamic Resource Allocation (DRA) 
+# Example Resource Driver for Dynamic Resource Allocation (DRA)
 
 This repository contains an example resource driver for use with the [Dynamic
 Resource Allocation
@@ -36,18 +36,26 @@ contained here, so take a moment to browse through the various files and see
 what's available:
 ```
 git clone https://github.com/kubernetes-sigs/dra-example-driver.git
-cd dra-example-driver/demo
+cd dra-example-driver
 ```
 
 From here we will build the image for the example resource driver:
 ```bash
-./build-driver.sh
+./demo/build-driver.sh
 ```
 
 And create a `kind` cluster to run it in:
 ```bash
-./create-cluster.sh
+KUBE_GIT_VERSION=v1.30.0 BUILD_KIND_IMAGE=true KIND_K8S_TAG=v1.30.0 ./demo/create-cluster.sh
 ```
+
+**Note**: The environment variables in the command above allow us to build a
+local node image with support for Kubernetes v1.30.0. This is required to allow
+the DRA driver to function with the new `StructuredParameters` capabilities
+added in v1.30. Once `kind` releases a node image for v1.30 these extra
+environment variables will no longer be needed. If you only plan on running
+"classic" DRA without `StructuredParameters`, then you can just use the latest
+`kind` imiage for v1.29 and omit these extra environment variables.
 
 Once the cluster has been created successfully, double check everything is
 coming up as expected:
@@ -67,13 +75,24 @@ kube-system          kube-scheduler-dra-example-driver-cluster-control-plane    
 local-path-storage   local-path-provisioner-7dbf974f64-9jmc7                            1/1     Running   0          1m
 ```
 
-And then install the example resource driver via `helm`:
+And then install the example resource driver via `helm`. The first command
+deploys the example driver for use with "classic" DRA. The second passes an
+additional flag of `withStructuredParameters=true` to cause it to work with
+`StructuredParameters` instead.
 ```bash
 helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   dra-example-driver \
-  ../deployments/helm/dra-example-driver
+  deployments/helm/dra-example-driver
+```
+```
+helm upgrade -i \
+  --create-namespace \
+  --namespace dra-example-driver \
+  --set withStructuredParameters=true \
+  dra-example-driver \
+  deployments/helm/dra-example-driver
 ```
 
 Double check the driver components have come up successfully:
@@ -117,11 +136,48 @@ Spec:
 ...
 ```
 
+**Note**: When running with `StructuredParameters` you can also check that the
+`ResourceSlice` has been populated with similar information:
+```
+$ kubectl get resourceslice -o yaml
+apiVersion: v1
+items:
+- apiVersion: resource.k8s.io/v1alpha2
+  driverName: gpu.resource.example.com
+  kind: ResourceSlice
+  metadata:
+    creationTimestamp: "2024-04-17T13:45:44Z"
+    generateName: dra-example-driver-cluster-worker-gpu.resource.example.com-
+    name: dra-example-driver-cluster-worker-gpu.resource.example.comxktph
+    ownerReferences:
+    - apiVersion: v1
+      controller: true
+      kind: Node
+      name: dra-example-driver-cluster-worker
+      uid: 4dc7c3b2-d99c-492b-8ede-37d435e56b2d
+    resourceVersion: "1189"
+    uid: 61c965b5-54a9-40ee-88a1-c52a814fa624
+  namedResources:
+    instances:
+    - name: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+    - name: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+    - name: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+    - name: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+    - name: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+    - name: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+    - name: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+    - name: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+  nodeName: dra-example-driver-cluster-worker
+kind: List
+metadata:
+  resourceVersion: ""
+```
+
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `ClaimParameter` objects can be used to
 request access to resources in various ways:
 ```bash
-kubectl apply --filename=gpu-test{1,2,3,4}.yaml
+kubectl apply --filename=demo/gpu-test{1,2,3,4}.yaml
 ```
 
 And verify that they are coming up successfully:
@@ -233,7 +289,7 @@ Spec:
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=gpu-test{1,2,3,4}.yaml
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4}.yaml
 ```
 
 Wait for them to terminate:
@@ -287,7 +343,7 @@ Spec:
 Finally, you can run the following to cleanup your environment and delete the
 `kind` cluster started previously:
 ```bash
-./delete-cluster.sh
+./demo/delete-cluster.sh
 ```
 
 ## Anatomy of a DRA resource driver
