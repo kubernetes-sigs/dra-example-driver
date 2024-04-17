@@ -4,3 +4,4 @@ kind: ResourceClass
 metadata:
   name: gpu.example.com
 driverName: gpu.resource.example.com
+structuredParameters: true
