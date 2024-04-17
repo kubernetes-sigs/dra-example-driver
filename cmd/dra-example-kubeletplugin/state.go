@@ -18,7 +18,10 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
+
+	resourceapi "k8s.io/api/resource/v1alpha2"
 
 	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 )
@@ -190,6 +193,22 @@ func (s *DeviceState) prepareGpus(claimUID string, allocated *nascrd.AllocatedGp
 
 func (s *DeviceState) unprepareGpus(claimUID string, devices *PreparedDevices) error {
 	return nil
+}
+
+func (s *DeviceState) getResourceModelFromAllocatableDevices() resourceapi.ResourceModel {
+	var instances []resourceapi.NamedResourcesInstance
+	for _, device := range s.allocatable {
+		instance := resourceapi.NamedResourcesInstance{
+			Name: strings.ToLower(device.uuid),
+		}
+		instances = append(instances, instance)
+	}
+
+	model := resourceapi.ResourceModel{
+		NamedResources: &resourceapi.NamedResourcesResources{Instances: instances},
+	}
+
+	return model
 }
 
 func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
