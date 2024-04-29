@@ -17,6 +17,8 @@
 package v1alpha1
 
 import (
+	"k8s.io/utils/ptr"
+
 	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 )
 
@@ -40,6 +42,6 @@ func DefaultDeviceClassParametersSpec() *DeviceClassParametersSpec {
 
 func DefaultGpuClaimParametersSpec() *GpuClaimParametersSpec {
 	return &GpuClaimParametersSpec{
-		Count: 1,
+		Count: ptr.To(1),
 	}
 }

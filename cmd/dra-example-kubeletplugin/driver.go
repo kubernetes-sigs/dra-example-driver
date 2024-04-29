@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	resourceapi "k8s.io/api/resource/v1alpha2"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha3"
@@ -31,9 +33,11 @@ import (
 var _ drapbv1.NodeServer = &driver{}
 
 type driver struct {
-	nascrd    *nascrd.NodeAllocationState
+	doneCh    chan struct{}
+	nascr     *nascrd.NodeAllocationState
 	nasclient *nasclient.Client
 	state     *DeviceState
+	backoff   wait.Backoff
 }
 
 func NewDriver(ctx context.Context, config *Config) (*driver, error) {
@@ -70,10 +74,14 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 			return err
 		}
 
+		backoff := retry.DefaultRetry
+		backoff.Steps = 10
+
 		d = &driver{
-			nascrd:    config.nascr,
+			nascr:     config.nascr,
 			nasclient: client,
 			state:     state,
+			backoff:   backoff,
 		}
 
 		return nil
@@ -86,7 +94,9 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 }
 
 func (d *driver) Shutdown(ctx context.Context) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	defer close(d.doneCh)
+
+	return retry.RetryOnConflict(d.backoff, func() error {
 		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
@@ -95,9 +105,28 @@ func (d *driver) Shutdown(ctx context.Context) error {
 	})
 }
 
+func (d *driver) NodeListAndWatchResources(req *drapbv1.NodeListAndWatchResourcesRequest, stream drapbv1.Node_NodeListAndWatchResourcesServer) error {
+	model := d.state.getResourceModelFromAllocatableDevices()
+	resp := &drapbv1.NodeListAndWatchResourcesResponse{
+		Resources: []*resourceapi.ResourceModel{&model},
+	}
+
+	if err := stream.Send(resp); err != nil {
+		return err
+	}
+
+	//nolint:all,S1000: should use for range instead of for { select {} } (gosimple)
+	for {
+		select {
+		case <-d.doneCh:
+			return nil
+		}
+		// TODO: Update with case for when GPUs go unhealthy
+	}
+}
+
 func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrepareResourcesRequest) (*drapbv1.NodePrepareResourcesResponse, error) {
-	logger := klog.FromContext(ctx)
-	logger.Info("NodePrepareResource", "numClaims", len(req.Claims))
+	klog.Infof("NodePrepareResource is called: number of claims: %d", len(req.Claims))
 	preparedResources := &drapbv1.NodePrepareResourcesResponse{Claims: map[string]*drapbv1.NodePrepareResourceResponse{}}
 
 	// In production version some common operations of d.nodeUnprepareResources
@@ -111,51 +140,29 @@ func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrep
 }
 
 func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
-	logger := klog.FromContext(ctx)
-	var err error
-	var prepared []string
-	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		prepared, err = d.prepare(ctx, claim.Uid)
-		if err != nil {
-			return fmt.Errorf("error allocating devices for claim '%v': %v", claim.Uid, err)
-		}
-
-		updatedSpec, err := d.state.GetUpdatedSpec(&d.nascrd.Spec)
-		if err != nil {
-			return fmt.Errorf("error getting updated CR spec: %v", err)
-		}
-
-		err = d.nasclient.Update(ctx, updatedSpec)
-		if err != nil {
-			if err := d.state.Unprepare(claim.Uid); err != nil {
-				logger.Error(err, "Failed to unprepare after Update", "claim", claim.Uid)
+	if len(claim.StructuredResourceHandle) > 0 {
+		if err := d.allocateDevices(ctx, claim); err != nil {
+			return &drapbv1.NodePrepareResourceResponse{
+				Error: fmt.Sprintf("error allocating devices for claim %v: %v", claim.Uid, err),
 			}
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return &drapbv1.NodePrepareResourceResponse{
-			Error: fmt.Sprintf("error preparing resource: %v", err),
 		}
 	}
 
-	klog.FromContext(ctx).Info("Prepared devices", "claim", claim.Uid)
+	prepared, err := d.prepare(ctx, claim.Uid)
+	if err != nil {
+		return &drapbv1.NodePrepareResourceResponse{
+			Error: fmt.Sprintf("error preparing devices for claim %v: %v", claim.Uid, err),
+		}
+	}
+
+	klog.Infof("Returning newly prepared devices for claim '%v': %s", claim.Uid, prepared)
 	return &drapbv1.NodePrepareResourceResponse{CDIDevices: prepared}
 }
 
 func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUnprepareResourcesRequest) (*drapbv1.NodeUnprepareResourcesResponse, error) {
-	logger := klog.FromContext(ctx)
-	logger.Info("NodeUnprepareResource", "numClaims", len(req.Claims))
-	unpreparedResources := &drapbv1.NodeUnprepareResourcesResponse{
-		Claims: map[string]*drapbv1.NodeUnprepareResourceResponse{},
-	}
+	klog.Infof("NodeUnPrepareResource is called: number of claims: %d", len(req.Claims))
+	unpreparedResources := &drapbv1.NodeUnprepareResourcesResponse{Claims: map[string]*drapbv1.NodeUnprepareResourceResponse{}}
 
-	// In production version some common operations of d.nodeUnprepareResources
-	// should be done outside of the loop, for instance updating the CR could
-	// be done once after all HW was unprepared.
 	for _, claim := range req.Claims {
 		unpreparedResources.Claims[claim.Uid] = d.nodeUnprepareResource(ctx, claim)
 	}
@@ -164,13 +171,38 @@ func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUn
 }
 
 func (d *driver) nodeUnprepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodeUnprepareResourceResponse {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		err := d.unprepare(ctx, claim.Uid)
+	if len(claim.StructuredResourceHandle) > 0 {
+		if err := d.deallocateDevices(ctx, claim); err != nil {
+			return &drapbv1.NodeUnprepareResourceResponse{
+				Error: fmt.Sprintf("error deallocating devices for claim %v: %v", claim.Uid, err),
+			}
+		}
+	}
+
+	if err := d.unprepare(ctx, claim.Uid); err != nil {
+		return &drapbv1.NodeUnprepareResourceResponse{
+			Error: fmt.Sprintf("error unpreparing devices for claim %v: %v", claim.Uid, err),
+		}
+	}
+
+	return &drapbv1.NodeUnprepareResourceResponse{}
+}
+
+func (d *driver) prepare(ctx context.Context, claimUID string) ([]string, error) {
+	var err error
+	var prepared []string
+	err = retry.RetryOnConflict(d.backoff, func() error {
+		err = d.nasclient.Get(ctx)
 		if err != nil {
-			return fmt.Errorf("error unpreparing devices for claim '%v': %v", claim.Uid, err)
+			return err
 		}
 
-		updatedSpec, err := d.state.GetUpdatedSpec(&d.nascrd.Spec)
+		prepared, err = d.state.Prepare(claimUID, d.nascr.Spec.AllocatedClaims[claimUID])
+		if err != nil {
+			return err
+		}
+
+		updatedSpec, err := d.state.GetUpdatedSpec(&d.nascr.Spec)
 		if err != nil {
 			return fmt.Errorf("error getting updated CR spec: %v", err)
 		}
@@ -183,33 +215,94 @@ func (d *driver) nodeUnprepareResource(ctx context.Context, claim *drapbv1.Claim
 		return nil
 	})
 	if err != nil {
-		return &drapbv1.NodeUnprepareResourceResponse{
-			Error: fmt.Sprintf("error unpreparing resource: %v", err),
-		}
-	}
-
-	klog.FromContext(ctx).Info("Unprepared devices", "claim", claim.Uid)
-	return &drapbv1.NodeUnprepareResourceResponse{}
-}
-
-func (d *driver) prepare(ctx context.Context, claimUID string) ([]string, error) {
-	err := d.nasclient.Get(ctx)
-	if err != nil {
-		return nil, err
-	}
-	prepared, err := d.state.Prepare(claimUID, d.nascrd.Spec.AllocatedClaims[claimUID])
-	if err != nil {
 		return nil, err
 	}
 	return prepared, nil
 }
 
 func (d *driver) unprepare(ctx context.Context, claimUID string) error {
-	err := d.nasclient.Get(ctx)
+	err := retry.RetryOnConflict(d.backoff, func() error {
+		err := d.nasclient.Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		err = d.state.Unprepare(claimUID)
+		if err != nil {
+			return err
+		}
+
+		updatedSpec, err := d.state.GetUpdatedSpec(&d.nascr.Spec)
+		if err != nil {
+			return fmt.Errorf("error getting updated CR spec: %v", err)
+		}
+
+		err = d.nasclient.Update(ctx, updatedSpec)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
-	err = d.state.Unprepare(claimUID)
+	return nil
+}
+
+func (d *driver) allocateDevices(ctx context.Context, claim *drapbv1.Claim) error {
+	allocated := nascrd.AllocatedDevices{
+		Gpu: &nascrd.AllocatedGpus{},
+	}
+
+	for _, r := range claim.StructuredResourceHandle[0].Results {
+		name := r.AllocationResultModel.NamedResources.Name
+		gpu := nascrd.AllocatedGpu{
+			UUID: fmt.Sprintf("GPU-%s", name[4:]),
+		}
+		allocated.Gpu.Devices = append(allocated.Gpu.Devices, gpu)
+	}
+
+	err := retry.RetryOnConflict(d.backoff, func() error {
+		err := d.nasclient.Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		if len(d.nascr.Spec.AllocatedClaims) == 0 {
+			d.nascr.Spec.AllocatedClaims = make(map[string]nascrd.AllocatedDevices)
+		}
+		d.nascr.Spec.AllocatedClaims[claim.Uid] = allocated
+
+		err = d.nasclient.Update(ctx, &d.nascr.Spec)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *driver) deallocateDevices(ctx context.Context, claim *drapbv1.Claim) error {
+	err := retry.RetryOnConflict(d.backoff, func() error {
+		err := d.nasclient.Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		delete(d.nascr.Spec.AllocatedClaims, claim.Uid)
+
+		err = d.nasclient.Update(ctx, &d.nascr.Spec)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	})
 	if err != nil {
 		return err
 	}
