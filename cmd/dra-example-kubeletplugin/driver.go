@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	resourceapi "k8s.io/api/resource/v1alpha2"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/util/retry"
 	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha3"
@@ -36,6 +37,7 @@ type driver struct {
 	nascr     *nascrd.NodeAllocationState
 	nasclient *nasclient.Client
 	state     *DeviceState
+	backoff   wait.Backoff
 }
 
 func NewDriver(ctx context.Context, config *Config) (*driver, error) {
@@ -72,10 +74,14 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 			return err
 		}
 
+		backoff := retry.DefaultRetry
+		backoff.Steps = 10
+
 		d = &driver{
 			nascr:     config.nascr,
 			nasclient: client,
 			state:     state,
+			backoff:   backoff,
 		}
 
 		return nil
@@ -90,7 +96,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 func (d *driver) Shutdown(ctx context.Context) error {
 	defer close(d.doneCh)
 
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	return retry.RetryOnConflict(d.backoff, func() error {
 		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
@@ -185,7 +191,7 @@ func (d *driver) nodeUnprepareResource(ctx context.Context, claim *drapbv1.Claim
 func (d *driver) prepare(ctx context.Context, claimUID string) ([]string, error) {
 	var err error
 	var prepared []string
-	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err = retry.RetryOnConflict(d.backoff, func() error {
 		err = d.nasclient.Get(ctx)
 		if err != nil {
 			return err
@@ -215,7 +221,7 @@ func (d *driver) prepare(ctx context.Context, claimUID string) ([]string, error)
 }
 
 func (d *driver) unprepare(ctx context.Context, claimUID string) error {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(d.backoff, func() error {
 		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
@@ -257,7 +263,7 @@ func (d *driver) allocateDevices(ctx context.Context, claim *drapbv1.Claim) erro
 		allocated.Gpu.Devices = append(allocated.Gpu.Devices, gpu)
 	}
 
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(d.backoff, func() error {
 		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
@@ -282,7 +288,7 @@ func (d *driver) allocateDevices(ctx context.Context, claim *drapbv1.Claim) erro
 }
 
 func (d *driver) deallocateDevices(ctx context.Context, claim *drapbv1.Claim) error {
-	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	err := retry.RetryOnConflict(d.backoff, func() error {
 		err := d.nasclient.Get(ctx)
 		if err != nil {
 			return err
