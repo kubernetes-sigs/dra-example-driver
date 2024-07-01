@@ -15,7 +15,7 @@
 ##### Global variables #####
 DOCKER ?= docker
 MKDIR ?= mkdir
-DISTRIBUTIONS := ubuntu22.04
+DISTRIBUTIONS := ubuntu22.04 ubi9
 DOCKERFILE := $(CURDIR)/deployments/container/Dockerfile
 
 include $(CURDIR)/common.mk
@@ -28,7 +28,9 @@ IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
 ubuntu22.04: BASE_IMAGE = docker.io/ubuntu:22.04
 
-# Use a generic build target to build the relevant images
+ubi9: BASE_IMAGE = registry.access.redhat.com/ubi9/ubi-micro:latest
+
+# Use a generic build target to build the relevant imsages
 $(DISTRIBUTIONS):
 	DOCKER_BUILDKIT=1 \
 		$(DOCKER) build --pull \
