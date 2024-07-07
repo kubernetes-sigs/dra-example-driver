@@ -22,7 +22,7 @@
 # A reference to the current directory where this script is located
 SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
-# The name of the example driver 
+# The name of the example driver
 : ${DRIVER_NAME:=dra-example-driver}
 
 # The registry, image and tag for the example driver
@@ -52,3 +52,5 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 # The name of the kind image to build / run
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 
+# Container tool, e.g. docker/podman
+: ${DOCKER:="docker"}

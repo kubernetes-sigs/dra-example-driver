@@ -34,7 +34,7 @@ fi
 ${SCRIPTS_DIR}/create-kind-cluster.sh
 
 # If a driver image already exists load it into the cluster
-EXISTING_IMAGE_ID="$(docker images --filter "reference=${DRIVER_IMAGE}" -q)"
+EXISTING_IMAGE_ID="$(${DOCKER} images --filter "reference=${DRIVER_IMAGE}" -q)"
 if [ "${EXISTING_IMAGE_ID}" != "" ]; then
 	${SCRIPTS_DIR}/load-driver-image-into-kind.sh
 fi

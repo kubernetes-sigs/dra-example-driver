@@ -28,7 +28,7 @@ set -o pipefail
 source "${CURRENT_DIR}/common.sh"
 
 # If an image ID already exists for the image we plan to build, we are done.
-EXISTING_IMAGE_ID="$(docker images --filter "reference=${KIND_IMAGE}" -q)"
+EXISTING_IMAGE_ID="$(${DOCKER} images --filter "reference=${KIND_IMAGE}" -q)"
 if [ "${EXISTING_IMAGE_ID}" != "" ]; then
 	exit 0
 fi
