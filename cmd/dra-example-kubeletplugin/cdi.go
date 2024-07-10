@@ -102,10 +102,10 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDev
 	case gpucrd.GpuDeviceType:
 		for _, device := range devices.Gpu.Devices {
 			cdiDevice := cdispec.Device{
-				Name: device.uuid,
+				Name: device.UUID,
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
-						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.uuid),
+						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.UUID),
 					},
 				},
 			}
@@ -138,7 +138,7 @@ func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices
 	switch devices.Type() {
 	case gpucrd.GpuDeviceType:
 		for _, device := range devices.Gpu.Devices {
-			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.uuid)
+			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.UUID)
 			cdiDevices = append(cdiDevices, cdiDevice)
 		}
 	default:
