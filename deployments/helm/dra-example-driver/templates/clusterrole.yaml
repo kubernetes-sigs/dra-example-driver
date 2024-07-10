@@ -9,6 +9,5 @@ rules:
   - ""
   - resource.k8s.io
   - gpu.resource.example.com
-  - nas.gpu.resource.example.com
   resources: ["*"]
   verbs: ["*"]

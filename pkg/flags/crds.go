@@ -17,25 +17,17 @@
 package flags
 
 import (
-	"context"
-	"fmt"
-
 	"github.com/urfave/cli/v2"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	coreclientset "k8s.io/client-go/kubernetes"
-
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 )
 
-type NasConfig struct {
+type CRDConfig struct {
 	NodeName  string
 	Namespace string
 
 	HideNodeName bool
 }
 
-func (n *NasConfig) Flags() []cli.Flag {
+func (n *CRDConfig) Flags() []cli.Flag {
 	flags := []cli.Flag{
 		&cli.StringFlag{
 			Name:        "namespace",
@@ -56,24 +48,4 @@ func (n *NasConfig) Flags() []cli.Flag {
 	}
 
 	return flags
-}
-
-func (n *NasConfig) NewNodeAllocationState(ctx context.Context, core coreclientset.Interface) (*nascrd.NodeAllocationState, error) {
-	node, err := core.CoreV1().Nodes().Get(ctx, n.NodeName, metav1.GetOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("get node object: %v", err)
-	}
-
-	crdconfig := &nascrd.NodeAllocationStateConfig{
-		Name:      n.NodeName,
-		Namespace: n.Namespace,
-		Owner: &metav1.OwnerReference{
-			APIVersion: "v1",
-			Kind:       "Node",
-			Name:       n.NodeName,
-			UID:        node.UID,
-		},
-	}
-	nascr := nascrd.NewNodeAllocationState(crdconfig)
-	return nascr, nil
 }

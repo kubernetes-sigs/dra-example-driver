@@ -37,6 +37,11 @@ import (
 	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
+const (
+	DriverAPIGroup = gpucrd.GroupName
+	DriverName     = gpucrd.GroupName
+)
+
 func StartClaimParametersGenerator(ctx context.Context, config *Config) error {
 	// Build a client set config
 	csconfig, err := config.flags.kubeClientConfig.NewClientSetConfig()

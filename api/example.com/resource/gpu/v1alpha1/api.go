@@ -18,13 +18,14 @@ package v1alpha1
 
 import (
 	"k8s.io/utils/ptr"
-
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 )
 
 const (
 	GroupName = "gpu.resource.example.com"
 	Version   = "v1alpha1"
+
+	GpuDeviceType     = "gpu"
+	UnknownDeviceType = "unknown"
 
 	GpuClaimParametersKind = "GpuClaimParameters"
 )
@@ -33,7 +34,7 @@ func DefaultDeviceClassParametersSpec() *DeviceClassParametersSpec {
 	return &DeviceClassParametersSpec{
 		DeviceSelector: []DeviceSelector{
 			{
-				Type: nascrd.GpuDeviceType,
+				Type: GpuDeviceType,
 				Name: "*",
 			},
 		},
