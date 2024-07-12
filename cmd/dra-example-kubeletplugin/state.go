@@ -21,7 +21,7 @@ import (
 	"strings"
 	"sync"
 
-	resourceapi "k8s.io/api/resource/v1alpha2"
+	resourceapi "k8s.io/api/resource/v1alpha3"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
