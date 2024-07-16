@@ -21,6 +21,7 @@ import (
 	"os"
 
 	resourceapi "k8s.io/api/resource/v1alpha3"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
 	"github.com/google/uuid"
@@ -32,14 +33,26 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 	uuids := generateUUIDs(seed, numGPUs)
 
 	alldevices := make(AllocatableDevices)
-	for _, uuid := range uuids {
+	for i, uuid := range uuids {
 		device := resourceapi.Device{
 			Name: uuid,
 			Basic: &resourceapi.BasicDevice{
 				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"index": {
+						IntValue: ptr.To(int64(i)),
+					},
+					"uuid": {
+						StringValue: ptr.To(uuid),
+					},
 					"model": {
 						StringValue: ptr.To("LATEST-GPU-MODEL"),
 					},
+					"driverVersion": {
+						VersionValue: ptr.To("1.0.0"),
+					},
+				},
+				Capacity: map[resourceapi.QualifiedName]resource.Quantity{
+					"memory": resource.MustParse("80Gi"),
 				},
 			},
 		}
