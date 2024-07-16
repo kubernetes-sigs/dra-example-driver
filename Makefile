@@ -146,6 +146,12 @@ generate-crds: vendor
 			docker; \
 	fi
 
+ifeq ($(DOCKER),podman)
+DOCKER_OPTS="-v $(PWD):$(PWD):Z"
+else
+DOCKER_OPTS="-v $(PWD):$(PWD) --user $$(id -u):$$(id -g)"
+endif
+
 $(DOCKER_TARGETS): docker-%: .build-image
 	@echo "Running 'make $(*)' in docker container $(BUILDIMAGE)"
 	$(DOCKER) run \
@@ -153,9 +159,8 @@ $(DOCKER_TARGETS): docker-%: .build-image
 		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
-		-v $(PWD):$(PWD) \
+		$(DOCKER_OPTS) \
 		-w $(PWD) \
-		--user $$(id -u):$$(id -g) \
 		$(BUILDIMAGE) \
 			make $(*)
 
@@ -168,7 +173,6 @@ PHONY: .shell
 		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
-		-v $(PWD):$(PWD) \
+		$(DOCKER_OPTS) \
 		-w $(PWD) \
-		--user $$(id -u):$$(id -g) \
 		$(BUILDIMAGE)
