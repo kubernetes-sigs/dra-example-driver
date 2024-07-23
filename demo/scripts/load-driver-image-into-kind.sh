@@ -27,6 +27,16 @@ set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
 
-kind load docker-image \
-	--name "${KIND_CLUSTER_NAME}" \
-	"${DRIVER_IMAGE}"
+# Work around kind not loading image with podman
+if [[ "${DOCKER}" == "podman" ]]; then
+	IMAGE_ARCHIVE=driver_image.tar
+	${DOCKER} save -o "${IMAGE_ARCHIVE}" "${DRIVER_IMAGE}" && \
+	kind load image-archive \
+		--name "${KIND_CLUSTER_NAME}" \
+		"${IMAGE_ARCHIVE}"
+	rm "${IMAGE_ARCHIVE}"
+else
+	kind load docker-image \
+		--name "${KIND_CLUSTER_NAME}" \
+		"${DRIVER_IMAGE}"
+fi
