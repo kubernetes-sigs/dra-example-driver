@@ -1,4 +1,4 @@
-# Example Resource Driver for Dynamic Resource Allocation (DRA) 
+# Example Resource Driver for Dynamic Resource Allocation (DRA)
 
 This repository contains an example resource driver for use with the [Dynamic
 Resource Allocation
@@ -30,23 +30,22 @@ The procedure below has been tested and verified on both Linux and Mac.
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
 
 ### Demo
-We start by first cloning this repository and `cd`ing into its `demo`
-subdirectory. All of the scripts and example Pod specs used in this demo are
-contained here, so take a moment to browse through the various files and see
-what's available:
+We start by first cloning this repository and `cd`ing into it. All of the
+scripts and example Pod specs used in this demo are contained here, so take a
+moment to browse through the various files and see what's available:
 ```
 git clone https://github.com/kubernetes-sigs/dra-example-driver.git
-cd dra-example-driver/demo
+cd dra-example-driver
 ```
 
 From here we will build the image for the example resource driver:
 ```bash
-./build-driver.sh
+./demo/build-driver.sh
 ```
 
 And create a `kind` cluster to run it in:
 ```bash
-./create-cluster.sh
+./demo/create-cluster.sh
 ```
 
 Once the cluster has been created successfully, double check everything is
@@ -67,13 +66,13 @@ kube-system          kube-scheduler-dra-example-driver-cluster-control-plane    
 local-path-storage   local-path-provisioner-7dbf974f64-9jmc7                            1/1     Running   0          1m
 ```
 
-And then install the example resource driver via `helm`:
+And then install the example resource driver via `helm`.
 ```bash
 helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   dra-example-driver \
-  ../deployments/helm/dra-example-driver
+  deployments/helm/dra-example-driver
 ```
 
 Double check the driver components have come up successfully:
@@ -85,43 +84,46 @@ dra-example-driver-kubeletplugin-qwmbl           1/1     Running   0          1m
 ```
 
 And show the initial state of available GPU devices on the worker node:
-```console
-$ kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
-...
-Spec:
-  Allocatable Devices:
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-18db0e85-99e9-c746-8531-ffeb86328b39
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-93d37703-997c-c46f-a531-755e3e0dc2ac
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744
-...
+```
+$ kubectl get resourceslice -o yaml
+apiVersion: v1
+items:
+- apiVersion: resource.k8s.io/v1alpha2
+  driverName: gpu.resource.example.com
+  kind: ResourceSlice
+  metadata:
+    creationTimestamp: "2024-04-17T13:45:44Z"
+    generateName: dra-example-driver-cluster-worker-gpu.resource.example.com-
+    name: dra-example-driver-cluster-worker-gpu.resource.example.comxktph
+    ownerReferences:
+    - apiVersion: v1
+      controller: true
+      kind: Node
+      name: dra-example-driver-cluster-worker
+      uid: 4dc7c3b2-d99c-492b-8ede-37d435e56b2d
+    resourceVersion: "1189"
+    uid: 61c965b5-54a9-40ee-88a1-c52a814fa624
+  namedResources:
+    instances:
+    - name: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+    - name: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+    - name: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+    - name: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+    - name: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+    - name: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+    - name: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+    - name: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+  nodeName: dra-example-driver-cluster-worker
+kind: List
+metadata:
+  resourceVersion: ""
 ```
 
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `ClaimParameter` objects can be used to
 request access to resources in various ways:
 ```bash
-kubectl apply --filename=gpu-test{1,2,3,4}.yaml
+kubectl apply --filename=demo/gpu-test{1,2,3,4}.yaml
 ```
 
 And verify that they are coming up successfully:
@@ -196,47 +198,13 @@ You can use the UUIDs of the GPUs set in these environment variables to verify
 that they were handed out in a way consistent with the semantics shown in the
 figure above.
 
-Likewise, looking at the `ClaimAllocations` section of the
-`NodeAllocationState` object on the worker node will show which GPUs have been
-allocated to a given `ResourceClaim` by the resource driver:
-```console
-$ kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
-...
-Spec:
-  ...
-  Prepared Claims:
-    132ccf41-2ec6-4751-a0e5-94f3635a679a:
-      Gpu:
-        Devices:
-          Uuid:  GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-    330d73e1-b5bb-40be-bc4b-2b940f1bf34f:
-      Gpu:
-        Devices:
-          Uuid:  GPU-18db0e85-99e9-c746-8531-ffeb86328b39
-    d764a8d4-4481-4bc6-959b-27695f434953:
-      Gpu:
-        Devices:
-          Uuid:  GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744
-          Uuid:  GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-          Uuid:  GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-          Uuid:  GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-    e811664d-e487-4eb7-9ac7-678c837cbb32:
-      Gpu:
-        Devices:
-          Uuid:  GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-    ef07764f-8dc0-4c4b-a99f-328711702e63:
-      Gpu:
-        Devices:
-          Uuid:  GPU-93d37703-997c-c46f-a531-755e3e0dc2ac
-```
-
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=gpu-test{1,2,3,4}.yaml
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4}.yaml
 ```
 
-Wait for them to terminate:
+And wait for them to terminate:
 ```console
 $ kubectl get pod -A
 NAMESPACE   NAME   READY   STATUS        RESTARTS   AGE
@@ -250,44 +218,10 @@ gpu-test4   pod0   1/1     Terminating   0          31m
 ...
 ```
 
-And show that the `ClaimAllocations` section of the `NodeAllocationState`
-object on the worker node is now back to its initial state:
-```console
-$ kubectl describe -n dra-example-driver nas/dra-example-driver-cluster-worker
-...
-Spec:
-  Allocatable Devices:
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-18db0e85-99e9-c746-8531-ffeb86328b39
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-93d37703-997c-c46f-a531-755e3e0dc2ac
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-    Gpu:
-      Product Name:  LATEST-GPU-MODEL
-      Uuid:          GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-...
-```
-
 Finally, you can run the following to cleanup your environment and delete the
 `kind` cluster started previously:
 ```bash
-./delete-cluster.sh
+./demo/delete-cluster.sh
 ```
 
 ## Anatomy of a DRA resource driver

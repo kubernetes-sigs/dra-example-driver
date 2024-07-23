@@ -23,7 +23,7 @@ import (
 	cdiapi "github.com/container-orchestrated-devices/container-device-interface/pkg/cdi"
 	cdispec "github.com/container-orchestrated-devices/container-device-interface/specs-go"
 
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 const (
@@ -99,13 +99,13 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDev
 
 	gpuIdx := 0
 	switch devices.Type() {
-	case nascrd.GpuDeviceType:
+	case gpucrd.GpuDeviceType:
 		for _, device := range devices.Gpu.Devices {
 			cdiDevice := cdispec.Device{
-				Name: device.uuid,
+				Name: device.UUID,
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
-						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.uuid),
+						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.UUID),
 					},
 				},
 			}
@@ -136,9 +136,9 @@ func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices
 	}
 
 	switch devices.Type() {
-	case nascrd.GpuDeviceType:
+	case gpucrd.GpuDeviceType:
 		for _, device := range devices.Gpu.Devices {
-			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.uuid)
+			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.UUID)
 			cdiDevices = append(cdiDevices, cdiDevice)
 		}
 	default:

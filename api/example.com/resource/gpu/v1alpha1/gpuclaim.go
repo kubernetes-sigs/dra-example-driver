@@ -22,7 +22,7 @@ import (
 
 // GpuClaimParametersSpec is the spec for the GpuClaimParameters CRD.
 type GpuClaimParametersSpec struct {
-	Count int `json:"count,omitempty"`
+	Count *int `json:"count,omitempty"`
 }
 
 // +genclient

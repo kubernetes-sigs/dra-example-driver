@@ -28,7 +28,6 @@ import (
 	plugin "k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
 	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	exampleclientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
@@ -37,14 +36,15 @@ import (
 const (
 	DriverName = gpucrd.GroupName
 
-	PluginRegistrationPath = "/var/lib/kubelet/plugins_registry/" + DriverName + ".sock"
-	DriverPluginPath       = "/var/lib/kubelet/plugins/" + DriverName
-	DriverPluginSocketPath = DriverPluginPath + "/plugin.sock"
+	PluginRegistrationPath     = "/var/lib/kubelet/plugins_registry/" + DriverName + ".sock"
+	DriverPluginPath           = "/var/lib/kubelet/plugins/" + DriverName
+	DriverPluginSocketPath     = DriverPluginPath + "/plugin.sock"
+	DriverPluginCheckpointFile = "checkpoint.json"
 )
 
 type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
-	nasConfig        flags.NasConfig
+	crdConfig        flags.CRDConfig
 	loggingConfig    *flags.LoggingConfig
 
 	cdiRoot string
@@ -52,7 +52,6 @@ type Flags struct {
 
 type Config struct {
 	flags         *Flags
-	nascr         *nascrd.NodeAllocationState
 	exampleclient exampleclientset.Interface
 }
 
@@ -77,7 +76,7 @@ func newApp() *cli.App {
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
-	cliFlags = append(cliFlags, flags.nasConfig.Flags()...)
+	cliFlags = append(cliFlags, flags.crdConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
 	app := &cli.App{
@@ -99,14 +98,8 @@ func newApp() *cli.App {
 				return fmt.Errorf("create client: %v", err)
 			}
 
-			nascr, err := flags.nasConfig.NewNodeAllocationState(ctx, clientSets.Core)
-			if err != nil {
-				return fmt.Errorf("create NodeAllocationState CR: %v", err)
-			}
-
 			config := &Config{
 				flags:         flags,
-				nascr:         nascr,
 				exampleclient: clientSets.Example,
 			}
 

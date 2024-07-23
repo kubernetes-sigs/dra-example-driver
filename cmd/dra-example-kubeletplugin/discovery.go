@@ -32,7 +32,7 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 	for _, uuid := range uuids {
 		deviceInfo := &AllocatableDeviceInfo{
 			GpuInfo: &GpuInfo{
-				uuid:  uuid,
+				UUID:  uuid,
 				model: "LATEST-GPU-MODEL",
 			},
 		}

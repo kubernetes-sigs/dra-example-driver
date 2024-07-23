@@ -18,32 +18,51 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
-	nascrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/nas/v1alpha1"
+	resourceapi "k8s.io/api/resource/v1alpha2"
+	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
+
+	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 type AllocatableDevices map[string]*AllocatableDeviceInfo
 type PreparedClaims map[string]*PreparedDevices
 
 type GpuInfo struct {
-	uuid  string
+	UUID  string `json:"uuid"`
 	model string
 }
 
+type AllocatedGpus struct {
+	Devices []string `json:"devices"`
+}
+
+type AllocatedDevices struct {
+	Gpu *AllocatedGpus `json:"gpu"`
+}
+
 type PreparedGpus struct {
-	Devices []*GpuInfo
+	Devices []*GpuInfo `json:"devices"`
 }
 
 type PreparedDevices struct {
-	Gpu *PreparedGpus
+	Gpu *PreparedGpus `json:"gpu"`
+}
+
+func (d AllocatedDevices) Type() string {
+	if d.Gpu != nil {
+		return gpucrd.GpuDeviceType
+	}
+	return gpucrd.UnknownDeviceType
 }
 
 func (d PreparedDevices) Type() string {
 	if d.Gpu != nil {
-		return nascrd.GpuDeviceType
+		return gpucrd.GpuDeviceType
 	}
-	return nascrd.UnknownDeviceType
+	return gpucrd.UnknownDeviceType
 }
 
 type AllocatableDeviceInfo struct {
@@ -52,9 +71,9 @@ type AllocatableDeviceInfo struct {
 
 type DeviceState struct {
 	sync.Mutex
-	cdi         *CDIHandler
-	allocatable AllocatableDevices
-	prepared    PreparedClaims
+	cdi               *CDIHandler
+	allocatable       AllocatableDevices
+	checkpointManager checkpointmanager.CheckpointManager
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -73,56 +92,82 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("unable to create CDI spec file for common edits: %v", err)
 	}
 
-	state := &DeviceState{
-		cdi:         cdi,
-		allocatable: allocatable,
-		prepared:    make(PreparedClaims),
+	checkpointManager, err := checkpointmanager.NewCheckpointManager(DriverPluginPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create checkpoint manager: %v", err)
 	}
 
-	err = state.syncPreparedDevicesFromCRDSpec(&config.nascr.Spec)
+	state := &DeviceState{
+		cdi:               cdi,
+		allocatable:       allocatable,
+		checkpointManager: checkpointManager,
+	}
+
+	checkpoints, err := state.checkpointManager.ListCheckpoints()
 	if err != nil {
-		return nil, fmt.Errorf("unable to sync prepared devices from CRD: %v", err)
+		return nil, fmt.Errorf("unable to list checkpoints: %v", err)
+	}
+
+	for _, c := range checkpoints {
+		if c == DriverPluginCheckpointFile {
+			return state, nil
+		}
+	}
+
+	checkpoint := newCheckpoint()
+	if err := state.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claimUID string, allocation nascrd.AllocatedDevices) ([]string, error) {
+func (s *DeviceState) Prepare(claimUID string, allocation AllocatedDevices) ([]string, error) {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.prepared[claimUID] != nil {
-		cdiDevices, err := s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID])
+	checkpoint := newCheckpoint()
+	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
+	}
+	preparedClaims := checkpoint.V1.PreparedClaims
+
+	if preparedClaims[claimUID] != nil {
+		cdiDevices, err := s.cdi.GetClaimDevices(claimUID, preparedClaims[claimUID])
 		if err != nil {
 			return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
 		}
 		return cdiDevices, nil
 	}
 
-	prepared := &PreparedDevices{}
+	preparedDevices := &PreparedDevices{}
 
 	var err error
 	switch allocation.Type() {
-	case nascrd.GpuDeviceType:
-		prepared.Gpu, err = s.prepareGpus(claimUID, allocation.Gpu)
+	case gpucrd.GpuDeviceType:
+		preparedDevices.Gpu, err = s.prepareGpus(claimUID, allocation.Gpu)
 	default:
 		err = fmt.Errorf("unknown device type: %v", allocation.Type())
 	}
 	if err != nil {
-		return nil, fmt.Errorf("allocation failed: %v", err)
+		return nil, fmt.Errorf("praparation failed: %v", err)
 	}
 
-	err = s.cdi.CreateClaimSpecFile(claimUID, prepared)
+	err = s.cdi.CreateClaimSpecFile(claimUID, preparedDevices)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
 	}
 
-	s.prepared[claimUID] = prepared
-
-	cdiDevices, err := s.cdi.GetClaimDevices(claimUID, s.prepared[claimUID])
+	cdiDevices, err := s.cdi.GetClaimDevices(claimUID, preparedDevices)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
 	}
+
+	preparedClaims[claimUID] = preparedDevices
+	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
+	}
+
 	return cdiDevices, nil
 }
 
@@ -130,18 +175,24 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	s.Lock()
 	defer s.Unlock()
 
-	if s.prepared[claimUID] == nil {
+	checkpoint := newCheckpoint()
+	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return fmt.Errorf("unable to sync from checkpoint: %v", err)
+	}
+	preparedClaims := checkpoint.V1.PreparedClaims
+
+	if preparedClaims[claimUID] == nil {
 		return nil
 	}
 
-	switch s.prepared[claimUID].Type() {
-	case nascrd.GpuDeviceType:
-		err := s.unprepareGpus(claimUID, s.prepared[claimUID])
+	switch preparedClaims[claimUID].Type() {
+	case gpucrd.GpuDeviceType:
+		err := s.unprepareGpus(claimUID, preparedClaims[claimUID])
 		if err != nil {
 			return fmt.Errorf("unprepare failed: %v", err)
 		}
 	default:
-		return fmt.Errorf("unknown device type: %v", s.prepared[claimUID].Type())
+		return fmt.Errorf("unknown device type: %v", preparedClaims[claimUID].Type())
 	}
 
 	err := s.cdi.DeleteClaimSpecFile(claimUID)
@@ -149,37 +200,22 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		return fmt.Errorf("unable to delete CDI spec file for claim: %v", err)
 	}
 
-	delete(s.prepared, claimUID)
+	delete(preparedClaims, claimUID)
+	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return fmt.Errorf("unable to sync to checkpoint: %v", err)
+	}
 
 	return nil
 }
 
-func (s *DeviceState) GetUpdatedSpec(inspec *nascrd.NodeAllocationStateSpec) (*nascrd.NodeAllocationStateSpec, error) {
-	s.Lock()
-	defer s.Unlock()
-
-	outspec := inspec.DeepCopy()
-	err := s.syncAllocatableDevicesToCRDSpec(outspec)
-	if err != nil {
-		return nil, fmt.Errorf("synching allocatable devices to CR spec: %v", err)
-	}
-
-	err = s.syncPreparedDevicesToCRDSpec(outspec)
-	if err != nil {
-		return nil, fmt.Errorf("synching prepared devices to CR spec: %v", err)
-	}
-
-	return outspec, nil
-}
-
-func (s *DeviceState) prepareGpus(claimUID string, allocated *nascrd.AllocatedGpus) (*PreparedGpus, error) {
+func (s *DeviceState) prepareGpus(claimUID string, allocated *AllocatedGpus) (*PreparedGpus, error) {
 	prepared := &PreparedGpus{}
 
 	for _, device := range allocated.Devices {
-		gpuInfo := s.allocatable[device.UUID].GpuInfo
+		gpuInfo := s.allocatable[device].GpuInfo
 
-		if _, exists := s.allocatable[device.UUID]; !exists {
-			return nil, fmt.Errorf("requested GPU does not exist: %v", device.UUID)
+		if _, exists := s.allocatable[device]; !exists {
+			return nil, fmt.Errorf("requested GPU is not allocatable: %v", device)
 		}
 
 		prepared.Devices = append(prepared.Devices, gpuInfo)
@@ -192,68 +228,18 @@ func (s *DeviceState) unprepareGpus(claimUID string, devices *PreparedDevices) e
 	return nil
 }
 
-func (s *DeviceState) syncAllocatableDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
-	gpus := make(map[string]nascrd.AllocatableDevice)
+func (s *DeviceState) getResourceModelFromAllocatableDevices() resourceapi.ResourceModel {
+	var instances []resourceapi.NamedResourcesInstance
 	for _, device := range s.allocatable {
-		gpus[device.uuid] = nascrd.AllocatableDevice{
-			Gpu: &nascrd.AllocatableGpu{
-				UUID:        device.uuid,
-				ProductName: device.model,
-			},
+		instance := resourceapi.NamedResourcesInstance{
+			Name: strings.ToLower(device.UUID),
 		}
+		instances = append(instances, instance)
 	}
 
-	var allocatable []nascrd.AllocatableDevice
-	for _, device := range gpus {
-		allocatable = append(allocatable, device)
+	model := resourceapi.ResourceModel{
+		NamedResources: &resourceapi.NamedResourcesResources{Instances: instances},
 	}
 
-	spec.AllocatableDevices = allocatable
-
-	return nil
-}
-
-func (s *DeviceState) syncPreparedDevicesFromCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
-	gpus := s.allocatable
-
-	prepared := make(PreparedClaims)
-	for claim, devices := range spec.PreparedClaims {
-		switch devices.Type() {
-		case nascrd.GpuDeviceType:
-			prepared[claim] = &PreparedDevices{Gpu: &PreparedGpus{}}
-			for _, d := range devices.Gpu.Devices {
-				prepared[claim].Gpu.Devices = append(prepared[claim].Gpu.Devices, gpus[d.UUID].GpuInfo)
-			}
-		default:
-			return fmt.Errorf("unknown device type: %v", devices.Type())
-		}
-	}
-
-	s.prepared = prepared
-
-	return nil
-}
-
-func (s *DeviceState) syncPreparedDevicesToCRDSpec(spec *nascrd.NodeAllocationStateSpec) error {
-	outcas := make(map[string]nascrd.PreparedDevices)
-	for claim, devices := range s.prepared {
-		var prepared nascrd.PreparedDevices
-		switch devices.Type() {
-		case nascrd.GpuDeviceType:
-			prepared.Gpu = &nascrd.PreparedGpus{}
-			for _, device := range devices.Gpu.Devices {
-				outdevice := nascrd.PreparedGpu{
-					UUID: device.uuid,
-				}
-				prepared.Gpu.Devices = append(prepared.Gpu.Devices, outdevice)
-			}
-		default:
-			return fmt.Errorf("unknown device type: %v", devices.Type())
-		}
-		outcas[claim] = prepared
-	}
-
-	spec.PreparedClaims = outcas
-
-	return nil
+	return model
 }
