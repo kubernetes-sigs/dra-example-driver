@@ -15,7 +15,10 @@ metadata:
   name: gpu.example.com
 spec:
   spec:
-    resourceClassName: gpu.example.com
+    devices:
+      requests:
+      - name: gpu
+        deviceClassName: gpu.example.com
 
 ---
 apiVersion: v1
@@ -41,5 +44,4 @@ spec:
       - name: shared-gpu
   resourceClaims:
   - name: shared-gpu
-    source:
-      resourceClaimTemplateName: gpu.example.com
+    resourceClaimTemplateName: gpu.example.com

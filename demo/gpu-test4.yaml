@@ -8,15 +8,6 @@ metadata:
   name: gpu-test4
 
 ---
-apiVersion: gpu.resource.example.com/v1alpha1
-kind: GpuClaimParameters
-metadata:
-  namespace: gpu-test4
-  name: multiple-gpus
-spec:
-  count: 4
-
----
 apiVersion: resource.k8s.io/v1alpha3
 kind: ResourceClaimTemplate
 metadata:
@@ -24,11 +15,12 @@ metadata:
   name: multiple-gpus
 spec:
   spec:
-    resourceClassName: gpu.example.com
-    parametersRef:
-      apiGroup: gpu.resource.example.com
-      kind: GpuClaimParameters
-      name: multiple-gpus
+    devices:
+      requests:
+      - name: gpus
+        deviceClassName: gpu.example.com
+        allocationMode: ExactCount
+        count: 4
 
 ---
 apiVersion: v1
@@ -49,5 +41,4 @@ spec:
       - name: gpus
   resourceClaims:
   - name: gpus
-    source:
-      resourceClaimTemplateName: multiple-gpus
+    resourceClaimTemplateName: multiple-gpus
