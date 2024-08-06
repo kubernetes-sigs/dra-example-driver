@@ -20,6 +20,9 @@ import (
 	"math/rand"
 	"os"
 
+	resourceapi "k8s.io/api/resource/v1alpha3"
+	"k8s.io/utils/ptr"
+
 	"github.com/google/uuid"
 )
 
@@ -30,13 +33,17 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 
 	alldevices := make(AllocatableDevices)
 	for _, uuid := range uuids {
-		deviceInfo := &AllocatableDeviceInfo{
-			GpuInfo: &GpuInfo{
-				UUID:  uuid,
-				model: "LATEST-GPU-MODEL",
+		device := resourceapi.Device{
+			Name: uuid,
+			Basic: &resourceapi.BasicDevice{
+				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"model": {
+						StringValue: ptr.To("LATEST-GPU-MODEL"),
+					},
+				},
 			},
 		}
-		alldevices[uuid] = deviceInfo
+		alldevices[uuid] = device
 	}
 	return alldevices, nil
 }
@@ -49,7 +56,7 @@ func generateUUIDs(seed string, count int) []string {
 		charset := make([]byte, 16)
 		rand.Read(charset)
 		uuid, _ := uuid.FromBytes(charset)
-		uuids[i] = "GPU-" + uuid.String()
+		uuids[i] = "gpu-" + uuid.String()
 	}
 
 	return uuids

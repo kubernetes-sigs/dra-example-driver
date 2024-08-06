@@ -22,8 +22,6 @@ import (
 
 	cdiapi "github.com/container-orchestrated-devices/container-device-interface/pkg/cdi"
 	cdispec "github.com/container-orchestrated-devices/container-device-interface/specs-go"
-
-	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 const (
@@ -89,7 +87,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.registry.SpecDB().WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDevices) error {
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevices) error {
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
 
 	spec := &cdispec.Spec{
@@ -98,22 +96,17 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices *PreparedDev
 	}
 
 	gpuIdx := 0
-	switch devices.Type() {
-	case gpucrd.GpuDeviceType:
-		for _, device := range devices.Gpu.Devices {
-			cdiDevice := cdispec.Device{
-				Name: device.UUID,
-				ContainerEdits: cdispec.ContainerEdits{
-					Env: []string{
-						fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.UUID),
-					},
+	for _, device := range devices {
+		cdiDevice := cdispec.Device{
+			Name: device.DeviceName,
+			ContainerEdits: cdispec.ContainerEdits{
+				Env: []string{
+					fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.DeviceName),
 				},
-			}
-			spec.Devices = append(spec.Devices, cdiDevice)
-			gpuIdx++
+			},
 		}
-	default:
-		return fmt.Errorf("unknown device type: %v", devices.Type())
+		spec.Devices = append(spec.Devices, cdiDevice)
+		gpuIdx++
 	}
 
 	minVersion, err := cdiapi.MinimumRequiredVersion(spec)
@@ -130,20 +123,15 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	return cdi.registry.SpecDB().RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices *PreparedDevices) ([]string, error) {
+func (cdi *CDIHandler) GetClaimDevices(devices []string) []string {
 	cdiDevices := []string{
 		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
 
-	switch devices.Type() {
-	case gpucrd.GpuDeviceType:
-		for _, device := range devices.Gpu.Devices {
-			cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device.UUID)
-			cdiDevices = append(cdiDevices, cdiDevice)
-		}
-	default:
-		return nil, fmt.Errorf("unknown device type: %v", devices.Type())
+	for _, device := range devices {
+		cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device)
+		cdiDevices = append(cdiDevices, cdiDevice)
 	}
 
-	return cdiDevices, nil
+	return cdiDevices
 }
