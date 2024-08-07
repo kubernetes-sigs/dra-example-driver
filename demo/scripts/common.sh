@@ -53,4 +53,4 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 
 # Container tool, e.g. docker/podman
-: ${DOCKER:="docker"}
+: ${CONTAINER_TOOL:="docker"}
