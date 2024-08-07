@@ -147,9 +147,9 @@ generate-crds: vendor
 	fi
 
 ifeq ($(DOCKER),podman)
-DOCKER_OPTS="-v $(PWD):$(PWD):Z"
+DOCKER_OPTS=-v $(PWD):$(PWD):Z
 else
-DOCKER_OPTS="-v $(PWD):$(PWD) --user $$(id -u):$$(id -g)"
+DOCKER_OPTS=-v $(PWD):$(PWD) --user $$(id -u):$$(id -g)
 endif
 
 $(DOCKER_TARGETS): docker-%: .build-image
