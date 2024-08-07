@@ -28,7 +28,7 @@ IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
 ubuntu22.04: BASE_IMAGE = docker.io/ubuntu:22.04
 
-ubi9: BASE_IMAGE = registry.access.redhat.com/ubi9/ubi-micro:latest
+ubi9: BASE_IMAGE = registry.access.redhat.com/ubi9/ubi-micro:9.4
 
 # Use a generic build target to build the relevant imsages
 $(DISTRIBUTIONS):
