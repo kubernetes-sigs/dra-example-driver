@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-DOCKER   ?= docker
+CONTAINER_TOOL ?= docker
 MKDIR    ?= mkdir
 TR       ?= tr
 DIST_DIR ?= $(CURDIR)/dist
@@ -138,7 +138,7 @@ generate-crds: vendor
 .PHONY: .build-image
 .build-image: docker/Dockerfile.devel
 	if [ x"$(SKIP_IMAGE_BUILD)" = x"" ]; then \
-		$(DOCKER) build \
+		$(CONTAINER_TOOL) build \
 			--progress=plain \
 			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 			--tag $(BUILDIMAGE) \
@@ -146,29 +146,33 @@ generate-crds: vendor
 			docker; \
 	fi
 
+ifeq ($(CONTAINER_TOOL),podman)
+CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD):Z
+else
+CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD) --user $$(id -u):$$(id -g)
+endif
+
 $(DOCKER_TARGETS): docker-%: .build-image
-	@echo "Running 'make $(*)' in docker container $(BUILDIMAGE)"
-	$(DOCKER) run \
+	@echo "Running 'make $(*)' in container $(BUILDIMAGE)"
+	$(CONTAINER_TOOL) run \
 		--rm \
 		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
-		-v $(PWD):$(PWD) \
+		$(CONTAINER_TOOL_OPTS) \
 		-w $(PWD) \
-		--user $$(id -u):$$(id -g) \
 		$(BUILDIMAGE) \
 			make $(*)
 
 # Start an interactive shell using the development image.
 PHONY: .shell
 .shell:
-	$(DOCKER) run \
+	$(CONTAINER_TOOL) run \
 		--rm \
 		-ti \
 		-e HOME=$(PWD) \
 		-e GOCACHE=$(PWD)/.cache/go \
 		-e GOPATH=$(PWD)/.cache/gopath \
-		-v $(PWD):$(PWD) \
+		$(CONTAINER_TOOL_OPTS) \
 		-w $(PWD) \
-		--user $$(id -u):$$(id -g) \
 		$(BUILDIMAGE)
