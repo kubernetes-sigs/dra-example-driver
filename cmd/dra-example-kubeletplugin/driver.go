@@ -20,93 +20,92 @@ import (
 	"context"
 	"fmt"
 
-	resourceapi "k8s.io/api/resource/v1alpha2"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	coreclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha3"
+
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha4"
 )
 
 var _ drapbv1.NodeServer = &driver{}
 
 type driver struct {
-	doneCh chan struct{}
+	client coreclientset.Interface
+	plugin kubeletplugin.DRAPlugin
 	state  *DeviceState
 }
 
 func NewDriver(ctx context.Context, config *Config) (*driver, error) {
+	driver := &driver{
+		client: config.coreclient,
+	}
+
 	state, err := NewDeviceState(config)
 	if err != nil {
 		return nil, err
 	}
+	driver.state = state
 
-	d := &driver{
-		state: state,
+	plugin, err := kubeletplugin.Start(
+		ctx,
+		driver,
+		kubeletplugin.KubeClient(config.coreclient),
+		kubeletplugin.NodeName(config.flags.nodeName),
+		kubeletplugin.DriverName(DriverName),
+		kubeletplugin.RegistrarSocketPath(PluginRegistrationPath),
+		kubeletplugin.PluginSocketPath(DriverPluginSocketPath),
+		kubeletplugin.KubeletPluginSocketPath(DriverPluginSocketPath))
+	if err != nil {
+		return nil, err
 	}
+	driver.plugin = plugin
 
-	return d, nil
+	var resources kubeletplugin.Resources
+	for _, device := range state.allocatable {
+		resources.Devices = append(resources.Devices, device)
+	}
+	plugin.PublishResources(ctx, resources)
+
+	return driver, nil
 }
 
 func (d *driver) Shutdown(ctx context.Context) error {
-	close(d.doneCh)
+	d.plugin.Stop()
 	return nil
-}
-
-func (d *driver) NodeListAndWatchResources(req *drapbv1.NodeListAndWatchResourcesRequest, stream drapbv1.Node_NodeListAndWatchResourcesServer) error {
-	model := d.state.getResourceModelFromAllocatableDevices()
-	resp := &drapbv1.NodeListAndWatchResourcesResponse{
-		Resources: []*resourceapi.ResourceModel{&model},
-	}
-
-	if err := stream.Send(resp); err != nil {
-		return err
-	}
-
-	//nolint:all,S1000: should use for range instead of for { select {} } (gosimple)
-	for {
-		select {
-		case <-d.doneCh:
-			return nil
-		}
-		// TODO: Update with case for when GPUs go unhealthy
-	}
 }
 
 func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrepareResourcesRequest) (*drapbv1.NodePrepareResourcesResponse, error) {
 	klog.Infof("NodePrepareResource is called: number of claims: %d", len(req.Claims))
 	preparedResources := &drapbv1.NodePrepareResourcesResponse{Claims: map[string]*drapbv1.NodePrepareResourceResponse{}}
 
-	// In production version some common operations of d.nodeUnprepareResources
-	// should be done outside of the loop, for instance updating the CR could
-	// be done once after all HW was prepared.
 	for _, claim := range req.Claims {
-		preparedResources.Claims[claim.Uid] = d.nodePrepareResource(ctx, claim)
+		preparedResources.Claims[claim.UID] = d.nodePrepareResource(ctx, claim)
 	}
 
 	return preparedResources, nil
 }
 
 func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
-	if len(claim.StructuredResourceHandle) == 0 {
-		return &drapbv1.NodePrepareResourceResponse{
-			Error: "driver only supports structured parameters",
-		}
-	}
-
-	allocated, err := d.getAllocatedDevices(ctx, claim)
+	resourceClaim, err := d.client.ResourceV1alpha3().ResourceClaims(claim.Namespace).Get(
+		ctx,
+		claim.Name,
+		metav1.GetOptions{})
 	if err != nil {
 		return &drapbv1.NodePrepareResourceResponse{
-			Error: fmt.Sprintf("error allocating devices for claim %v: %v", claim.Uid, err),
+			Error: fmt.Sprintf("failed to fetch ResourceClaim %s in namespace %s", claim.Name, claim.Namespace),
 		}
 	}
 
-	prepared, err := d.state.Prepare(claim.Uid, allocated)
+	prepared, err := d.state.Prepare(resourceClaim)
 	if err != nil {
 		return &drapbv1.NodePrepareResourceResponse{
-			Error: fmt.Sprintf("error preparing devices for claim %v: %v", claim.Uid, err),
+			Error: fmt.Sprintf("error preparing devices for claim %v: %v", claim.UID, err),
 		}
 	}
 
-	klog.Infof("Returning newly prepared devices for claim '%v': %s", claim.Uid, prepared)
-	return &drapbv1.NodePrepareResourceResponse{CDIDevices: prepared}
+	klog.Infof("Returning newly prepared devices for claim '%v': %v", claim.UID, prepared)
+	return &drapbv1.NodePrepareResourceResponse{Devices: prepared}
 }
 
 func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUnprepareResourcesRequest) (*drapbv1.NodeUnprepareResourcesResponse, error) {
@@ -114,38 +113,18 @@ func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUn
 	unpreparedResources := &drapbv1.NodeUnprepareResourcesResponse{Claims: map[string]*drapbv1.NodeUnprepareResourceResponse{}}
 
 	for _, claim := range req.Claims {
-		unpreparedResources.Claims[claim.Uid] = d.nodeUnprepareResource(ctx, claim)
+		unpreparedResources.Claims[claim.UID] = d.nodeUnprepareResource(ctx, claim)
 	}
 
 	return unpreparedResources, nil
 }
 
 func (d *driver) nodeUnprepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodeUnprepareResourceResponse {
-	if len(claim.StructuredResourceHandle) == 0 {
+	if err := d.state.Unprepare(claim.UID); err != nil {
 		return &drapbv1.NodeUnprepareResourceResponse{
-			Error: "driver only supports structured parameters",
-		}
-	}
-
-	if err := d.state.Unprepare(claim.Uid); err != nil {
-		return &drapbv1.NodeUnprepareResourceResponse{
-			Error: fmt.Sprintf("error unpreparing devices for claim %v: %v", claim.Uid, err),
+			Error: fmt.Sprintf("error unpreparing devices for claim %v: %v", claim.UID, err),
 		}
 	}
 
 	return &drapbv1.NodeUnprepareResourceResponse{}
-}
-
-func (d *driver) getAllocatedDevices(ctx context.Context, claim *drapbv1.Claim) (AllocatedDevices, error) {
-	allocated := AllocatedDevices{
-		Gpu: &AllocatedGpus{},
-	}
-
-	for _, r := range claim.StructuredResourceHandle[0].Results {
-		name := r.AllocationResultModel.NamedResources.Name
-		gpu := fmt.Sprintf("GPU-%s", name[4:])
-		allocated.Gpu.Devices = append(allocated.Gpu.Devices, gpu)
-	}
-
-	return allocated, nil
 }

@@ -18,56 +18,16 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"sync"
 
-	resourceapi "k8s.io/api/resource/v1alpha2"
+	resourceapi "k8s.io/api/resource/v1alpha3"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha4"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
-
-	gpucrd "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
-type AllocatableDevices map[string]*AllocatableDeviceInfo
-type PreparedClaims map[string]*PreparedDevices
-
-type GpuInfo struct {
-	UUID  string `json:"uuid"`
-	model string
-}
-
-type AllocatedGpus struct {
-	Devices []string `json:"devices"`
-}
-
-type AllocatedDevices struct {
-	Gpu *AllocatedGpus `json:"gpu"`
-}
-
-type PreparedGpus struct {
-	Devices []*GpuInfo `json:"devices"`
-}
-
-type PreparedDevices struct {
-	Gpu *PreparedGpus `json:"gpu"`
-}
-
-func (d AllocatedDevices) Type() string {
-	if d.Gpu != nil {
-		return gpucrd.GpuDeviceType
-	}
-	return gpucrd.UnknownDeviceType
-}
-
-func (d PreparedDevices) Type() string {
-	if d.Gpu != nil {
-		return gpucrd.GpuDeviceType
-	}
-	return gpucrd.UnknownDeviceType
-}
-
-type AllocatableDeviceInfo struct {
-	*GpuInfo
-}
+type AllocatableDevices map[string]resourceapi.Device
+type PreparedDevices []*drapbv1.Device
+type PreparedClaims map[string]PreparedDevices
 
 type DeviceState struct {
 	sync.Mutex
@@ -122,9 +82,11 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claimUID string, allocation AllocatedDevices) ([]string, error) {
+func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
 	s.Lock()
 	defer s.Unlock()
+
+	claimUID := string(claim.UID)
 
 	checkpoint := newCheckpoint()
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
@@ -133,34 +95,16 @@ func (s *DeviceState) Prepare(claimUID string, allocation AllocatedDevices) ([]s
 	preparedClaims := checkpoint.V1.PreparedClaims
 
 	if preparedClaims[claimUID] != nil {
-		cdiDevices, err := s.cdi.GetClaimDevices(claimUID, preparedClaims[claimUID])
-		if err != nil {
-			return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
-		}
-		return cdiDevices, nil
+		return preparedClaims[claimUID], nil
 	}
 
-	preparedDevices := &PreparedDevices{}
-
-	var err error
-	switch allocation.Type() {
-	case gpucrd.GpuDeviceType:
-		preparedDevices.Gpu, err = s.prepareGpus(claimUID, allocation.Gpu)
-	default:
-		err = fmt.Errorf("unknown device type: %v", allocation.Type())
-	}
+	preparedDevices, err := s.prepareDevices(claim)
 	if err != nil {
-		return nil, fmt.Errorf("praparation failed: %v", err)
+		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
 
-	err = s.cdi.CreateClaimSpecFile(claimUID, preparedDevices)
-	if err != nil {
+	if err = s.cdi.CreateClaimSpecFile(claimUID, preparedDevices); err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
-	}
-
-	cdiDevices, err := s.cdi.GetClaimDevices(claimUID, preparedDevices)
-	if err != nil {
-		return nil, fmt.Errorf("unable to get CDI devices names: %v", err)
 	}
 
 	preparedClaims[claimUID] = preparedDevices
@@ -168,7 +112,7 @@ func (s *DeviceState) Prepare(claimUID string, allocation AllocatedDevices) ([]s
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
-	return cdiDevices, nil
+	return preparedClaims[claimUID], nil
 }
 
 func (s *DeviceState) Unprepare(claimUID string) error {
@@ -185,14 +129,8 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		return nil
 	}
 
-	switch preparedClaims[claimUID].Type() {
-	case gpucrd.GpuDeviceType:
-		err := s.unprepareGpus(claimUID, preparedClaims[claimUID])
-		if err != nil {
-			return fmt.Errorf("unprepare failed: %v", err)
-		}
-	default:
-		return fmt.Errorf("unknown device type: %v", preparedClaims[claimUID].Type())
+	if err := s.unprepareDevices(claimUID, preparedClaims[claimUID]); err != nil {
+		return fmt.Errorf("unprepare failed: %v", err)
 	}
 
 	err := s.cdi.DeleteClaimSpecFile(claimUID)
@@ -208,38 +146,30 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
-func (s *DeviceState) prepareGpus(claimUID string, allocated *AllocatedGpus) (*PreparedGpus, error) {
-	prepared := &PreparedGpus{}
-
-	for _, device := range allocated.Devices {
-		gpuInfo := s.allocatable[device].GpuInfo
-
-		if _, exists := s.allocatable[device]; !exists {
-			return nil, fmt.Errorf("requested GPU is not allocatable: %v", device)
-		}
-
-		prepared.Devices = append(prepared.Devices, gpuInfo)
+func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
+	if claim.Status.Allocation == nil {
+		return nil, fmt.Errorf("claim not yet allocated")
 	}
 
-	return prepared, nil
+	var preparedDevices PreparedDevices
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		if _, exists := s.allocatable[result.Device]; !exists {
+			return nil, fmt.Errorf("requested GPU is not allocatable: %v", result.Device)
+		}
+
+		device := &drapbv1.Device{
+			RequestNames: []string{result.Request},
+			PoolName:     result.Pool,
+			DeviceName:   result.Device,
+			CDIDeviceIDs: s.cdi.GetClaimDevices([]string{result.Device}),
+		}
+
+		preparedDevices = append(preparedDevices, device)
+	}
+
+	return preparedDevices, nil
 }
 
-func (s *DeviceState) unprepareGpus(claimUID string, devices *PreparedDevices) error {
+func (s *DeviceState) unprepareDevices(claimUID string, devices PreparedDevices) error {
 	return nil
-}
-
-func (s *DeviceState) getResourceModelFromAllocatableDevices() resourceapi.ResourceModel {
-	var instances []resourceapi.NamedResourcesInstance
-	for _, device := range s.allocatable {
-		instance := resourceapi.NamedResourcesInstance{
-			Name: strings.ToLower(device.UUID),
-		}
-		instances = append(instances, instance)
-	}
-
-	model := resourceapi.ResourceModel{
-		NamedResources: &resourceapi.NamedResourcesResources{Instances: instances},
-	}
-
-	return model
 }

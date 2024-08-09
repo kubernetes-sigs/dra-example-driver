@@ -31,8 +31,11 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${DRIVER_IMAGE_TAG:="v0.1.0"}
 : ${DRIVER_IMAGE_PLATFORM:="ubuntu22.04"}
 
+# The kubernetes repo to build the kind cluster from
+: ${KIND_K8S_REPO:="https://github.com/kubernetes/kubernetes.git"}
+
 # The kubernetes tag to build the kind cluster from
-# From https://github.com/kubernetes/kubernetes/tags
+# From ${KIND_K8S_REPO}/tags
 : ${KIND_K8S_TAG:="v1.30.2"}
 
 # At present, kind has a new enough node image that we don't need to build our
