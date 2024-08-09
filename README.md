@@ -45,8 +45,14 @@ From here we will build the image for the example resource driver:
 
 And create a `kind` cluster to run it in:
 ```bash
-./demo/create-cluster.sh
+KUBE_GIT_VERSION=v1.30.0 BUILD_KIND_IMAGE=true KIND_K8S_TAG=v1.31.0-rc.1 ./demo/create-cluster.sh
 ```
+
+**Note**: The environment variables in the command above allow us to build a
+local node image against Kubernetes v1.31.0-rc.1. Once `kind` releases a node
+image for v1.31 these extra environment variables will no longer be needed. If
+you only plan on running tests for Kubernetes 1.30 then you can just use the
+latest `kind` image for v1.30 and omit these extra environment variables.
 
 Once the cluster has been created successfully, double check everything is
 coming up as expected:
@@ -79,7 +85,6 @@ Double check the driver components have come up successfully:
 ```console
 $ kubectl get pod -n dra-example-driver
 NAME                                             READY   STATUS    RESTARTS   AGE
-dra-example-driver-controller-7555d488db-nbd52   1/1     Running   0          1m
 dra-example-driver-kubeletplugin-qwmbl           1/1     Running   0          1m
 ```
 
@@ -88,32 +93,133 @@ And show the initial state of available GPU devices on the worker node:
 $ kubectl get resourceslice -o yaml
 apiVersion: v1
 items:
-- apiVersion: resource.k8s.io/v1alpha2
-  driverName: gpu.resource.example.com
+- apiVersion: resource.k8s.io/v1alpha3
   kind: ResourceSlice
   metadata:
-    creationTimestamp: "2024-04-17T13:45:44Z"
-    generateName: dra-example-driver-cluster-worker-gpu.resource.example.com-
-    name: dra-example-driver-cluster-worker-gpu.resource.example.comxktph
+    creationTimestamp: "2024-07-16T13:00:06Z"
+    generateName: dra-example-driver-cluster-worker-gpu.example.com-
+    generation: 1
+    name: dra-example-driver-cluster-worker-gpu.example.com-xhsqf
     ownerReferences:
     - apiVersion: v1
       controller: true
       kind: Node
       name: dra-example-driver-cluster-worker
-      uid: 4dc7c3b2-d99c-492b-8ede-37d435e56b2d
-    resourceVersion: "1189"
-    uid: 61c965b5-54a9-40ee-88a1-c52a814fa624
-  namedResources:
-    instances:
-    - name: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-    - name: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-    - name: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
-    - name: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
-    - name: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
-    - name: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-    - name: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-    - name: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-  nodeName: dra-example-driver-cluster-worker
+      uid: 8a18f216-bd77-426a-86b1-a989bdacc135
+    resourceVersion: "854"
+    uid: ea955e01-eaf0-45ed-8a36-1c56e4b8bced
+  spec:
+    driver: gpu.example.com
+    nodeName: dra-example-driver-cluster-worker
+    pool:
+      generation: 0
+      name: dra-example-driver-cluster-worker
+      resourceSliceCount: 1
+    devices:
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 0
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+        capacity:
+          memory: 80Gi
+      name: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 1
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+        capacity:
+          memory: 80Gi
+      name: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 2
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+        capacity:
+          memory: 80Gi
+      name: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 3
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+        capacity:
+          memory: 80Gi
+      name: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 4
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+        capacity:
+          memory: 80Gi
+      name: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 5
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+        capacity:
+          memory: 80Gi
+      name: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 6
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+        capacity:
+          memory: 80Gi
+      name: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+    - basic:
+        attributes:
+          driverVersion:
+            version: 1.0.0
+          index:
+            int: 7
+          model:
+            string: LATEST-GPU-MODEL
+          uuid:
+            string: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+        capacity:
+          memory: 80Gi
+      name: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
 kind: List
 metadata:
   resourceVersion: ""
@@ -165,28 +271,28 @@ This should produce output similar to the following:
 ```bash
 gpu-test1:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="GPU-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
+declare -x GPU_DEVICE_0="gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
 pod1 ctr0:
-declare -x GPU_DEVICE_0="GPU-ee3e4b55-fcda-44b8-0605-64b7a9967744"
+declare -x GPU_DEVICE_0="gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
 
 gpu-test2:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
+declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
 pod0 ctr1:
-declare -x GPU_DEVICE_0="GPU-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
+declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
 
 gpu-test3:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="GPU-93d37703-997c-c46f-a531-755e3e0dc2ac"
+declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
 pod1 ctr0:
-declare -x GPU_DEVICE_0="GPU-93d37703-997c-c46f-a531-755e3e0dc2ac"
+declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
 
 gpu-test4:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="GPU-18db0e85-99e9-c746-8531-ffeb86328b39"
-declare -x GPU_DEVICE_1="GPU-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
-declare -x GPU_DEVICE_2="GPU-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
-declare -x GPU_DEVICE_3="GPU-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
+declare -x GPU_DEVICE_0="gpu-18db0e85-99e9-c746-8531-ffeb86328b39"
+declare -x GPU_DEVICE_1="gpu-93d37703-997c-c46f-a531-755e3e0dc2ac"
+declare -x GPU_DEVICE_2="gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744"
+declare -x GPU_DEVICE_3="gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
 ```
 
 In this example resource driver, no "actual" GPUs are made available to any

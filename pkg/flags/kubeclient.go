@@ -24,8 +24,6 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-
-	exampleclientset "sigs.k8s.io/dra-example-driver/pkg/example.com/resource/clientset/versioned"
 )
 
 type KubeClientConfig struct {
@@ -35,8 +33,7 @@ type KubeClientConfig struct {
 }
 
 type ClientSets struct {
-	Core    coreclientset.Interface
-	Example exampleclientset.Interface
+	Core coreclientset.Interface
 }
 
 func (k *KubeClientConfig) Flags() []cli.Flag {
@@ -102,13 +99,7 @@ func (k *KubeClientConfig) NewClientSets() (ClientSets, error) {
 		return ClientSets{}, fmt.Errorf("create core client: %v", err)
 	}
 
-	exampleclient, err := exampleclientset.NewForConfig(csconfig)
-	if err != nil {
-		return ClientSets{}, fmt.Errorf("create example.com client: %v", err)
-	}
-
 	return ClientSets{
-		Core:    coreclient,
-		Example: exampleclient,
+		Core: coreclient,
 	}, nil
 }
