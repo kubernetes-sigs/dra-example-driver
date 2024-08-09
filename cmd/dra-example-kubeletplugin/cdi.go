@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
-	cdiapi "github.com/container-orchestrated-devices/container-device-interface/pkg/cdi"
-	cdispec "github.com/container-orchestrated-devices/container-device-interface/specs-go"
+	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
+	cdispec "tags.cncf.io/container-device-interface/specs-go"
 )
 
 const (
