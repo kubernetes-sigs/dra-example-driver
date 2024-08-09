@@ -21,6 +21,7 @@ import (
 	"os"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
+	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 )
 
@@ -33,28 +34,21 @@ const (
 )
 
 type CDIHandler struct {
-	registry cdiapi.Registry
+	cache *cdiapi.Cache
 }
 
 func NewCDIHandler(config *Config) (*CDIHandler, error) {
-	registry := cdiapi.GetRegistry(
+	cache, err := cdiapi.NewCache(
 		cdiapi.WithSpecDirs(config.flags.cdiRoot),
 	)
-
-	err := registry.Refresh()
 	if err != nil {
-		return nil, fmt.Errorf("unable to refresh the CDI registry: %v", err)
+		return nil, fmt.Errorf("unable to create a new CDI cache: %w", err)
 	}
-
 	handler := &CDIHandler{
-		registry: registry,
+		cache: cache,
 	}
 
 	return handler, nil
-}
-
-func (cdi *CDIHandler) GetDevice(device string) *cdiapi.Device {
-	return cdi.registry.DeviceDB().GetDevice(device)
 }
 
 func (cdi *CDIHandler) CreateCommonSpecFile() error {
@@ -84,7 +78,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 		return fmt.Errorf("failed to generate Spec name: %w", err)
 	}
 
-	return cdi.registry.SpecDB().WriteSpec(spec, specName)
+	return cdi.cache.WriteSpec(spec, specName)
 }
 
 func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevices) error {
@@ -115,21 +109,21 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 	}
 	spec.Version = minVersion
 
-	return cdi.registry.SpecDB().WriteSpec(spec, specName)
+	return cdi.cache.WriteSpec(spec, specName)
 }
 
 func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
-	return cdi.registry.SpecDB().RemoveSpec(specName)
+	return cdi.cache.RemoveSpec(specName)
 }
 
 func (cdi *CDIHandler) GetClaimDevices(devices []string) []string {
 	cdiDevices := []string{
-		cdiapi.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
+		cdiparser.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
 
 	for _, device := range devices {
-		cdiDevice := cdiapi.QualifiedName(cdiVendor, cdiClass, device)
+		cdiDevice := cdiparser.QualifiedName(cdiVendor, cdiClass, device)
 		cdiDevices = append(cdiDevices, cdiDevice)
 	}
 
