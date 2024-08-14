@@ -45,14 +45,8 @@ From here we will build the image for the example resource driver:
 
 And create a `kind` cluster to run it in:
 ```bash
-KUBE_GIT_VERSION=v1.30.0 BUILD_KIND_IMAGE=true KIND_K8S_TAG=v1.31.0-rc.1 ./demo/create-cluster.sh
+./demo/create-cluster.sh
 ```
-
-**Note**: The environment variables in the command above allow us to build a
-local node image against Kubernetes v1.31.0-rc.1. Once `kind` releases a node
-image for v1.31 these extra environment variables will no longer be needed. If
-you only plan on running tests for Kubernetes 1.30 then you can just use the
-latest `kind` image for v1.30 and omit these extra environment variables.
 
 Once the cluster has been created successfully, double check everything is
 coming up as expected:
