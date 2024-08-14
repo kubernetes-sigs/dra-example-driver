@@ -24,7 +24,7 @@ The procedure below has been tested and verified on both Linux and Mac.
 
 * [GNU Make 3.81+](https://www.gnu.org/software/make/)
 * [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
-* [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/)
+* [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/) or [Podman v4.9+](https://podman.io/docs/installation)
 * [kind v0.17.0+](https://kind.sigs.k8s.io/docs/user/quick-start/)
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
@@ -37,6 +37,11 @@ moment to browse through the various files and see what's available:
 git clone https://github.com/kubernetes-sigs/dra-example-driver.git
 cd dra-example-driver
 ```
+
+**Note**: The scripts will automatically use either `docker`, or `podman` as the container tool command, whichever
+can be found in the PATH. To override this behavior, set `CONTAINER_TOOL` environment variable either by calling
+`export CONTAINER_TOOL=docker`, or by prepending `CONTAINER_TOOL=docker` to a script
+(e.g. `CONTAINER_TOOL=docker ./path/to/script.sh`). Keep in mind that building Kind images currently requires Docker.
 
 From here we will build the image for the example resource driver:
 ```bash

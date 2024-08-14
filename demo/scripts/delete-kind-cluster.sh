@@ -27,5 +27,5 @@ set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
 
-kind delete cluster \
+${KIND} delete cluster \
 	--name "${KIND_CLUSTER_NAME}"

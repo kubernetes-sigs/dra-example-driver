@@ -3,3 +3,5 @@ vendor/
 [._]*.sw[a-p]
 
 ./dra-example-kubeletplugin
+
+driver_image.tar

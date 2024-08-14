@@ -27,7 +27,7 @@ set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
 
-kind create cluster \
+${KIND} create cluster \
 	--name "${KIND_CLUSTER_NAME}" \
 	--image "${KIND_IMAGE}" \
 	--config "${KIND_CLUSTER_CONFIG_PATH}"

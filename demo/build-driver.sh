@@ -31,7 +31,7 @@ source "${CURRENT_DIR}/scripts/common.sh"
 ${SCRIPTS_DIR}/build-driver-image.sh
 
 # If a cluster is already running, load the image onto its nodes
-EXISTING_CLUSTER="$(kind get clusters | grep -w "${KIND_CLUSTER_NAME}" || true)"
+EXISTING_CLUSTER="$(${KIND} get clusters | grep -w "${KIND_CLUSTER_NAME}" || true)"
 if [ "${EXISTING_CLUSTER}" != "" ]; then
 	${SCRIPTS_DIR}/load-driver-image-into-kind.sh
 fi
