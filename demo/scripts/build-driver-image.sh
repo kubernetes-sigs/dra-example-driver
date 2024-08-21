@@ -41,6 +41,7 @@ cd ${CURRENT_DIR}/../..
 export REGISTRY="${DRIVER_IMAGE_REGISTRY}"
 export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
+export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image
 make docker-generate

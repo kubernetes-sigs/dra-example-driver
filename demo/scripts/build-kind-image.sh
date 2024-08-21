@@ -28,9 +28,14 @@ set -o pipefail
 source "${CURRENT_DIR}/common.sh"
 
 # If an image ID already exists for the image we plan to build, we are done.
-EXISTING_IMAGE_ID="$(docker images --filter "reference=${KIND_IMAGE}" -q)"
+EXISTING_IMAGE_ID="$(${CONTAINER_TOOL} images --filter "reference=${KIND_IMAGE}" -q)"
 if [ "${EXISTING_IMAGE_ID}" != "" ]; then
 	exit 0
+fi
+
+if [[ "${CONTAINER_TOOL}" != "docker" ]]; then
+    echo "Building kind images requires Docker. Cannot use '${CONTAINER_TOOL}'"
+    exit 1
 fi
 
 # Create a temorary directory to hold all the artifacts we need for building the image
@@ -47,4 +52,4 @@ KIND_K8S_DIR="${TMP_DIR}/kubernetes-${KIND_K8S_TAG}"
 git clone --depth 1 --branch ${KIND_K8S_TAG} ${KIND_K8S_REPO} ${KIND_K8S_DIR}
 
 # Build the kind base image
-kind build node-image --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"
+${KIND} build node-image --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"

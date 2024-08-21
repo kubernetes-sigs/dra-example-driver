@@ -22,7 +22,7 @@
 # A reference to the current directory where this script is located
 SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
-# The name of the example driver 
+# The name of the example driver
 : ${DRIVER_NAME:=dra-example-driver}
 
 # The registry, image and tag for the example driver
@@ -55,3 +55,18 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 # The name of the kind image to build / run
 : ${KIND_IMAGE:="kindest/node:${KIND_K8S_TAG}"}
 
+# Container tool, e.g. docker/podman
+if [[ -z "${CONTAINER_TOOL}" ]]; then
+    if [[ -n "$(which docker)" ]]; then
+        echo "Docker found in PATH."
+        CONTAINER_TOOL=docker
+    elif [[ -n "$(which podman)" ]]; then
+        echo "Podman found in PATH."
+        CONTAINER_TOOL=podman
+    else
+        echo "No container tool detected. Please install Docker or Podman."
+        return 1
+    fi
+fi
+
+: ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
