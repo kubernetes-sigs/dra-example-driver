@@ -1,5 +1,5 @@
-# One shared, global claim providing access to a GPU
-# Two pods, each asking for access to the shared GPU
+# One pod, two containers
+# Each asking for shared access to a single GPU
 
 ---
 apiVersion: v1
@@ -9,15 +9,16 @@ metadata:
 
 ---
 apiVersion: resource.k8s.io/v1alpha3
-kind: ResourceClaim
+kind: ResourceClaimTemplate
 metadata:
   namespace: gpu-test3
-  name: shared-gpu
+  name: single-gpu
 spec:
-  devices:
-    requests:
-    - name: gpu
-      deviceClassName: gpu.example.com
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        deviceClassName: gpu.example.com
 
 ---
 apiVersion: v1
@@ -25,8 +26,6 @@ kind: Pod
 metadata:
   namespace: gpu-test3
   name: pod0
-  labels:
-    app: pod
 spec:
   containers:
   - name: ctr0
@@ -36,21 +35,7 @@ spec:
     resources:
       claims:
       - name: shared-gpu
-  resourceClaims:
-  - name: shared-gpu
-    resourceClaimName: shared-gpu
-
----
-apiVersion: v1
-kind: Pod
-metadata:
-  namespace: gpu-test3
-  name: pod1
-  labels:
-    app: pod
-spec:
-  containers:
-  - name: ctr0
+  - name: ctr1
     image: ubuntu:22.04
     command: ["bash", "-c"]
     args: ["export; sleep 9999"]
@@ -59,4 +44,4 @@ spec:
       - name: shared-gpu
   resourceClaims:
   - name: shared-gpu
-    resourceClaimName: shared-gpu
+    resourceClaimTemplateName: single-gpu
