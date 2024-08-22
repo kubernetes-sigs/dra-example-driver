@@ -225,10 +225,10 @@ metadata:
 ```
 
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
-`ResourceClaimTemplate`s, and custom `ClaimParameter` objects can be used to
-request access to resources in various ways:
+`ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
+select and configure resources in various ways:
 ```bash
-kubectl apply --filename=demo/gpu-test{1,2,3,4}.yaml
+kubectl apply --filename=demo/gpu-test{1,2,3,4,5}.yaml
 ```
 
 And verify that they are coming up successfully:
@@ -242,10 +242,11 @@ gpu-test2   pod0   0/2     Pending             0          2s
 gpu-test3   pod0   0/1     ContainerCreating   0          2s
 gpu-test3   pod1   0/1     ContainerCreating   0          2s
 gpu-test4   pod0   0/1     Pending             0          2s
+gpu-test5   pod0   0/4     Pending             0          2s
 ...
 ```
 
-Use your favorite editor to look through each of the `gpu-test{1,2,3,4}.yaml`
+Use your favorite editor to look through each of the `gpu-test{1,2,3,4,5}.yaml`
 files and see what they are doing. The semantics of each match the figure
 below:
 
@@ -254,12 +255,16 @@ below:
 Then dump the logs of each app to verify that GPUs were allocated to them
 according to these semantics:
 ```bash
-for example in $(seq 1 4); do \
+for example in $(seq 1 5); do \
   echo "gpu-test${example}:"
   for pod in $(kubectl get pod -n gpu-test${example} --output=jsonpath='{.items[*].metadata.name}'); do \
     for ctr in $(kubectl get pod -n gpu-test${example} ${pod} -o jsonpath='{.spec.containers[*].name}'); do \
       echo "${pod} ${ctr}:"
-      kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep GPU_DEVICE
+      if [ "${example}" -lt 3 ]; then
+        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+="
+      else
+        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+"
+      fi
     done
   done
   echo ""
@@ -270,43 +275,67 @@ This should produce output similar to the following:
 ```bash
 gpu-test1:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
+declare -x GPU_DEVICE_0="gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744"
 pod1 ctr0:
-declare -x GPU_DEVICE_0="gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
+declare -x GPU_DEVICE_0="gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
 
 gpu-test2:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
-pod0 ctr1:
-declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
+declare -x GPU_DEVICE_0="gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
+declare -x GPU_DEVICE_1="gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
 
 gpu-test3:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
-pod1 ctr0:
-declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
+declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+pod0 ctr1:
+declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
 
 gpu-test4:
 pod0 ctr0:
+declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+pod1 ctr0:
+declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+
+gpu-test5:
+pod0 ts-ctr0:
 declare -x GPU_DEVICE_0="gpu-18db0e85-99e9-c746-8531-ffeb86328b39"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Long"
+pod0 ts-ctr1:
+declare -x GPU_DEVICE_0="gpu-18db0e85-99e9-c746-8531-ffeb86328b39"
+declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Long"
+pod0 sp-ctr0:
 declare -x GPU_DEVICE_1="gpu-93d37703-997c-c46f-a531-755e3e0dc2ac"
-declare -x GPU_DEVICE_2="gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744"
-declare -x GPU_DEVICE_3="gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
+declare -x GPU_DEVICE_1_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_1_SHARING_STRATEGY="SpacePartitioning"
+pod0 sp-ctr1:
+declare -x GPU_DEVICE_1="gpu-93d37703-997c-c46f-a531-755e3e0dc2ac"
+declare -x GPU_DEVICE_1_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_1_SHARING_STRATEGY="SpacePartitioning"
 ```
 
 In this example resource driver, no "actual" GPUs are made available to any
 containers. Instead, a set of environment variables are set in each container
 to indicate which GPUs *would* have been injected into them by a real resource
-driver.
+driver and how they *would* have been configured.
 
-You can use the UUIDs of the GPUs set in these environment variables to verify
-that they were handed out in a way consistent with the semantics shown in the
-figure above.
+You can use the UUIDs of the GPUs as well as the GPU sharing settings set in
+these environment variables to verify that they were handed out in a way
+consistent with the semantics shown in the figure above.
 
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4}.yaml
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5}.yaml
 ```
 
 And wait for them to terminate:
@@ -320,6 +349,7 @@ gpu-test2   pod0   2/2     Terminating   0          31m
 gpu-test3   pod0   1/1     Terminating   0          31m
 gpu-test3   pod1   1/1     Terminating   0          31m
 gpu-test4   pod0   1/1     Terminating   0          31m
+gpu-test5   pod0   4/4     Terminating   0          31m
 ...
 ```
 
