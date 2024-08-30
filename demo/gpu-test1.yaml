@@ -12,7 +12,7 @@ apiVersion: resource.k8s.io/v1alpha3
 kind: ResourceClaimTemplate
 metadata:
   namespace: gpu-test1
-  name: gpu.example.com
+  name: single-gpu
 spec:
   spec:
     devices:
@@ -39,7 +39,7 @@ spec:
       - name: gpu
   resourceClaims:
   - name: gpu
-    resourceClaimTemplateName: gpu.example.com
+    resourceClaimTemplateName: single-gpu
 
 ---
 apiVersion: v1
@@ -60,4 +60,4 @@ spec:
       - name: gpu
   resourceClaims:
   - name: gpu
-    resourceClaimTemplateName: gpu.example.com
+    resourceClaimTemplateName: single-gpu

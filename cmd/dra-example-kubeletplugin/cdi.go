@@ -59,7 +59,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 				Name: cdiCommonDeviceName,
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
-						fmt.Sprintf("GPU_NODE_NAME=%s", os.Getenv("NODE_NAME")),
+						fmt.Sprintf("KUBERNETES_NODE_NAME=%s", os.Getenv("NODE_NAME")),
 						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", DriverName),
 					},
 				},
@@ -89,18 +89,39 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 		Devices: []cdispec.Device{},
 	}
 
-	gpuIdx := 0
-	for _, device := range devices {
+	for i, device := range devices {
+		envs := []string{
+			fmt.Sprintf("GPU_DEVICE_%d=%s", i, device.DeviceName),
+		}
+
+		if device.Config.Sharing != nil {
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_SHARING_STRATEGY=%s", i, device.Config.Sharing.Strategy))
+		}
+
+		switch {
+		case device.Config.Sharing.IsTimeSlicing():
+			tsconfig, err := device.Config.Sharing.GetTimeSlicingConfig()
+			if err != nil {
+				return fmt.Errorf("unable to get time slicing config for device %v: %v", device.DeviceName, err)
+			}
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_TIMESLICE_INTERVAL=%v", i, tsconfig.Interval))
+
+		case device.Config.Sharing.IsSpacePartitioning():
+			spconfig, err := device.Config.Sharing.GetSpacePartitioningConfig()
+			if err != nil {
+				return fmt.Errorf("unable to get space partitioning config for device %v: %v", device.DeviceName, err)
+			}
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_PARTITION_COUNT=%v", i, spconfig.PartitionCount))
+		}
+
 		cdiDevice := cdispec.Device{
 			Name: device.DeviceName,
 			ContainerEdits: cdispec.ContainerEdits{
-				Env: []string{
-					fmt.Sprintf("GPU_DEVICE_%d=%s", gpuIdx, device.DeviceName),
-				},
+				Env: envs,
 			},
 		}
+
 		spec.Devices = append(spec.Devices, cdiDevice)
-		gpuIdx++
 	}
 
 	minVersion, err := cdiapi.MinimumRequiredVersion(spec)
