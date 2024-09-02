@@ -15,6 +15,8 @@
 # limitations under the License.
 
 # Very Simple Script for testing the demo
+# stop at first failure to save time, error on undefined env variables
+set -eu
 
 kubectl create -f demo/gpu-test1.yaml
 kubectl create -f demo/gpu-test2.yaml
