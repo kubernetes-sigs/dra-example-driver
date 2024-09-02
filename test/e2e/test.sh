@@ -23,9 +23,6 @@ kubectl create -f demo/gpu-test4.yaml
 kubectl create -f demo/gpu-test5.yaml
 sleep 30
 
-# stop at first failure to save time, error on undefined env variables
-set -eu
-
 gpu_test_1=$(kubectl get pods -n gpu-test1 | grep -c 'Running')
 if [ $gpu_test_1 != 2 ]; then
     echo "gpu_test_1 $gpu_test_1 failed to match against 2 expected pods"
