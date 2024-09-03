@@ -19,13 +19,13 @@ jobs:
       run: go mod vendor
     - name: Build
       run: make PREFIX=artifacts cmds
-    - name: install helm and kubelet
+    - name: install helm and kubectl
       run: |
         sudo snap install helm --classic
         sudo snap install kubectl --classic
     - name: Setup e2e
-      run: make prep-e2e
-    - name: run e2e-test
+      run: make setup-e2e
+    - name: run e2e test
       run: make test-e2e
-    - name: teardown e2e-test
+    - name: teardown e2e test
       run: make teardown-e2e 
