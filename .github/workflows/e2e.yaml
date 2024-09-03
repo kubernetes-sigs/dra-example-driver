@@ -15,8 +15,6 @@ jobs:
         go-version: 1.22.6
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Update vendor modules
-      run: go mod vendor
     - name: Build
       run: make PREFIX=artifacts cmds
     - name: install helm and kubectl
