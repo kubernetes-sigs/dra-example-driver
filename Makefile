@@ -113,6 +113,15 @@ generate-deepcopy: vendor
 			output:object:dir=$(CURDIR)/api/$(VENDOR)/resource/$${api}; \
 	done
 
+setup-e2e:
+	test/e2e/setup-e2e.sh
+
+test-e2e:
+	test/e2e/e2e.sh
+
+teardown-e2e:
+	test/e2e/teardown-e2e.sh
+
 # Generate an image for containerized builds
 # Note: This image is local only
 .PHONY: .build-image
