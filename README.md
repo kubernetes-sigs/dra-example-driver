@@ -127,7 +127,7 @@ items:
             string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
         capacity:
           memory: 80Gi
-      name: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+      name: gpu-0
     - basic:
         attributes:
           driverVersion:
@@ -140,7 +140,7 @@ items:
             string: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
         capacity:
           memory: 80Gi
-      name: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+      name: gpu-1
     - basic:
         attributes:
           driverVersion:
@@ -153,7 +153,7 @@ items:
             string: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
         capacity:
           memory: 80Gi
-      name: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+      name: gpu-2
     - basic:
         attributes:
           driverVersion:
@@ -166,7 +166,7 @@ items:
             string: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
         capacity:
           memory: 80Gi
-      name: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+      name: gpu-3
     - basic:
         attributes:
           driverVersion:
@@ -179,7 +179,7 @@ items:
             string: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
         capacity:
           memory: 80Gi
-      name: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+      name: gpu-4
     - basic:
         attributes:
           driverVersion:
@@ -192,7 +192,7 @@ items:
             string: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
         capacity:
           memory: 80Gi
-      name: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+      name: gpu-5
     - basic:
         attributes:
           driverVersion:
@@ -205,7 +205,7 @@ items:
             string: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
         capacity:
           memory: 80Gi
-      name: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+      name: gpu-6
     - basic:
         attributes:
           driverVersion:
@@ -218,7 +218,7 @@ items:
             string: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
         capacity:
           memory: 80Gi
-      name: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+      name: gpu-7
 kind: List
 metadata:
   resourceVersion: ""
@@ -261,9 +261,9 @@ for example in $(seq 1 5); do \
     for ctr in $(kubectl get pod -n gpu-test${example} ${pod} -o jsonpath='{.spec.containers[*].name}'); do \
       echo "${pod} ${ctr}:"
       if [ "${example}" -lt 3 ]; then
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+="
+        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+=" | grep -v "RESOURCE_CLAIM"
       else
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+"
+        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
       fi
     done
   done
@@ -275,52 +275,52 @@ This should produce output similar to the following:
 ```bash
 gpu-test1:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744"
+declare -x GPU_DEVICE_6="gpu-6"
 pod1 ctr0:
-declare -x GPU_DEVICE_0="gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243"
+declare -x GPU_DEVICE_7="gpu-7"
 
 gpu-test2:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747"
-declare -x GPU_DEVICE_1="gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e"
+declare -x GPU_DEVICE_0="gpu-0"
+declare -x GPU_DEVICE_1="gpu-1"
 
 gpu-test3:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+declare -x GPU_DEVICE_2="gpu-2"
+declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
 pod0 ctr1:
-declare -x GPU_DEVICE_0="gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+declare -x GPU_DEVICE_2="gpu-2"
+declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
 
 gpu-test4:
 pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+declare -x GPU_DEVICE_3="gpu-3"
+declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Default"
 pod1 ctr0:
-declare -x GPU_DEVICE_0="gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Default"
+declare -x GPU_DEVICE_3="gpu-3"
+declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Default"
 
 gpu-test5:
 pod0 ts-ctr0:
-declare -x GPU_DEVICE_0="gpu-18db0e85-99e9-c746-8531-ffeb86328b39"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Long"
+declare -x GPU_DEVICE_4="gpu-4"
+declare -x GPU_DEVICE_4_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_4_TIMESLICE_INTERVAL="Long"
 pod0 ts-ctr1:
-declare -x GPU_DEVICE_0="gpu-18db0e85-99e9-c746-8531-ffeb86328b39"
-declare -x GPU_DEVICE_0_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_0_TIMESLICE_INTERVAL="Long"
+declare -x GPU_DEVICE_4="gpu-4"
+declare -x GPU_DEVICE_4_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_4_TIMESLICE_INTERVAL="Long"
 pod0 sp-ctr0:
-declare -x GPU_DEVICE_1="gpu-93d37703-997c-c46f-a531-755e3e0dc2ac"
-declare -x GPU_DEVICE_1_PARTITION_COUNT="10"
-declare -x GPU_DEVICE_1_SHARING_STRATEGY="SpacePartitioning"
+declare -x GPU_DEVICE_5="gpu-5"
+declare -x GPU_DEVICE_5_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_5_SHARING_STRATEGY="SpacePartitioning"
 pod0 sp-ctr1:
-declare -x GPU_DEVICE_1="gpu-93d37703-997c-c46f-a531-755e3e0dc2ac"
-declare -x GPU_DEVICE_1_PARTITION_COUNT="10"
-declare -x GPU_DEVICE_1_SHARING_STRATEGY="SpacePartitioning"
+declare -x GPU_DEVICE_5="gpu-5"
+declare -x GPU_DEVICE_5_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_5_SHARING_STRATEGY="SpacePartitioning"
 ```
 
 In this example resource driver, no "actual" GPUs are made available to any
@@ -328,7 +328,7 @@ containers. Instead, a set of environment variables are set in each container
 to indicate which GPUs *would* have been injected into them by a real resource
 driver and how they *would* have been configured.
 
-You can use the UUIDs of the GPUs as well as the GPU sharing settings set in
+You can use the IDs of the GPUs as well as the GPU sharing settings set in
 these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 

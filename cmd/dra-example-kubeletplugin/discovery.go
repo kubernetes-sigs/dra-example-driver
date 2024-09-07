@@ -17,6 +17,7 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"os"
 
@@ -35,7 +36,7 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 	alldevices := make(AllocatableDevices)
 	for i, uuid := range uuids {
 		device := resourceapi.Device{
-			Name: uuid,
+			Name: fmt.Sprintf("gpu-%d", i),
 			Basic: &resourceapi.BasicDevice{
 				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 					"index": {
@@ -56,7 +57,7 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 				},
 			},
 		}
-		alldevices[uuid] = device
+		alldevices[device.Name] = device
 	}
 	return alldevices, nil
 }
