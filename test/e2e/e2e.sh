@@ -16,6 +16,9 @@
 
 # Very Simple Script for testing the demo
 
+kind get clusters
+kubectl get nodes
+kubectl wait --for=condition=Ready nodes/dra-example-driver-cluster-worker --timeout=120s
 kubectl create -f demo/gpu-test1.yaml
 kubectl create -f demo/gpu-test2.yaml
 kubectl create -f demo/gpu-test3.yaml

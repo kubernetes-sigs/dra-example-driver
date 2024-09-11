@@ -30,4 +30,5 @@ source "${CURRENT_DIR}/common.sh"
 ${KIND} create cluster \
 	--name "${KIND_CLUSTER_NAME}" \
 	--image "${KIND_IMAGE}" \
-	--config "${KIND_CLUSTER_CONFIG_PATH}"
+	--config "${KIND_CLUSTER_CONFIG_PATH}" \
+	--wait 2m
