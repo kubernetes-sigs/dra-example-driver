@@ -89,36 +89,19 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 		Devices: []cdispec.Device{},
 	}
 
-	for i, device := range devices {
-		envs := []string{
-			fmt.Sprintf("GPU_DEVICE_%d=%s", i, device.DeviceName),
+	for _, device := range devices {
+		claimEdits := cdiapi.ContainerEdits{
+			ContainerEdits: &cdispec.ContainerEdits{
+				Env: []string{
+					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
+				},
+			},
 		}
-
-		if device.Config.Sharing != nil {
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_SHARING_STRATEGY=%s", i, device.Config.Sharing.Strategy))
-		}
-
-		switch {
-		case device.Config.Sharing.IsTimeSlicing():
-			tsconfig, err := device.Config.Sharing.GetTimeSlicingConfig()
-			if err != nil {
-				return fmt.Errorf("unable to get time slicing config for device %v: %v", device.DeviceName, err)
-			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_TIMESLICE_INTERVAL=%v", i, tsconfig.Interval))
-
-		case device.Config.Sharing.IsSpacePartitioning():
-			spconfig, err := device.Config.Sharing.GetSpacePartitioningConfig()
-			if err != nil {
-				return fmt.Errorf("unable to get space partitioning config for device %v: %v", device.DeviceName, err)
-			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%d_PARTITION_COUNT=%v", i, spconfig.PartitionCount))
-		}
+		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{
-			Name: device.DeviceName,
-			ContainerEdits: cdispec.ContainerEdits{
-				Env: envs,
-			},
+			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
+			ContainerEdits: *claimEdits.ContainerEdits,
 		}
 
 		spec.Devices = append(spec.Devices, cdiDevice)
@@ -138,13 +121,13 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	return cdi.cache.RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(devices []string) []string {
+func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices []string) []string {
 	cdiDevices := []string{
 		cdiparser.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
 	}
 
 	for _, device := range devices {
-		cdiDevice := cdiparser.QualifiedName(cdiVendor, cdiClass, device)
+		cdiDevice := cdiparser.QualifiedName(cdiVendor, cdiClass, fmt.Sprintf("%s-%s", claimUID, device))
 		cdiDevices = append(cdiDevices, cdiDevice)
 	}
 
