@@ -31,14 +31,14 @@ spec:
   - name: ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["trap 'exit' SIGTERM; export; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpu
   - name: ctr1
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["trap 'exit' SIGTERM; export; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpu
