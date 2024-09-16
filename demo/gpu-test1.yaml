@@ -33,7 +33,7 @@ spec:
   - name: ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: gpu
@@ -54,7 +54,7 @@ spec:
   - name: ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: gpu
