@@ -16,6 +16,8 @@
 
 # Very Simple Script for testing the demo
 
+set -e
+
 kind get clusters
 kubectl get nodes
 kubectl wait --for=condition=Ready nodes/dra-example-driver-cluster-worker --timeout=120s
