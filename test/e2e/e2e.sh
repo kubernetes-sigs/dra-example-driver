@@ -63,4 +63,12 @@ if [ $gpu_test_5 != 1 ]; then
     exit 1
 fi
 
+# test that deletion is fast (less than the default grace period of 30s)
+# see https://github.com/kubernetes/kubernetes/issues/127188 for details
+kubectl delete -f demo/gpu-test1.yaml --timeout=25s
+kubectl delete -f demo/gpu-test2.yaml --timeout=25s
+kubectl delete -f demo/gpu-test3.yaml --timeout=25s
+kubectl delete -f demo/gpu-test4.yaml --timeout=25s
+kubectl delete -f demo/gpu-test5.yaml --timeout=25s
+
 echo "test ran successfully"

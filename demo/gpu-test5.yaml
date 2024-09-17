@@ -54,7 +54,7 @@ spec:
   - name: ts-ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpus
@@ -62,7 +62,7 @@ spec:
   - name: ts-ctr1
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpus
@@ -70,7 +70,7 @@ spec:
   - name: sp-ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpus
@@ -78,7 +78,7 @@ spec:
   - name: sp-ctr1
     image: ubuntu:22.04
     command: ["bash", "-c"]
-    args: ["export; sleep 9999"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
       - name: shared-gpus
