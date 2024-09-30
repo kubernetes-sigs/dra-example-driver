@@ -53,6 +53,9 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+        # Simulated number of devices the example driver will pretend to have.
+        - name: NUM_DEVICES
+          value: "8"
         volumeMounts:
         - name: plugins-registry
           mountPath: /var/lib/kubelet/plugins_registry

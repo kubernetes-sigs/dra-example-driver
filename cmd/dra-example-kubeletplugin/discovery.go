@@ -28,8 +28,7 @@ import (
 	"github.com/google/uuid"
 )
 
-func enumerateAllPossibleDevices() (AllocatableDevices, error) {
-	numGPUs := 8
+func enumerateAllPossibleDevices(numGPUs int) (AllocatableDevices, error) {
 	seed := os.Getenv("NODE_NAME")
 	uuids := generateUUIDs(seed, numGPUs)
 

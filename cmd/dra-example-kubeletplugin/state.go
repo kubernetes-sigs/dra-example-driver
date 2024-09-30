@@ -63,7 +63,7 @@ type DeviceState struct {
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
-	allocatable, err := enumerateAllPossibleDevices()
+	allocatable, err := enumerateAllPossibleDevices(config.flags.numDevices)
 	if err != nil {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}

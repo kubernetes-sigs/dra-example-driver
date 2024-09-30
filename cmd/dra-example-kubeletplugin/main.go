@@ -44,8 +44,9 @@ type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
 	loggingConfig    *flags.LoggingConfig
 
-	nodeName string
-	cdiRoot  string
+	nodeName   string
+	cdiRoot    string
+	numDevices int
 }
 
 type Config struct {
@@ -78,6 +79,13 @@ func newApp() *cli.App {
 			Value:       "/etc/cdi",
 			Destination: &flags.cdiRoot,
 			EnvVars:     []string{"CDI_ROOT"},
+		},
+		&cli.IntFlag{
+			Name:        "num-devices",
+			Usage:       "The number of devices to be generated.",
+			Value:       8,
+			Destination: &flags.numDevices,
+			EnvVars:     []string{"NUM_DEVICES"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
