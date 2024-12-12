@@ -21,7 +21,7 @@ import (
 	"math/rand"
 	"os"
 
-	resourceapi "k8s.io/api/resource/v1alpha3"
+	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
@@ -51,8 +51,10 @@ func enumerateAllPossibleDevices(numGPUs int) (AllocatableDevices, error) {
 						VersionValue: ptr.To("1.0.0"),
 					},
 				},
-				Capacity: map[resourceapi.QualifiedName]resource.Quantity{
-					"memory": resource.MustParse("80Gi"),
+				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+					"memory": {
+						Value: resource.MustParse("80Gi"),
+					},
 				},
 			},
 		}

@@ -25,10 +25,10 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1alpha4"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 )
 
-var _ drapbv1.NodeServer = &driver{}
+var _ drapbv1.DRAPluginServer = &driver{}
 
 type driver struct {
 	client coreclientset.Interface
@@ -49,7 +49,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 
 	plugin, err := kubeletplugin.Start(
 		ctx,
-		driver,
+		[]any{driver},
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
 		kubeletplugin.DriverName(DriverName),
@@ -65,7 +65,10 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	for _, device := range state.allocatable {
 		resources.Devices = append(resources.Devices, device)
 	}
-	plugin.PublishResources(ctx, resources)
+
+	if err := plugin.PublishResources(ctx, resources); err != nil {
+		return nil, err
+	}
 
 	return driver, nil
 }
@@ -87,7 +90,7 @@ func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrep
 }
 
 func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) *drapbv1.NodePrepareResourceResponse {
-	resourceClaim, err := d.client.ResourceV1alpha3().ResourceClaims(claim.Namespace).Get(
+	resourceClaim, err := d.client.ResourceV1beta1().ResourceClaims(claim.Namespace).Get(
 		ctx,
 		claim.Name,
 		metav1.GetOptions{})
