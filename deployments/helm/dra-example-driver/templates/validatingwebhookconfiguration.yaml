@@ -1,0 +1,27 @@
+{{- if .Values.webhook.enabled }}
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  name: {{ include "dra-example-driver.fullname" . }}-webhook-config
+  labels:
+    {{- include "dra-example-driver.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webhook
+  annotations:
+    cert-manager.io/inject-ca-from: "{{ include "dra-example-driver.namespace" . }}/{{ include "dra-example-driver.fullname" . }}-webhook-cert"
+webhooks:
+- name: "dra.example.com"
+  rules:
+  - apiGroups:   ["resource.k8s.io"]
+    apiVersions: ["v1beta1"]
+    operations:  ["CREATE", "UPDATE"]
+    resources:   ["resourceclaims", "resourceclaimtemplates"]
+    scope:       "Namespaced"
+  clientConfig:
+    service:
+      namespace: {{ include "dra-example-driver.namespace" . }}
+      name: {{ include "dra-example-driver.fullname" . }}-webhook
+      port: {{ .Values.webhook.servicePort }}
+      path: /validate-resource-claim-parameters
+  admissionReviewVersions: ["v1"]
+  sideEffects: None
+{{- end }}

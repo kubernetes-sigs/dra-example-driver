@@ -21,6 +21,33 @@ set -e
 kind get clusters
 kubectl get nodes
 kubectl wait --for=condition=Ready nodes/dra-example-driver-cluster-worker --timeout=120s
+
+# Even after verifying that the Pod is Ready and the expected Endpoints resource
+# exists with the Pod's IP, the webhook still seems to have "connection refused"
+# issues, so retry here until we can ensure it's available before the real tests
+# start.
+function verify-webhook {
+  echo "Waiting for webhook to be available"
+  while ! kubectl create --dry-run=server -f- <<-'EOF'
+    apiVersion: resource.k8s.io/v1beta1
+    kind: ResourceClaim
+    metadata:
+      name: webhook-test
+    spec:
+      devices:
+        requests:
+        - name: gpu
+          deviceClassName: gpu.example.com
+EOF
+  do
+    sleep 1
+    echo "Retrying webhook"
+  done
+  echo "Webhook is available"
+}
+export -f verify-webhook
+timeout --foreground 15s bash -c verify-webhook
+
 kubectl create -f demo/gpu-test1.yaml
 kubectl create -f demo/gpu-test2.yaml
 kubectl create -f demo/gpu-test3.yaml
@@ -72,5 +99,65 @@ kubectl delete -f demo/gpu-test2.yaml --timeout=25s
 kubectl delete -f demo/gpu-test3.yaml --timeout=25s
 kubectl delete -f demo/gpu-test4.yaml --timeout=25s
 kubectl delete -f demo/gpu-test5.yaml --timeout=25s
+
+# Webhook should reject invalid resources
+if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: webhook-test
+spec:
+  devices:
+    requests:
+    - name: ts-gpu
+      deviceClassName: gpu.example.com
+    - name: sp-gpu
+      deviceClassName: gpu.example.com
+    config:
+    - requests: ["ts-gpu"]
+      opaque:
+        driver: gpu.example.com
+        parameters:
+          apiVersion: gpu.resource.example.com/v1alpha1
+          kind: GpuConfig
+          sharing:
+            strategy: TimeSlicing
+            timeSlicingConfig:
+              interval: InvalidInterval
+EOF
+then
+  echo "Webhook did not reject ResourceClaim invalid GpuConfig with the expected message"
+  exit 1
+fi
+
+if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaimTemplate
+metadata:
+  name: webhook-test
+spec:
+  spec:
+    devices:
+      requests:
+      - name: ts-gpu
+        deviceClassName: gpu.example.com
+      - name: sp-gpu
+        deviceClassName: gpu.example.com
+      config:
+      - requests: ["ts-gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: InvalidInterval
+EOF
+then
+  echo "Webhook did not reject ResourceClaimTemplate invalid GpuConfig with the expected message"
+  exit 1
+fi
 
 echo "test ran successfully"

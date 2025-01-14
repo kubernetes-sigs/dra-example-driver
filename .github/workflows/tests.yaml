@@ -25,6 +25,5 @@ jobs:
       run: make PREFIX=artifacts cmds
     - name: List binaries
       run: ls -al artifacts/
-    # no tests yet
-    # - name: Test
-    #   run: go test -v -race ./...
+    - name: Test
+      run: go test -v -race ./...
