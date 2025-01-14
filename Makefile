@@ -108,7 +108,7 @@ generate-deepcopy: vendor
 	for api in $(APIS); do \
 		rm -f $(CURDIR)/api/$(VENDOR)/resource/$${api}/zz_generated.deepcopy.go; \
 		controller-gen \
-			object:headerFile=$(CURDIR)/hack/boilerplate.go.txt,year=$(shell date +"%Y") \
+			object:headerFile=$(CURDIR)/hack/boilerplate.generatego.txt \
 			paths=$(CURDIR)/api/$(VENDOR)/resource/$${api}/ \
 			output:object:dir=$(CURDIR)/api/$(VENDOR)/resource/$${api}; \
 	done
