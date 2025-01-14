@@ -71,6 +71,21 @@ kube-system          kube-scheduler-dra-example-driver-cluster-control-plane    
 local-path-storage   local-path-provisioner-7dbf974f64-9jmc7                            1/1     Running   0          1m
 ```
 
+The validating admission webhook is disabled by default. To enable it, install cert-manager and its CRDs, then
+set the `webhook.enabled=true` value when the dra-example-driver chart is installed.
+```bash
+helm install \
+  --repo https://charts.jetstack.io \
+  --version v1.16.3 \
+  --create-namespace \
+  --namespace cert-manager \
+  --wait \
+  --set crds.enabled=true \
+  cert-manager \
+  cert-manager
+```
+More options for installing cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
+
 And then install the example resource driver via `helm`.
 ```bash
 helm upgrade -i \
@@ -83,8 +98,9 @@ helm upgrade -i \
 Double check the driver components have come up successfully:
 ```console
 $ kubectl get pod -n dra-example-driver
-NAME                                             READY   STATUS    RESTARTS   AGE
-dra-example-driver-kubeletplugin-qwmbl           1/1     Running   0          1m
+NAME                                                  READY   STATUS    RESTARTS   AGE
+dra-example-driver-kubeletplugin-qwmbl                1/1     Running   0          1m
+dra-example-driver-webhook-7d465fbd5b-n2wxt           1/1     Running   0          1m
 ```
 
 And show the initial state of available GPU devices on the worker node:
