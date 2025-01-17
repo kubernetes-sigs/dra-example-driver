@@ -27,6 +27,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/pkg/consts"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
@@ -180,7 +181,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
 		configapi.Decoder,
-		DriverName,
+		consts.DriverName,
 		claim.Status.Allocation.Devices.Config,
 	)
 	if err != nil {
