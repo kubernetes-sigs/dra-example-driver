@@ -71,9 +71,8 @@ kube-system          kube-scheduler-dra-example-driver-cluster-control-plane    
 local-path-storage   local-path-provisioner-7dbf974f64-9jmc7                            1/1     Running   0          1m
 ```
 
-When the validating admission webhook is enabled (as it is by default), cert-manager and its CRDs must be installed.
-The example driver's webhook can be disabled by setting the `webhook.enabled=false` value when the
-dra-example-driver chart is installed.
+The validating admission webhook is disabled by default. To enable it, install cert-manager and its CRDs, then
+set the `webhook.enabled=true` value when the dra-example-driver chart is installed.
 ```bash
 helm install \
   --repo https://charts.jetstack.io \
@@ -85,7 +84,7 @@ helm install \
   cert-manager \
   cert-manager
 ```
-More options for installed cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
+More options for installing cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
 
 And then install the example resource driver via `helm`.
 ```bash

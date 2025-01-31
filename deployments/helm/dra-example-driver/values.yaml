@@ -63,7 +63,7 @@ kubeletPlugin:
       resources: {}
 
 webhook:
-  enabled: true
+  enabled: false
   servicePort: 443
   containerPort: 443
   priorityClassName: "system-cluster-critical"

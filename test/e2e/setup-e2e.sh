@@ -33,5 +33,6 @@ helm upgrade -i \
 helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
+  --set webhook.enabled=true \
   dra-example-driver \
   deployments/helm/dra-example-driver
