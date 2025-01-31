@@ -95,3 +95,15 @@ Create the name of the service account to use
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the service account to use for the webhook
+*/}}
+{{- define "dra-example-driver.webhookServiceAccountName" -}}
+{{- $name := printf "%s-webhook-service-account" (include "dra-example-driver.fullname" .) }}
+{{- if .Values.webhook.serviceAccount.create }}
+{{- default $name .Values.webhook.serviceAccount.name }}
+{{- else }}
+{{- default "default-webhook" .Values.webhook.serviceAccount.name }}
+{{- end }}
+{{- end }}

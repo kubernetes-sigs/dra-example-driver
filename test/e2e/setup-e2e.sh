@@ -19,8 +19,20 @@ set -e
 
 bash demo/build-driver.sh
 bash demo/create-cluster.sh
+
+helm upgrade -i \
+  --repo https://charts.jetstack.io \
+  --version v1.16.3 \
+  --create-namespace \
+  --namespace cert-manager \
+  --wait \
+  --set crds.enabled=true \
+  cert-manager \
+  cert-manager
+
 helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
+  --set webhook.enabled=true \
   dra-example-driver \
   deployments/helm/dra-example-driver
