@@ -57,7 +57,7 @@ cd ./dev/dra
 ./all_cp.sh
 
 # 进入dra驱动容器
-./dev/dra/pod_into_dra.sh
+./pod_into_dra.sh
 
 # 进入/root目录
 cd
