@@ -24,11 +24,10 @@ helm upgrade -i \
 3. （可选）替换k8s组件，以调度器为案例。 参考： [K8s远程调试，你的姿势对了吗？](https://cloud.tencent.com/developer/article/1624638)
 ```bash
 # 复制调试工具及可调试版本二进制
-cd ./dev/node
-./all_cp.sh
+./dev/node/all_cp.sh
 
 # 进入主node节点
-./pod_into_node.sh
+./dev/node/pod_into_node.sh
 
 # 进入/root路径
 cd 
@@ -50,14 +49,13 @@ zjknps.jieshi.space:9523
 4. 编译并启动开发版dra驱动
 ```bash
 # 编译dra驱动
-cd ./dev/dra
-./build_dra.sh
+./dev/dra/build_dra.sh
 
 # 同步开发编译版dra驱动及调试工具到dra驱动容器
-./all_cp.sh
+./dev/dra/all_cp.sh
 
 # 进入dra驱动容器
-./pod_into_dra.sh
+./dev/dra/pod_into_dra.sh
 
 # 进入/root目录
 cd
