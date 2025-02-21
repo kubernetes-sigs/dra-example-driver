@@ -39,7 +39,7 @@ spec:
           {{- toYaml .Values.kubeletPlugin.containers.plugin.securityContext | nindent 10 }}
         image: {{ include "dra-example-driver.fullimage" . }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        command: ["dra-example-kubeletplugin"]
+        command: ["sleep", "infinity"]
         resources:
           {{- toYaml .Values.kubeletPlugin.containers.plugin.resources | nindent 10 }}
         env:
