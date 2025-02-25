@@ -254,42 +254,7 @@ func (ps *PluginServer) GetRealAllocateDevices(kltAllocate []string) ([]string, 
 
 // GetKltAndRealAllocateDev get kubelet and real allocate device of pod
 func (ps *PluginServer) GetKltAndRealAllocateDev(podList []v1.Pod) ([]PodDeviceInfo, error) {
-	prClient := NewPodResource()
-	podDevice, err := prClient.GetPodResource()
-	if err != nil {
-		return nil, fmt.Errorf("get pod resource failed, %#v", err)
-	}
 	var podDeviceInfo []PodDeviceInfo
-	for _, pod := range podList {
-		podKey := pod.Namespace + common.UnderLine + pod.Name
-		podResource, exist := podDevice[podKey]
-		if !exist {
-			continue
-		}
-		if podResource.ResourceName != common.ResourceNamePrefix+ps.deviceType {
-			hwlog.RunLog.Debugf("podKey %s resource name %s not equal device type %s", podKey,
-				podResource.ResourceName, ps.deviceType)
-			continue
-		}
-		if common.ParamOption.PresetVDevice && common.IsVirtualDev(ps.deviceType) {
-			podDeviceInfo = append(podDeviceInfo, PodDeviceInfo{Pod: pod, KltDevice: podResource.DeviceIds,
-				RealDevice: podResource.DeviceIds})
-			continue
-		}
-		realDeviceList, err := ps.GetRealAllocateDevices(podResource.DeviceIds)
-		if err != nil {
-			realDevice, exist := pod.Annotations[common.ResourceNamePrefix+common.PodRealAlloc]
-			if exist {
-				realDeviceList = strings.Split(realDevice, common.CommaSepDev)
-				ps.updateAllocMap(realDeviceList, podResource.DeviceIds)
-			} else {
-				hwlog.RunLog.Warnf("%s not found real allocate device", podKey)
-				continue
-			}
-		}
-		podDeviceInfo = append(podDeviceInfo, PodDeviceInfo{Pod: pod, KltDevice: podResource.DeviceIds,
-			RealDevice: realDeviceList})
-	}
 	return podDeviceInfo, nil
 }
 

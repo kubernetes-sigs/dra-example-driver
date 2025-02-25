@@ -18,8 +18,6 @@ package device
 import (
 	"fmt"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
-
 	"sigs.k8s.io/dra-example-driver/pkg/common"
 )
 
@@ -71,7 +69,6 @@ func (hnm *HwAscend310Manager) GetNPUs() (common.NpuAllInfo, error) {
 func (hnm *HwAscend310Manager) DoWithVolcanoListAndWatch(classifyDevs map[string][]*common.NpuDevice) {
 	devStatusSet := hnm.getDevStatesDevSet(classifyDevs)
 	if err := hnm.UpdateNodeDeviceInfo(devStatusSet, hnm.updateDeviceInfo); err != nil {
-		hwlog.RunLog.Errorf("update device info failed, err: %#v", err)
 	}
 }
 

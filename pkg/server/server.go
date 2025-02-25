@@ -27,16 +27,6 @@ func (ps *PluginServer) Start(socketWatcher *common.FileWatch) error {
 
 	var err error
 
-	// Start gRPC server
-	if err = ps.serve(socketWatcher); err != nil {
-		return err
-	}
-
-	// Registers To Kubelet.
-	if err = ps.register(); err == nil {
-		hwlog.RunLog.Infof("register %s to kubelet success.", ps.deviceType)
-		return nil
-	}
 	ps.Stop()
 	hwlog.RunLog.Errorf("register to kubelet failed, err: %#v", err)
 	return err

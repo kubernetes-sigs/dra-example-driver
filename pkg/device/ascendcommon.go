@@ -422,11 +422,6 @@ func (tool *AscendTools) syncDuoCardState(groupDevice map[string][]*common.NpuDe
 		hwlog.RunLog.Debugf("not open infer device hot reset function, it's %d", common.ParamOption.HotReset)
 		return
 	}
-	ascend310PDevices, ok := groupDevice[common.Ascend310P]
-	if !ok {
-		hwlog.RunLog.Debugf("not found 310P devices")
-		return
-	}
 }
 
 // ClassifyDevices classify diff type devices
