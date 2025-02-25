@@ -3,10 +3,12 @@ module sigs.k8s.io/dra-example-driver
 go 1.23.1
 
 require (
+	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/uuid v1.6.0
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.9.0
 	github.com/urfave/cli/v2 v2.25.3
+	huawei.com/npu-exporter/v5 v5.0.0-rc1.1
 	k8s.io/api v0.32.0
 	k8s.io/apimachinery v0.32.0
 	k8s.io/client-go v0.32.0
@@ -27,7 +29,6 @@ require (
 	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
-	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.7.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/zapr v1.3.0 // indirect
@@ -81,3 +82,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.4.2 // indirect
 	sigs.k8s.io/yaml v1.4.0 // indirect
 )
+
+replace huawei.com/npu-exporter/v5 => gitee.com/ascend/ascend-npu-exporter/v5 v5.0.0-RC1
+
+replace github.com/smartystreets/assertions => github.com/smarty/assertions v1.16.0

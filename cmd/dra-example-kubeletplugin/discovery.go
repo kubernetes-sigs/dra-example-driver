@@ -20,7 +20,9 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strings"
 
+	"huawei.com/npu-exporter/v5/devmanager"
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
@@ -28,39 +30,55 @@ import (
 	"github.com/google/uuid"
 )
 
-func enumerateAllPossibleDevices(numGPUs int) (AllocatableDevices, error) {
-	seed := os.Getenv("NODE_NAME")
-	uuids := generateUUIDs(seed, numGPUs)
+func enumerateAllPossibleDevices() (AllocatableDevices, error) {
+	manager, err := devmanager.NewHwDevManager()
+	if err != nil {
+		return nil, fmt.Errorf("failed to initialize NPU manager: %v", err)
+	}
+	allInfo, err := manager.GetNPUs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to enumerate NPUs: %v", err)
+	}
+
+	// 获取环境变量，指定可见设备
+	visibleDevices := os.Getenv("ASCEND_VISIBLE_DEVICES")
+	var selectedIDs []string
+	if visibleDevices != "" {
+		selectedIDs = strings.Split(visibleDevices, ",")
+	}
 
 	alldevices := make(AllocatableDevices)
-	for i, uuid := range uuids {
+	for _, dev := range allInfo.AllDevs {
+		deviceName := fmt.Sprintf("npu-%d", dev.LogicID)
+		if len(selectedIDs) > 0 && !contains(selectedIDs, fmt.Sprint(dev.LogicID)) {
+			continue
+		}
+
 		device := resourceapi.Device{
-			Name: fmt.Sprintf("gpu-%d", i),
+			Name: deviceName,
 			Basic: &resourceapi.BasicDevice{
 				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-					"index": {
-						IntValue: ptr.To(int64(i)),
-					},
-					"uuid": {
-						StringValue: ptr.To(uuid),
-					},
-					"model": {
-						StringValue: ptr.To("LATEST-GPU-MODEL"),
-					},
-					"driverVersion": {
-						VersionValue: ptr.To("1.0.0"),
-					},
+					"index": {IntValue: ptr.To(int64(dev.LogicID))},
+					"uuid":  {StringValue: ptr.To(dev.DeviceName)},
+					"model": {StringValue: ptr.To(dev.DevType)},
 				},
 				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-					"memory": {
-						Value: resource.MustParse("80Gi"),
-					},
+					"memory": {Value: resource.MustParse("32Gi")},
 				},
 			},
 		}
 		alldevices[device.Name] = device
 	}
 	return alldevices, nil
+}
+
+func contains(slice []string, item string) bool {
+	for _, v := range slice {
+		if v == item {
+			return true
+		}
+	}
+	return false
 }
 
 func generateUUIDs(seed string, count int) []string {
