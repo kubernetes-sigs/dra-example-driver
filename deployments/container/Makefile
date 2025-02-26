@@ -38,3 +38,6 @@ $(DISTRIBUTIONS):
 		--build-arg VERSION="$(VERSION)" \
 		-f $(DOCKERFILE) \
 		$(CURDIR)
+
+push:
+	$(CONTAINER_TOOL) push $(IMAGE)
