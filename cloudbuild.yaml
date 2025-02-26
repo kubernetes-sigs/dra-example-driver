@@ -7,7 +7,7 @@ steps:
   entrypoint: bash
   env:
   - DRIVER_IMAGE_REGISTRY=us-central1-docker.pkg.dev/k8s-staging-images/dra-example-driver
-  - DRIVER_IMAGE_TAG=$COMMIT_SHA
+  - DRIVER_IMAGE_TAG=$_GIT_TAG # _GIT_TAG is injected by Prow
   args:
     - -ec
     - |
