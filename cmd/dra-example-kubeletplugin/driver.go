@@ -79,7 +79,7 @@ func (d *driver) Shutdown(ctx context.Context) error {
 }
 
 func (d *driver) NodePrepareResources(ctx context.Context, req *drapbv1.NodePrepareResourcesRequest) (*drapbv1.NodePrepareResourcesResponse, error) {
-	klog.Infof("NodePrepareResource is called: number of claims: %d", len(req.Claims))
+	klog.Infof("NodePrepareResources called: number of claims: %d", len(req.Claims))
 	preparedResources := &drapbv1.NodePrepareResourcesResponse{Claims: map[string]*drapbv1.NodePrepareResourceResponse{}}
 
 	for _, claim := range req.Claims {
@@ -112,7 +112,7 @@ func (d *driver) nodePrepareResource(ctx context.Context, claim *drapbv1.Claim) 
 }
 
 func (d *driver) NodeUnprepareResources(ctx context.Context, req *drapbv1.NodeUnprepareResourcesRequest) (*drapbv1.NodeUnprepareResourcesResponse, error) {
-	klog.Infof("NodeUnPrepareResource is called: number of claims: %d", len(req.Claims))
+	klog.Infof("NodeUnprepareResources called: number of claims: %d", len(req.Claims))
 	unpreparedResources := &drapbv1.NodeUnprepareResourcesResponse{Claims: map[string]*drapbv1.NodeUnprepareResourceResponse{}}
 
 	for _, claim := range req.Claims {

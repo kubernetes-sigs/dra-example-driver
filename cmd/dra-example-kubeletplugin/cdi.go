@@ -19,6 +19,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
@@ -26,10 +27,9 @@ import (
 )
 
 const (
-	cdiVendor = "k8s." + DriverName
-	cdiClass  = "gpu"
-	cdiKind   = cdiVendor + "/" + cdiClass
-
+	cdiVendor           = "k8s." + DriverName
+	cdiClass            = "npu"
+	cdiKind             = cdiVendor + "/" + cdiClass
 	cdiCommonDeviceName = "common"
 )
 
@@ -51,6 +51,7 @@ func NewCDIHandler(config *Config) (*CDIHandler, error) {
 	return handler, nil
 }
 
+// CreateCommonSpecFile 生成通用的 CDI spec，用于设置节点相关环境变量
 func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	spec := &cdispec.Spec{
 		Kind: cdiKind,
@@ -81,30 +82,31 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.cache.WriteSpec(spec, specName)
 }
 
+// CreateClaimSpecFile 为给定 claim 创建临时 CDI spec 文件
+// 修改点：将所有分配到的设备名称聚合后，以环境变量 ASCEND_VISIBLE_DEVICES 注入到 Pod 中
 func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevices) error {
+	var deviceNames []string
+	for _, device := range devices {
+		deviceNames = append(deviceNames, device.DeviceName)
+	}
+	visibleDevices := strings.Join(deviceNames, ",")
+
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
 
 	spec := &cdispec.Spec{
-		Kind:    cdiKind,
-		Devices: []cdispec.Device{},
-	}
-
-	for _, device := range devices {
-		claimEdits := cdiapi.ContainerEdits{
-			ContainerEdits: &cdispec.ContainerEdits{
-				Env: []string{
-					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
+		Kind: cdiKind,
+		Devices: []cdispec.Device{
+			{
+				// 使用 claimUID 作为 CDI 设备名称
+				Name: claimUID,
+				ContainerEdits: cdispec.ContainerEdits{
+					Env: []string{
+						// 注入环境变量，告知 Pod 哪些 NPU 设备应该暴露
+						fmt.Sprintf("ASCEND_VISIBLE_DEVICES=%s", visibleDevices),
+					},
 				},
 			},
-		}
-		claimEdits.Append(device.ContainerEdits)
-
-		cdiDevice := cdispec.Device{
-			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
-			ContainerEdits: *claimEdits.ContainerEdits,
-		}
-
-		spec.Devices = append(spec.Devices, cdiDevice)
+		},
 	}
 
 	minVersion, err := cdiapi.MinimumRequiredVersion(spec)
@@ -116,20 +118,16 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 	return cdi.cache.WriteSpec(spec, specName)
 }
 
+// DeleteClaimSpecFile 删除指定 claim 的 CDI spec 文件
 func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
 	return cdi.cache.RemoveSpec(specName)
 }
 
+// GetClaimDevices 返回当前 claim 对应的 CDI 设备名称列表
 func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices []string) []string {
-	cdiDevices := []string{
+	return []string{
 		cdiparser.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
+		cdiparser.QualifiedName(cdiVendor, cdiClass, claimUID),
 	}
-
-	for _, device := range devices {
-		cdiDevice := cdiparser.QualifiedName(cdiVendor, cdiClass, fmt.Sprintf("%s-%s", claimUID, device))
-		cdiDevices = append(cdiDevices, cdiDevice)
-	}
-
-	return cdiDevices
 }

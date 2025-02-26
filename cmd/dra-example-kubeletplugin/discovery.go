@@ -20,14 +20,12 @@ import (
 	"fmt"
 	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"huawei.com/npu-exporter/v5/devmanager"
-	"math/rand"
-	"os"
-	"sigs.k8s.io/dra-example-driver/pkg/server"
-	"strings"
-
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
+	"math/rand"
+	"os"
+	"sigs.k8s.io/dra-example-driver/pkg/server"
 
 	"github.com/google/uuid"
 )
@@ -41,26 +39,20 @@ func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 	hdm := server.NewHwDevManager(devM)
 	allInfo := hdm.AllInfo
 
-	// 获取环境变量，指定可见设备
-	visibleDevices := os.Getenv("ASCEND_VISIBLE_DEVICES")
-	var selectedIDs []string
-	if visibleDevices != "" {
-		selectedIDs = strings.Split(visibleDevices, ",")
-	}
-
 	alldevices := make(AllocatableDevices)
+	// 遍历所有设备，根据实际硬件信息构造 resourceapi.Device 对象
 	for _, dev := range allInfo.AllDevs {
+		// 使用 dev.LogicID 作为设备索引，设备名称格式为 "npu-<LogicID>"
 		deviceName := fmt.Sprintf("npu-%d", dev.LogicID)
-		if len(selectedIDs) > 0 && !contains(selectedIDs, fmt.Sprint(dev.LogicID)) {
-			continue
-		}
+		// 生成设备唯一标识（例如使用 NODE_NAME 和设备ID 拼接）
+		uuidStr := fmt.Sprintf("%s-%d", os.Getenv("NODE_NAME"), dev.LogicID)
 
 		device := resourceapi.Device{
 			Name: deviceName,
 			Basic: &resourceapi.BasicDevice{
 				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
 					"index": {IntValue: ptr.To(int64(dev.LogicID))},
-					"uuid":  {StringValue: ptr.To(dev.DeviceName)},
+					"uuid":  {StringValue: ptr.To(uuidStr)},
 					"model": {StringValue: ptr.To(dev.DevType)},
 				},
 				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
@@ -90,7 +82,7 @@ func generateUUIDs(seed string, count int) []string {
 		charset := make([]byte, 16)
 		rand.Read(charset)
 		uuid, _ := uuid.FromBytes(charset)
-		uuids[i] = "gpu-" + uuid.String()
+		uuids[i] = "npu-" + uuid.String()
 	}
 
 	return uuids

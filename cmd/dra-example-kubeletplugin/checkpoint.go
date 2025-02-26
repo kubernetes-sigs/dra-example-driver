@@ -7,12 +7,12 @@ import (
 )
 
 type Checkpoint struct {
-	Checksum checksum.Checksum `json:"checksum"`
-	V1       *CheckpointV1     `json:"v1,omitempty"`
+	Checksum checksum.Checksum
+	V1       *CheckpointV1
 }
 
 type CheckpointV1 struct {
-	PreparedClaims PreparedClaims `json:"preparedClaims,omitempty"`
+	PreparedClaims PreparedClaims
 }
 
 func newCheckpoint() *Checkpoint {

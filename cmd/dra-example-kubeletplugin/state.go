@@ -187,7 +187,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 		return nil, fmt.Errorf("error getting opaque device configs: %v", err)
 	}
 
-	// Add the default GPU Config to the front of the config list with the
+	// Add the default NPU Config to the front of the config list with the
 	// lowest precedence. This guarantees there will be at least one config in
 	// the list with len(Requests) == 0 for the lookup below.
 	configs = slices.Insert(configs, 0, &OpaqueDeviceConfig{
@@ -200,7 +200,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	configResultsMap := make(map[runtime.Object][]*resourceapi.DeviceRequestAllocationResult)
 	for _, result := range claim.Status.Allocation.Devices.Results {
 		if _, exists := s.allocatable[result.Device]; !exists {
-			return nil, fmt.Errorf("requested GPU is not allocatable: %v", result.Device)
+			return nil, fmt.Errorf("requested NPU is not allocatable: %v", result.Device)
 		}
 		for _, c := range slices.Backward(configs) {
 			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {
@@ -226,18 +226,18 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 
 		// Normalize the config to set any implied defaults.
 		if err := config.Normalize(); err != nil {
-			return nil, fmt.Errorf("error normalizing GPU config: %w", err)
+			return nil, fmt.Errorf("error normalizing NPU config: %w", err)
 		}
 
 		// Validate the config to ensure its integrity.
 		if err := config.Validate(); err != nil {
-			return nil, fmt.Errorf("error validating GPU config: %w", err)
+			return nil, fmt.Errorf("error validating NPU config: %w", err)
 		}
 
 		// Apply the config to the list of results associated with it.
 		containerEdits, err := s.applyConfig(config, results)
 		if err != nil {
-			return nil, fmt.Errorf("error applying GPU config: %w", err)
+			return nil, fmt.Errorf("error applying NPU config: %w", err)
 		}
 
 		// Merge any new container edits with the overall per device map.

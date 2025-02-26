@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	DriverName = "gpu.example.com"
+	DriverName = "npu.example.com"
 
 	PluginRegistrationPath     = "/var/lib/kubelet/plugins_registry/" + DriverName + ".sock"
 	DriverPluginPath           = "/var/lib/kubelet/plugins/" + DriverName
@@ -44,9 +44,8 @@ type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
 	loggingConfig    *flags.LoggingConfig
 
-	nodeName   string
-	cdiRoot    string
-	numDevices int
+	nodeName string
+	cdiRoot  string
 }
 
 type Config struct {
@@ -80,29 +79,14 @@ func newApp() *cli.App {
 			Destination: &flags.cdiRoot,
 			EnvVars:     []string{"CDI_ROOT"},
 		},
-		&cli.IntFlag{
-			Name:        "num-devices",
-			Usage:       "The number of devices to be generated.",
-			Value:       8,
-			Destination: &flags.numDevices,
-			EnvVars:     []string{"NUM_DEVICES"},
-		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
 	app := &cli.App{
-		Name:            "dra-example-kubeletplugin",
-		Usage:           "dra-example-kubeletplugin implements a DRA driver plugin.",
-		ArgsUsage:       " ",
-		HideHelpCommand: true,
-		Flags:           cliFlags,
-		Before: func(c *cli.Context) error {
-			if c.Args().Len() > 0 {
-				return fmt.Errorf("arguments not supported: %v", c.Args().Slice())
-			}
-			return flags.loggingConfig.Apply()
-		},
+		Name:  "dra-example-kubeletplugin",
+		Usage: "dra-example-kubeletplugin implements a DRA driver plugin for Ascend NPU.",
+		Flags: cliFlags,
 		Action: func(c *cli.Context) error {
 			ctx := c.Context
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
@@ -138,7 +122,7 @@ func StartPlugin(ctx context.Context, config *Config) error {
 	case err != nil:
 		return err
 	case !info.IsDir():
-		return fmt.Errorf("path for cdi file generation is not a directory: '%v'", err)
+		return fmt.Errorf("path for CDI file generation is not a directory: '%v'", err)
 	}
 
 	driver, err := NewDriver(ctx, config)
