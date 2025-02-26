@@ -18,11 +18,13 @@ package main
 
 import (
 	"fmt"
+	"huawei.com/npu-exporter/v5/common-utils/hwlog"
+	"huawei.com/npu-exporter/v5/devmanager"
 	"math/rand"
 	"os"
+	"sigs.k8s.io/dra-example-driver/pkg/server"
 	"strings"
 
-	"huawei.com/npu-exporter/v5/devmanager"
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
@@ -31,14 +33,13 @@ import (
 )
 
 func enumerateAllPossibleDevices() (AllocatableDevices, error) {
-	manager, err := devmanager.NewHwDevManager()
+	devM, err := devmanager.AutoInit("")
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize NPU manager: %v", err)
+		hwlog.RunLog.Errorf("init devmanager failed, err: %#v", err)
+		return nil, err
 	}
-	allInfo, err := manager.GetNPUs()
-	if err != nil {
-		return nil, fmt.Errorf("failed to enumerate NPUs: %v", err)
-	}
+	hdm := server.NewHwDevManager(devM)
+	allInfo := hdm.AllInfo
 
 	// 获取环境变量，指定可见设备
 	visibleDevices := os.Getenv("ASCEND_VISIBLE_DEVICES")

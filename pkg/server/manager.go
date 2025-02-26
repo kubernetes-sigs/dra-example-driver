@@ -36,7 +36,7 @@ import (
 type HwDevManager struct {
 	groupDevice map[string][]*common.NpuDevice
 	ServerMap   map[string]InterfaceServer
-	allInfo     common.NpuAllInfo
+	AllInfo     common.NpuAllInfo
 	manager     device.DevManager
 	RunMode     string
 }
@@ -142,18 +142,18 @@ func (hdm *HwDevManager) updateNodeServerType(aiCoreCount int32) error {
 
 func (hdm *HwDevManager) setAllDeviceAndType() error {
 	var err error
-	if hdm.allInfo, err = hdm.manager.GetNPUs(); err != nil {
+	if hdm.AllInfo, err = hdm.manager.GetNPUs(); err != nil {
 		return err
 	}
-	if len(hdm.allInfo.AllDevTypes) == 0 {
+	if len(hdm.AllInfo.AllDevTypes) == 0 {
 		return fmt.Errorf("no devices type found")
 	}
 	return nil
 }
 
 func (hdm *HwDevManager) initPluginServer() error {
-	hdm.ServerMap = make(map[string]InterfaceServer, len(hdm.allInfo.AllDevTypes))
-	hdm.groupDevice = device.ClassifyDevices(hdm.allInfo.AllDevs, hdm.allInfo.AllDevTypes)
+	hdm.ServerMap = make(map[string]InterfaceServer, len(hdm.AllInfo.AllDevTypes))
+	hdm.groupDevice = device.ClassifyDevices(hdm.AllInfo.AllDevs, hdm.AllInfo.AllDevTypes)
 	defaultDevices, err := common.GetDefaultDevices(common.ParamOption.GetFdFlag)
 	if err != nil {
 		hwlog.RunLog.Error("get default device error")
@@ -161,10 +161,10 @@ func (hdm *HwDevManager) initPluginServer() error {
 	}
 	if !common.ParamOption.PresetVDevice {
 		hdm.ServerMap[common.AiCoreResourceName] = NewPluginServer(common.AiCoreResourceName,
-			hdm.allInfo.AICoreDevs, defaultDevices, hdm.manager)
+			hdm.AllInfo.AICoreDevs, defaultDevices, hdm.manager)
 		return nil
 	}
-	for _, deviceType := range hdm.allInfo.AllDevTypes {
+	for _, deviceType := range hdm.AllInfo.AllDevTypes {
 		hdm.ServerMap[deviceType] = NewPluginServer(deviceType, hdm.groupDevice[deviceType], defaultDevices,
 			hdm.manager)
 	}
@@ -173,14 +173,14 @@ func (hdm *HwDevManager) initPluginServer() error {
 
 // GetNPUs will set device default health, actually, it should be based on the last status if exist
 func (hdm *HwDevManager) updateDeviceHealth(curAllDevs []common.NpuDevice) {
-	lastAllDevs := make(map[string]int, len(hdm.allInfo.AllDevs))
-	for index, dev := range hdm.allInfo.AllDevs {
+	lastAllDevs := make(map[string]int, len(hdm.AllInfo.AllDevs))
+	for index, dev := range hdm.AllInfo.AllDevs {
 		lastAllDevs[dev.DeviceName] = index
 	}
 	for i, dev := range curAllDevs {
-		if index, exist := lastAllDevs[dev.DeviceName]; exist && index < len(hdm.allInfo.AllDevs) {
-			curAllDevs[i].Health = hdm.allInfo.AllDevs[index].Health
-			curAllDevs[i].NetworkHealth = hdm.allInfo.AllDevs[index].NetworkHealth
+		if index, exist := lastAllDevs[dev.DeviceName]; exist && index < len(hdm.AllInfo.AllDevs) {
+			curAllDevs[i].Health = hdm.AllInfo.AllDevs[index].Health
+			curAllDevs[i].NetworkHealth = hdm.AllInfo.AllDevs[index].NetworkHealth
 		}
 	}
 }
@@ -210,7 +210,7 @@ func (hdm *HwDevManager) updateDevice() error {
 	}
 	hdm.updateDeviceHealth(allInfo.AllDevs)
 	hdm.groupDevice = device.ClassifyDevices(allInfo.AllDevs, allInfo.AllDevTypes)
-	hdm.allInfo = allInfo
+	hdm.AllInfo = allInfo
 	return nil
 }
 
@@ -231,13 +231,13 @@ func (hdm *HwDevManager) pluginNotify(classifyDev []*common.NpuDevice, devType s
 }
 
 func (hdm *HwDevManager) notifyToK8s() {
-	isDevStateChange := hdm.manager.IsDeviceStatusChange(hdm.groupDevice, hdm.allInfo.AICoreDevs, hdm.RunMode)
+	isDevStateChange := hdm.manager.IsDeviceStatusChange(hdm.groupDevice, hdm.AllInfo.AICoreDevs, hdm.RunMode)
 	for devType, isChanged := range isDevStateChange {
 		if !isChanged {
 			continue
 		}
 		if !common.ParamOption.PresetVDevice {
-			hdm.pluginNotify(hdm.allInfo.AICoreDevs, common.AiCoreResourceName)
+			hdm.pluginNotify(hdm.AllInfo.AICoreDevs, common.AiCoreResourceName)
 			return
 		}
 		hdm.pluginNotify(hdm.groupDevice[devType], devType)
@@ -357,7 +357,7 @@ func (hdm *HwDevManager) updatePodAnnotation() error {
 	if !common.ParamOption.PresetVDevice {
 		return hdm.updateSpecTypePodAnnotation(common.AiCoreResourceName, serverID)
 	}
-	for _, devType := range hdm.allInfo.AllDevTypes {
+	for _, devType := range hdm.AllInfo.AllDevTypes {
 		// for 310P vnpu no need update
 		if common.IsVirtualDev(devType) && !strings.HasPrefix(devType, common.Ascend910) {
 			continue
