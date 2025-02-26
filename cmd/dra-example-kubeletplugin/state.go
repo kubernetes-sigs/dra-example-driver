@@ -188,15 +188,12 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	}
 
 	// Add the default NPU Config to the front of the config list with the
-	// lowest precedence. This guarantees there will be at least one config in
-	// the list with len(Requests) == 0 for the lookup below.
+	// lowest precedence.
 	configs = slices.Insert(configs, 0, &OpaqueDeviceConfig{
 		Requests: []string{},
-		Config:   configapi.DefaultGpuConfig(),
+		Config:   configapi.DefaultGpuConfig(), // 这里可保持结构不变，内部逻辑可更新为 NPU 相关
 	})
 
-	// Look through the configs and figure out which one will be applied to
-	// each device allocation result based on their order of precedence.
 	configResultsMap := make(map[runtime.Object][]*resourceapi.DeviceRequestAllocationResult)
 	for _, result := range claim.Status.Allocation.Devices.Results {
 		if _, exists := s.allocatable[result.Device]; !exists {
@@ -210,44 +207,34 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 		}
 	}
 
-	// Normalize, validate, and apply all configs associated with devices that
-	// need to be prepared. Track container edits generated from applying the
-	// config to the set of device allocation results.
 	perDeviceCDIContainerEdits := make(PerDeviceCDIContainerEdits)
 	for c, results := range configResultsMap {
-		// Cast the opaque config to a GpuConfig
 		var config *configapi.GpuConfig
 		switch castConfig := c.(type) {
 		case *configapi.GpuConfig:
 			config = castConfig
 		default:
-			return nil, fmt.Errorf("runtime object is not a regognized configuration")
+			return nil, fmt.Errorf("runtime object is not a recognized configuration")
 		}
 
-		// Normalize the config to set any implied defaults.
 		if err := config.Normalize(); err != nil {
 			return nil, fmt.Errorf("error normalizing NPU config: %w", err)
 		}
 
-		// Validate the config to ensure its integrity.
 		if err := config.Validate(); err != nil {
 			return nil, fmt.Errorf("error validating NPU config: %w", err)
 		}
 
-		// Apply the config to the list of results associated with it.
 		containerEdits, err := s.applyConfig(config, results)
 		if err != nil {
 			return nil, fmt.Errorf("error applying NPU config: %w", err)
 		}
 
-		// Merge any new container edits with the overall per device map.
 		for k, v := range containerEdits {
 			perDeviceCDIContainerEdits[k] = v
 		}
 	}
 
-	// Walk through each config and its associated device allocation results
-	// and construct the list of prepared devices to return.
 	var preparedDevices PreparedDevices
 	for _, results := range configResultsMap {
 		for _, result := range results {
@@ -268,25 +255,20 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 }
 
 func (s *DeviceState) unprepareDevices(claimUID string, devices PreparedDevices) error {
+	// 此处暂不需要实际解分配逻辑
 	return nil
 }
 
-// applyConfig applies a configuration to a set of device allocation results.
-//
-// In this example driver there is no actual configuration applied. We simply
-// define a set of environment variables to be injected into the containers
-// that include a given device. A real driver would likely need to do some sort
-// of hardware configuration as well, based on the config passed in.
 func (s *DeviceState) applyConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error) {
 	perDeviceEdits := make(PerDeviceCDIContainerEdits)
 
 	for _, result := range results {
 		envs := []string{
-			fmt.Sprintf("GPU_DEVICE_%s=%s", result.Device[4:], result.Device),
+			fmt.Sprintf("NPU_DEVICE_%s=%s", result.Device[4:], result.Device),
 		}
 
 		if config.Sharing != nil {
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_SHARING_STRATEGY=%s", result.Device[4:], config.Sharing.Strategy))
+			envs = append(envs, fmt.Sprintf("NPU_DEVICE_%s_SHARING_STRATEGY=%s", result.Device[4:], config.Sharing.Strategy))
 		}
 
 		switch {
@@ -295,13 +277,13 @@ func (s *DeviceState) applyConfig(config *configapi.GpuConfig, results []*resour
 			if err != nil {
 				return nil, fmt.Errorf("unable to get time slicing config for device %v: %w", result.Device, err)
 			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_TIMESLICE_INTERVAL=%v", result.Device[4:], tsconfig.Interval))
+			envs = append(envs, fmt.Sprintf("NPU_DEVICE_%s_TIMESLICE_INTERVAL=%v", result.Device[4:], tsconfig.Interval))
 		case config.Sharing.IsSpacePartitioning():
 			spconfig, err := config.Sharing.GetSpacePartitioningConfig()
 			if err != nil {
 				return nil, fmt.Errorf("unable to get space partitioning config for device %v: %w", result.Device, err)
 			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_PARTITION_COUNT=%v", result.Device[4:], spconfig.PartitionCount))
+			envs = append(envs, fmt.Sprintf("NPU_DEVICE_%s_PARTITION_COUNT=%v", result.Device[4:], spconfig.PartitionCount))
 		}
 
 		edits := &cdispec.ContainerEdits{
@@ -314,23 +296,11 @@ func (s *DeviceState) applyConfig(config *configapi.GpuConfig, results []*resour
 	return perDeviceEdits, nil
 }
 
-// GetOpaqueDeviceConfigs returns an ordered list of the configs contained in possibleConfigs for this driver.
-//
-// Configs can either come from the resource claim itself or from the device
-// class associated with the request. Configs coming directly from the resource
-// claim take precedence over configs coming from the device class. Moreover,
-// configs found later in the list of configs attached to its source take
-// precedence over configs found earlier in the list for that source.
-//
-// All of the configs relevant to the driver from the list of possibleConfigs
-// will be returned in order of precedence (from lowest to highest). If no
-// configs are found, nil is returned.
 func GetOpaqueDeviceConfigs(
 	decoder runtime.Decoder,
 	driverName string,
 	possibleConfigs []resourceapi.DeviceAllocationConfiguration,
 ) ([]*OpaqueDeviceConfig, error) {
-	// Collect all configs in order of reverse precedence.
 	var classConfigs []resourceapi.DeviceAllocationConfiguration
 	var claimConfigs []resourceapi.DeviceAllocationConfiguration
 	var candidateConfigs []resourceapi.DeviceAllocationConfiguration
@@ -347,19 +317,12 @@ func GetOpaqueDeviceConfigs(
 	candidateConfigs = append(candidateConfigs, classConfigs...)
 	candidateConfigs = append(candidateConfigs, claimConfigs...)
 
-	// Decode all configs that are relevant for the driver.
 	var resultConfigs []*OpaqueDeviceConfig
 	for _, config := range candidateConfigs {
-		// If this is nil, the driver doesn't support some future API extension
-		// and needs to be updated.
 		if config.DeviceConfiguration.Opaque == nil {
 			return nil, fmt.Errorf("only opaque parameters are supported by this driver")
 		}
 
-		// Configs for different drivers may have been specified because a
-		// single request can be satisfied by different drivers. This is not
-		// an error -- drivers must skip over other driver's configs in order
-		// to support this.
 		if config.DeviceConfiguration.Opaque.Driver != driverName {
 			continue
 		}
