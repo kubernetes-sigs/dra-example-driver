@@ -145,8 +145,6 @@ func (ps *PluginServer) getOldestPod(pods []v1.Pod) *v1.Pod {
 			oldest = pod
 		}
 	}
-
-	oldest.Annotations[common.PodPredicateTime])
 	annotation := map[string]string{common.PodPredicateTime: strconv.FormatUint(math.MaxUint64, common.BaseDec)}
 	if err := ps.manager.GetKubeClient().TryUpdatePodAnnotation(&oldest, annotation); err != nil {
 
