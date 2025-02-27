@@ -23,8 +23,7 @@ minikube start \
   --extra-config=controller-manager.v=1 \
   --extra-config=scheduler.v=1 \
   --extra-config=kubelet.v=1 \
-  --wait=all \
-  --force
+  --wait=all
 
 # **修改 containerd 配置**
 minikube ssh --profile="${MINIKUBE_PROFILE_NAME}" <<EOF
