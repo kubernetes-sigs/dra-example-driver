@@ -1,4 +1,3 @@
-// C:\Users\loopsaaage\workspace\kind\dlv\ascend-dra-driver\demo\create-cluster.sh
 #!/usr/bin/env bash
 
 # Copyright 2023 The Kubernetes Authors.
