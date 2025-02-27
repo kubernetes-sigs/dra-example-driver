@@ -137,7 +137,7 @@ func (hnm *HwAscend910Manager) updateNodeLabel(curNode *v1.Node, devRecoverLabel
 	newNode.Labels[common.HuaweiRecoverAscend910] = devRecoverLabel
 	newNode.Labels[common.HuaweiNetworkRecoverAscend910] = netRecoverLabel
 
-	updatedNode, _, err := hnm.client.PatchNodeState(curNode, newNode)
+	_, _, err := hnm.client.PatchNodeState(curNode, newNode)
 	if err != nil {
 		return err
 	}
