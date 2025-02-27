@@ -39,7 +39,8 @@ minikube start \
   --extra-config=scheduler.v=1 \
   --extra-config=kubelet.v=1 \
   --mount --mount-string="${CONTAINERD_CONFIG}:/etc/containerd/config.toml" \
-  --wait=all
+  --wait=all \
+  --force
 
 # **重启 containerd 使配置生效**
 minikube ssh --profile="${MINIKUBE_PROFILE_NAME}" "sudo systemctl restart containerd"
