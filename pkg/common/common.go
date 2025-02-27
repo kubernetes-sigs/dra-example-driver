@@ -30,7 +30,7 @@ import (
 	"syscall"
 
 	"github.com/fsnotify/fsnotify"
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
+
 	"k8s.io/api/core/v1"
 )
 
@@ -68,7 +68,7 @@ func MakeDataHash(data interface{}) string {
 	}
 	h := sha256.New()
 	if _, err := h.Write(dataBuffer); err != nil {
-		hwlog.RunLog.Error("hash data error")
+
 		return ""
 	}
 	sum := h.Sum(nil)
@@ -79,7 +79,7 @@ func MakeDataHash(data interface{}) string {
 func MarshalData(data interface{}) []byte {
 	dataBuffer, err := json.Marshal(data)
 	if err != nil {
-		hwlog.RunLog.Errorf("marshal data err: %#v", err)
+
 		return nil
 	}
 	return dataBuffer
@@ -160,7 +160,7 @@ func GetDefaultDevices(getFdFlag bool) ([]string, error) {
 	if productType == Atlas200ISoc {
 		socDefaultDevices, err := set200SocDefaultDevices()
 		if err != nil {
-			hwlog.RunLog.Errorf("get 200I soc default devices failed, err: %#v", err)
+
 			return nil, err
 		}
 		defaultDevices = append(defaultDevices, socDefaultDevices...)
@@ -197,7 +197,7 @@ func set200SocDefaultDevices() ([]string, error) {
 	}
 	for _, devPath := range socOptionsDevices {
 		if _, err := os.Stat(devPath); err != nil {
-			hwlog.RunLog.Warnf("device %s not exist", devPath)
+
 			continue
 		}
 		socDefaultDevices = append(socDefaultDevices, devPath)
@@ -221,7 +221,7 @@ func set310BDefaultDevices() []string {
 	var available310BDevices []string
 	for _, devPath := range a310BDefaultDevices {
 		if _, err := os.Stat(devPath); err != nil {
-			hwlog.RunLog.Warnf("device %s not exist", devPath)
+
 			continue
 		}
 		available310BDevices = append(available310BDevices, devPath)
@@ -232,7 +232,7 @@ func set310BDefaultDevices() []string {
 func getNPUResourceNumOfPod(pod *v1.Pod, deviceType string) int64 {
 	containers := pod.Spec.Containers
 	if len(containers) > MaxContainerLimit {
-		hwlog.RunLog.Error("The number of container exceeds the upper limit")
+
 		return int64(0)
 	}
 	var total int64
@@ -244,7 +244,7 @@ func getNPUResourceNumOfPod(pod *v1.Pod, deviceType string) int64 {
 		}
 		limitsDevNum := val.Value()
 		if limitsDevNum < 0 || limitsDevNum > int64(MaxDevicesNum*MaxAICoreNum) {
-			hwlog.RunLog.Errorf("apply devices number should be in the range of [0, %d]", MaxDevicesNum*MaxAICoreNum)
+
 			return int64(0)
 		}
 		total += limitsDevNum
@@ -258,7 +258,7 @@ func isAscendAssignedPod(pod *v1.Pod, deviceType string) bool {
 	}
 	annotationTag := fmt.Sprintf("%s%s", ResourceNamePrefix, deviceType)
 	if _, ok := pod.ObjectMeta.Annotations[annotationTag]; !ok {
-		hwlog.RunLog.Debugf("no assigned flag, pod Name: %s, pod NameSpace: %s", pod.Name, pod.Namespace)
+
 		return false
 	}
 	return true
@@ -269,7 +269,7 @@ func isShouldDeletePod(pod *v1.Pod) bool {
 		return true
 	}
 	if len(pod.Status.ContainerStatuses) > MaxContainerLimit {
-		hwlog.RunLog.Error("The number of container exceeds the upper limit")
+
 		return true
 	}
 	for _, status := range pod.Status.ContainerStatuses {
@@ -285,7 +285,7 @@ func isShouldDeletePod(pod *v1.Pod) bool {
 func FilterPods(pods []v1.Pod, deviceType string, conditionFunc func(pod *v1.Pod) bool) []v1.Pod {
 	var res []v1.Pod
 	for _, pod := range pods {
-		hwlog.RunLog.Debugf("pod: %s, %s", pod.Name, pod.Status.Phase)
+
 		if getNPUResourceNumOfPod(&pod, deviceType) == 0 || !isAscendAssignedPod(&pod,
 			deviceType) || isShouldDeletePod(&pod) {
 			continue
@@ -300,25 +300,25 @@ func FilterPods(pods []v1.Pod, deviceType string, conditionFunc func(pod *v1.Pod
 
 // VerifyPathAndPermission used to verify the validity of the path and permission and return resolved absolute path
 func VerifyPathAndPermission(verifyPath string) (string, bool) {
-	hwlog.RunLog.Debug("starting check device socket file path.")
+
 	absVerifyPath, err := filepath.Abs(verifyPath)
 	if err != nil {
-		hwlog.RunLog.Error("abs current path failed")
+
 		return "", false
 	}
 	pathInfo, err := os.Stat(absVerifyPath)
 	if err != nil {
-		hwlog.RunLog.Error("file path not exist")
+
 		return "", false
 	}
 	realPath, err := filepath.EvalSymlinks(absVerifyPath)
 	if err != nil || absVerifyPath != realPath {
-		hwlog.RunLog.Error("Symlinks is not allowed")
+
 		return "", false
 	}
 	stat, ok := pathInfo.Sys().(*syscall.Stat_t)
 	if !ok || stat.Uid != RootUID || stat.Gid != RootGID {
-		hwlog.RunLog.Error("Non-root owner group of the path")
+
 		return "", false
 	}
 	return realPath, true
@@ -387,7 +387,7 @@ func GetPodConfiguration(phyDevMapVirtualDev map[int]int, devices map[int]string
 		}
 		phyID, exist := phyDevMapVirtualDev[deviceID]
 		if !exist {
-			hwlog.RunLog.Warn("virtual device not found phyid")
+
 			continue
 		}
 		instance.Devices = append(instance.Devices, Device{
@@ -397,7 +397,7 @@ func GetPodConfiguration(phyDevMapVirtualDev map[int]int, devices map[int]string
 	}
 	instanceByte, err := json.Marshal(instance)
 	if err != nil {
-		hwlog.RunLog.Errorf("Transform marshal failed, err: %#v", err)
+
 		return ""
 	}
 	return string(instanceByte)

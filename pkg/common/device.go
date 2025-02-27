@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"k8s.io/apimachinery/pkg/util/sets"
 )
 
@@ -62,7 +61,7 @@ func GetDeviceListID(devices []string, ascendRuntimeOptions string) (map[int]int
 	for _, id := range devices {
 		deviceID, virID, err := GetDeviceID(id, ascendRuntimeOptions)
 		if err != nil {
-			hwlog.RunLog.Errorf("get device ID err: %#v", err)
+
 			return nil, nil, err
 		}
 		if ascendRuntimeOptions == VirtualDev {
@@ -95,7 +94,7 @@ func ConvertDevListToSets(devices, sepType string) sets.String {
 	}
 	deviceInfo := strings.Split(devices, sepType)
 	if len(deviceInfo) > MaxDevicesNum {
-		hwlog.RunLog.Error("The number of device exceeds the upper limit")
+
 		return sets.String{}
 	}
 	if sepType == DotSepDev {
@@ -121,7 +120,7 @@ func deviceInfoToSets(deviceInfo []string) sets.String {
 	deviceSets := sets.String{}
 	for _, device := range deviceInfo {
 		if match, err := regexp.MatchString(GetPattern()["ascend910"], device); !match || err != nil {
-			hwlog.RunLog.Warnf("current device %s format err: %#v", device, err)
+
 			continue
 		}
 		deviceSets.Insert(device)
@@ -132,12 +131,12 @@ func deviceInfoToSets(deviceInfo []string) sets.String {
 // IsValidNumber input checkVal is a valid number
 func IsValidNumber(checkVal string) (int64, bool) {
 	if strings.Contains(checkVal, UnderLine) {
-		hwlog.RunLog.Warnf("device id %s invalid", checkVal)
+
 		return -1, false
 	}
 	conversionRes, err := strconv.ParseInt(checkVal, BaseDec, BitSize)
 	if err != nil {
-		hwlog.RunLog.Warnf("current device id invalid, err: %#v", err)
+
 		return -1, false
 	}
 	return conversionRes, true
@@ -184,7 +183,7 @@ func GetVNPUSegmentInfo(deviceInfos []string) (int32, string, error) {
 	if len(deviceInfos) != AnnotationVNPUInfoSplitLen {
 		return 0, "", fmt.Errorf("deviceInfos %v is invalid", deviceInfos)
 	}
-	hwlog.RunLog.Debugf("get device info %v", deviceInfos)
+
 	phyID, err := strconv.Atoi(deviceInfos[0])
 	if err != nil {
 		return 0, "", fmt.Errorf("phy id info is invalid %s", deviceInfos[0])

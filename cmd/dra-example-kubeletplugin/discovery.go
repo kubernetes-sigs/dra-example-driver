@@ -18,13 +18,13 @@ package main
 
 import (
 	"fmt"
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
+	"math/rand"
+	"os"
+
 	"huawei.com/npu-exporter/v5/devmanager"
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
-	"math/rand"
-	"os"
 	"sigs.k8s.io/dra-example-driver/pkg/server"
 
 	"github.com/google/uuid"
@@ -33,7 +33,6 @@ import (
 func enumerateAllPossibleDevices() (AllocatableDevices, error) {
 	devM, err := devmanager.AutoInit("")
 	if err != nil {
-		hwlog.RunLog.Errorf("init devmanager failed, err: %#v", err)
 		return nil, err
 	}
 	hdm := server.NewHwDevManager(devM)

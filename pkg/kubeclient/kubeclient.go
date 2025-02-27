@@ -21,7 +21,6 @@ import (
 	"os"
 	"regexp"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -41,13 +40,13 @@ type ClientK8s struct {
 func NewClientK8s() (*ClientK8s, error) {
 	clientCfg, err := clientcmd.BuildConfigFromFlags("", "")
 	if err != nil {
-		hwlog.RunLog.Errorf("build client config err: %#v", err)
+
 		return nil, err
 	}
 
 	client, err := kubernetes.NewForConfig(clientCfg)
 	if err != nil {
-		hwlog.RunLog.Errorf("get client err: %#v", err)
+
 		return nil, err
 	}
 	nodeName, err := getNodeNameFromEnv()
@@ -101,11 +100,11 @@ func (ki *ClientK8s) GetAllPodList() (*v1.PodList, error) {
 	selector := fields.SelectorFromSet(fields.Set{"spec.nodeName": ki.NodeName})
 	podList, err := ki.GetPodListByCondition(selector)
 	if err != nil {
-		hwlog.RunLog.Errorf("get pod list failed, err: %#v", err)
+
 		return nil, err
 	}
 	if len(podList.Items) >= common.MaxPodLimit {
-		hwlog.RunLog.Error("The number of pods exceeds the upper limit")
+
 		return nil, fmt.Errorf("pod list count invalid")
 	}
 	return podList, nil
@@ -129,11 +128,11 @@ func (ki *ClientK8s) CheckPodList(podList *v1.PodList) ([]v1.Pod, error) {
 	var pods []v1.Pod
 	for _, pod := range podList.Items {
 		if err := common.CheckPodNameAndSpace(pod.Name, common.PodNameMaxLength); err != nil {
-			hwlog.RunLog.Warnf("pod name syntax illegal, err: %#v", err)
+
 			continue
 		}
 		if err := common.CheckPodNameAndSpace(pod.Namespace, common.PodNameSpaceMaxLength); err != nil {
-			hwlog.RunLog.Warnf("pod namespace syntax illegal, err: %#v", err)
+
 			continue
 		}
 		pods = append(pods, pod)
@@ -172,7 +171,7 @@ func (ki *ClientK8s) resetNodeAnnotations(node *v1.Node) {
 func (ki *ClientK8s) ResetDeviceInfo() {
 	deviceList := make(map[string]string, 1)
 	if _, err := ki.WriteDeviceInfoDataIntoCM(deviceList); err != nil {
-		hwlog.RunLog.Errorf("write device info failed, error is %#v", err)
+
 	}
 }
 

@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -39,7 +38,7 @@ func (ki *ClientK8s) TryUpdatePodAnnotation(pod *v1.Pod, annotation map[string]s
 	for i := 0; i < common.RetryUpdateCount; i++ {
 		podNew, err := ki.GetPod(pod)
 		if err != nil || podNew == nil {
-			hwlog.RunLog.Errorf("query pod info failed. %#v", err)
+
 			continue
 		}
 		if podNew.Annotations == nil {
@@ -52,7 +51,7 @@ func (ki *ClientK8s) TryUpdatePodAnnotation(pod *v1.Pod, annotation map[string]s
 		if _, err = ki.UpdatePod(podNew); err == nil {
 			return nil
 		}
-		hwlog.RunLog.Warnf("update pod annotation failed, times: %d, error is %#v", i+1, err)
+
 		time.Sleep(time.Second)
 	}
 	return fmt.Errorf("update pod annotation failed, exceeded max number of retries")
@@ -61,7 +60,7 @@ func (ki *ClientK8s) TryUpdatePodAnnotation(pod *v1.Pod, annotation map[string]s
 func (ki *ClientK8s) isConfigMapChanged(cm *v1.ConfigMap) bool {
 	cmData, err := ki.GetConfigMap()
 	if err != nil {
-		hwlog.RunLog.Infof("get device info configmap failed, error is: %#v", err)
+
 		return true
 	}
 	return !reflect.DeepEqual(cmData, cm)
@@ -75,7 +74,7 @@ func (ki *ClientK8s) createOrUpdateConfigMap(cm *v1.ConfigMap) (*v1.ConfigMap, e
 		}
 		// To reduce the cm write operations
 		if !ki.isConfigMapChanged(cm) {
-			hwlog.RunLog.Info("configmap not changed, no need update")
+
 			return cm, nil
 		}
 		if newCM, err = ki.UpdateConfigMap(cm); err != nil {
@@ -112,7 +111,6 @@ func (ki *ClientK8s) WriteDeviceInfoDataIntoCM(deviceInfo map[string]string) (*v
 		Data: map[string]string{common.DeviceInfoCMDataKey: string(data)},
 	}
 
-	hwlog.RunLog.Debugf("write device info cache into cm: %s/%s.", deviceInfoCM.Namespace, deviceInfoCM.Name)
 	return ki.createOrUpdateConfigMap(deviceInfoCM)
 }
 
@@ -120,11 +118,11 @@ func (ki *ClientK8s) WriteDeviceInfoDataIntoCM(deviceInfo map[string]string) (*v
 func (ki *ClientK8s) AnnotationReset() error {
 	curNode, err := ki.GetNode()
 	if err != nil {
-		hwlog.RunLog.Errorf("failed to get node, nodeName: %s, err: %#v", ki.NodeName, err)
+
 		return err
 	}
 	if curNode == nil {
-		hwlog.RunLog.Error("invalid node")
+
 		return fmt.Errorf("invalid node")
 	}
 	newNode := curNode.DeepCopy()
@@ -132,14 +130,14 @@ func (ki *ClientK8s) AnnotationReset() error {
 	ki.ResetDeviceInfo()
 	for i := 0; i < common.RetryUpdateCount; i++ {
 		if _, _, err = ki.PatchNodeState(curNode, newNode); err == nil {
-			hwlog.RunLog.Infof("reset annotation success")
+
 			return nil
 		}
-		hwlog.RunLog.Errorf("failed to patch volcano npu resource, times:%d", i+1)
+
 		time.Sleep(time.Second)
 		continue
 	}
-	hwlog.RunLog.Errorf("failed to patch volcano npu resource: %#v", err)
+
 	return err
 }
 
@@ -147,7 +145,7 @@ func (ki *ClientK8s) AnnotationReset() error {
 func (ki *ClientK8s) GetPodsUsedNpu(devType string) sets.String {
 	podList, err := ki.GetActivePodList()
 	if err != nil {
-		hwlog.RunLog.Errorf("get pod list failed, err: %#v", err)
+
 		return sets.String{}
 	}
 	var useNpu []string
@@ -159,13 +157,13 @@ func (ki *ClientK8s) GetPodsUsedNpu(devType string) sets.String {
 		}
 		tmpNpuList := strings.Split(tmpNpu, common.CommaSepDev)
 		if len(tmpNpuList) == 0 || len(tmpNpuList) > common.MaxDevicesNum {
-			hwlog.RunLog.Warnf("invalid annotation, len is %d", len(tmpNpu))
+
 			continue
 		}
 		useNpu = append(useNpu, tmpNpuList...)
-		hwlog.RunLog.Debugf("pod Name: %s, getNPUByStatus vol : %#v", pod.Name, tmpNpu)
+
 	}
-	hwlog.RunLog.Debugf("nodeName: %s, useNpus: %#v", ki.NodeName, useNpu)
+
 	return sets.NewString(useNpu...)
 }
 
@@ -176,7 +174,7 @@ func (ki *ClientK8s) GetNodeServerID() (string, error) {
 		return "", err
 	}
 	if len(node.Status.Addresses) > common.MaxPodLimit {
-		hwlog.RunLog.Error("the number of node status in exceeds the upper limit")
+
 		return "", fmt.Errorf("the number of node status in exceeds the upper limit")
 	}
 	var serverID string

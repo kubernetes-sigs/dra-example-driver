@@ -16,7 +16,6 @@
 package server
 
 import (
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"sigs.k8s.io/dra-example-driver/pkg/common"
 )
 
@@ -28,7 +27,7 @@ func (ps *PluginServer) Start(socketWatcher *common.FileWatch) error {
 	var err error
 
 	ps.Stop()
-	hwlog.RunLog.Errorf("register to kubelet failed, err: %#v", err)
+
 	return err
 }
 

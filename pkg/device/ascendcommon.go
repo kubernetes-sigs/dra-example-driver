@@ -22,7 +22,6 @@ import (
 	"strings"
 	"time"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"huawei.com/npu-exporter/v5/devmanager"
 	npuCommon "huawei.com/npu-exporter/v5/devmanager/common"
 	"k8s.io/api/core/v1"
@@ -97,18 +96,18 @@ func (tool *AscendTools) UpdateNodeDeviceInfo(devStatusSet common.DevStatusSet,
 	waitErr := wait.PollImmediate(common.Interval*time.Second, common.Timeout*time.Second, func() (bool, error) {
 		deviceList, err := tool.getDeviceListFromConfigMap()
 		if err != nil {
-			hwlog.RunLog.Warnf("get device list from config map failed, %#v", err)
+
 			tool.client.ResetDeviceInfo()
 			return false, nil
 		}
 		newDeviceList := common.MapDeepCopy(deviceList)
 		if err := updateDeviceInfoFunc(deviceList, newDeviceList, devStatusSet); err != nil {
-			hwlog.RunLog.Errorf("update device info failed, err: %#v", err)
+
 			return false, nil
 		}
 		tool.delVirDevInfo(newDeviceList)
 		if _, err := tool.client.WriteDeviceInfoDataIntoCM(newDeviceList); err != nil {
-			hwlog.RunLog.Errorf("write device info failed: %#v", err)
+
 			return false, nil
 		}
 
@@ -130,7 +129,7 @@ func (tool *AscendTools) delVirDevInfo(newDeviceList map[string]string) {
 
 func (tool *AscendTools) assembleNpuDeviceStruct(deviType, deviceName string,
 	davinCiDev common.DavinCiDev) common.NpuDevice {
-	hwlog.RunLog.Debugf("Found Huawei Ascend, deviceType: %s, deviceName: %s", deviType, deviceName)
+
 	return common.NpuDevice{
 		DevType:    deviType,
 		DeviceName: deviceName,
@@ -153,7 +152,7 @@ func (tool *AscendTools) assembleVirtualDevices(davinCiDev common.DavinCiDev, vD
 	for _, subVDevInfo := range vDevInfos.VDevInfo {
 		vDeviType, deviceName, err := tool.assembleSpecVirtualDevice(davinCiDev.PhyID, subVDevInfo)
 		if err != nil {
-			hwlog.RunLog.Error(err)
+
 			continue
 		}
 		device := tool.assembleNpuDeviceStruct(vDeviType, deviceName, davinCiDev)
@@ -243,7 +242,7 @@ func getDeviceInfoData(deviceInfo *v1.ConfigMap) (map[string]string, error) {
 func (tool *AscendTools) getRealUsedDevices() sets.String {
 	podList, err := tool.client.GetActivePodList()
 	if err != nil {
-		hwlog.RunLog.Warn(err)
+
 		return sets.String{}
 	}
 	usedDevice := sets.String{}
@@ -283,9 +282,7 @@ func (tool *AscendTools) getDevStatesDevSet(classifyDevs map[string][]*common.Np
 func (tool *AscendTools) groupDevsByStatus(subClassDevices []*common.NpuDevice, runMode string) (
 	sets.String, sets.String, sets.String) {
 	healthDevice, totalUHDevices, totalNetworkUHDevices := sets.String{}, sets.String{}, sets.String{}
-	hwlog.RunLog.Debugf("healthy device %#v", healthDevice)
-	hwlog.RunLog.Debugf("total unhealthy devices %#v", totalUHDevices)
-	hwlog.RunLog.Debugf("total network unhealthy devices %#v", totalNetworkUHDevices)
+
 	return healthDevice, totalUHDevices, totalNetworkUHDevices
 }
 
@@ -328,7 +325,7 @@ func (tool *AscendTools) getDeviceListIP(devices []string, deviceType string) (m
 	}
 	_, ascendDevices, err := common.GetDeviceListID(devices, ascendRuntimeOptions)
 	if err != nil {
-		hwlog.RunLog.Errorf("get device list id err: %#v", err)
+
 		return nil, err
 	}
 	devicesWithIP := make(map[int]string, len(devices))
@@ -343,7 +340,7 @@ func (tool *AscendTools) getDeviceListIP(devices []string, deviceType string) (m
 		}
 		deviceIP, err := tool.getDeviceIP(id)
 		if err != nil {
-			hwlog.RunLog.Errorf("get device %d ip err: %#v", id, err)
+
 			return nil, err
 		}
 		devicesWithIP[id] = deviceIP
@@ -360,7 +357,7 @@ func (tool *AscendTools) AddPodAnnotation(pod *v1.Pod, kltRequestDevices, dpResp
 	}
 	phyDevMapVirtualDev, _, err := common.GetDeviceListID(dpResponseDevices, ascendRuntimeOptions)
 	if err != nil {
-		hwlog.RunLog.Errorf("get device list id err: %#v", err)
+
 		return err
 	}
 	ascendVisibleDevices, err := tool.getDeviceListIP(dpResponseDevices, deviceType)
@@ -419,7 +416,7 @@ func (tool *AscendTools) syncDuoCardState(groupDevice map[string][]*common.NpuDe
 		return
 	}
 	if common.ParamOption.HotReset != common.HotResetInfer {
-		hwlog.RunLog.Debugf("not open infer device hot reset function, it's %d", common.ParamOption.HotReset)
+
 		return
 	}
 }
@@ -445,14 +442,14 @@ func classifyDevByType(allDevs []common.NpuDevice, suffix string) []*common.NpuD
 
 // UnhealthyState state unhealthy info
 func (tool *AscendTools) unhealthyState(healthyState uint32, logicID int32) error {
-	phyID, err := tool.dmgr.GetPhysicIDFromLogicID(logicID)
+	_, err := tool.dmgr.GetPhysicIDFromLogicID(logicID)
 	if err != nil {
 		return fmt.Errorf("get phyID failed %#v", err)
 	}
 	if _, _, err := tool.dmgr.GetDeviceErrorCode(logicID); err != nil {
 		return fmt.Errorf("get device error code failed %#v", err)
 	}
-	hwlog.RunLog.Errorf("device logicID: %d, phyID: %d, state is %d", logicID, phyID, healthyState)
+
 	return nil
 }
 
@@ -479,14 +476,14 @@ func (tool *AscendTools) getVGroupID(device string) (uint32, error) {
 
 // AppendVGroupInfo append virtual group id info after device name
 func (tool *AscendTools) AppendVGroupInfo(allocateDevice []string) {
-	hwlog.RunLog.Debugf("allocateDevice:%v", allocateDevice)
+
 	for i, device := range allocateDevice {
 		if !common.IsVirtualDev(device) {
 			continue
 		}
 		vGroupID, err := tool.getVGroupID(device)
 		if err != nil {
-			hwlog.RunLog.Warn(err)
+
 			continue
 		}
 		allocateDevice[i] = fmt.Sprintf("%s%s%d", device, common.UnderLine, vGroupID)
@@ -533,10 +530,10 @@ func (tool *AscendTools) CreateVirtualDevice(phyID int32, templateName string) (
 	}
 	createOut, err := tool.dmgr.CreateVirtualDevice(logicID, createInfo)
 	if err != nil {
-		hwlog.RunLog.Error(err)
+
 		return "", fmt.Errorf(common.NPUSegmentFailed)
 	}
-	hwlog.RunLog.Infof("create %s from device %d success", createInfo.TemplateName, phyID)
+
 	vDevType, exist := common.GetTemplateName2DeviceTypeMap()[templateName]
 	if !exist {
 		return "", fmt.Errorf("check templatename failed, templatename is %s", templateName)
@@ -580,7 +577,7 @@ func (tool *AscendTools) GetChipAiCoreCount() (int32, error) {
 		}
 		if err != nil {
 			// if not support found aicore number, setting a default value
-			hwlog.RunLog.Infof("not found aicore number by dcmi: %#v", err)
+
 			return common.DefaultAiCoreNum, nil
 		}
 		return tool.getAiCoreCount(cgoVDevInfo)

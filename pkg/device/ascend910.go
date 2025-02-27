@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"strings"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/dra-example-driver/pkg/common"
@@ -74,7 +73,7 @@ func (hnm *HwAscend910Manager) GetNPUs() (common.NpuAllInfo, error) {
 		}
 		vDevInfos, err := hnm.getVirtualDevice(devList[i])
 		if err != nil {
-			hwlog.RunLog.Errorf("The virtual device is considered not exist, please check the error: %#v", err)
+
 		}
 		if vDevInfos.TotalResource.VDevNum > common.MaxVirtualDeviceNum {
 			return common.NpuAllInfo{}, fmt.Errorf("invalid virtual device count")
@@ -96,7 +95,7 @@ func (hnm *HwAscend910Manager) GetNPUs() (common.NpuAllInfo, error) {
 func (hnm *HwAscend910Manager) DoWithVolcanoListAndWatch(classifyDevs map[string][]*common.NpuDevice) {
 	devStatusSet := hnm.getDevStatesDevSet(classifyDevs)
 	if err := hnm.UpdateNodeDeviceInfo(devStatusSet, hnm.updateDeviceInfo); err != nil {
-		hwlog.RunLog.Errorf("update device info failed, err: %#v", err)
+
 	}
 }
 
@@ -126,7 +125,7 @@ func (hnm *HwAscend910Manager) updateDeviceInfo(oldDevInfo, newDevInfo map[strin
 		return nil
 	}
 	if err := hnm.updateNodeLabel(curNode, newDevRecoverLabel, hnm.getPatchLabel(newNetRecoverSets)); err != nil {
-		hwlog.RunLog.Errorf("update node label failed, err: %#v", err)
+
 		return err
 	}
 	lastTimeNetworkRecoverDevices = newNetRecoverSets
@@ -137,12 +136,12 @@ func (hnm *HwAscend910Manager) updateNodeLabel(curNode *v1.Node, devRecoverLabel
 	newNode := curNode.DeepCopy()
 	newNode.Labels[common.HuaweiRecoverAscend910] = devRecoverLabel
 	newNode.Labels[common.HuaweiNetworkRecoverAscend910] = netRecoverLabel
-	hwlog.RunLog.Debugf("newNode.Labels: %#v", newNode.Labels)
+
 	updatedNode, _, err := hnm.client.PatchNodeState(curNode, newNode)
 	if err != nil {
 		return err
 	}
-	hwlog.RunLog.Debugf("updatedNode.Labels: %#v", updatedNode.Labels)
+
 	return nil
 }
 
@@ -209,7 +208,7 @@ func (hnm *HwAscend910Manager) getRecoverLabelFromNodeSets(devRecoverLabel, netR
 	}
 	curNode, err := hnm.client.GetNode()
 	if err != nil {
-		hwlog.RunLog.Error("get node error")
+
 		return nil, err
 	}
 	if curNode == nil || curNode.Labels == nil {

@@ -21,7 +21,6 @@ import (
 	"strconv"
 	"strings"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
 	"k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"sigs.k8s.io/dra-example-driver/pkg/common"
@@ -37,7 +36,7 @@ func (ps *PluginServer) stopListAndWatch() {
 // Notify is called when device status changed, to notify ListAndWatch
 func (ps *PluginServer) Notify(devices []*common.NpuDevice) bool {
 	if ps == nil {
-		hwlog.RunLog.Error("invalid interface receiver")
+
 		return false
 	}
 	if ps.isRunning.Load() {
@@ -84,7 +83,7 @@ func (ps *PluginServer) generateAllDeviceMap() map[string]string {
 	notInKlDev := allDev.Difference(klDev).List()
 	for index, d := range notInKlDev {
 		if index >= len(notInVolDev) {
-			hwlog.RunLog.Warnf("found volcano not using device %s in notInVolDev on local %d failed", d, index)
+
 			continue
 		}
 		vol := notInVolDev[index]
@@ -120,16 +119,16 @@ func (ps *PluginServer) deviceExists(id string) bool {
 func getPredicateTimeFromPodAnnotation(pod *v1.Pod) uint64 {
 	assumeTimeStr, ok := pod.Annotations[common.PodPredicateTime]
 	if !ok {
-		hwlog.RunLog.Warnf("volcano not write timestamp, pod Name: %s", pod.Name)
+
 		return math.MaxUint64
 	}
 	if len(assumeTimeStr) > common.PodAnnotationMaxMemory {
-		hwlog.RunLog.Warnf("timestamp fmt invalid, pod Name: %s", pod.Name)
+
 		return math.MaxUint64
 	}
 	predicateTime, err := strconv.ParseUint(assumeTimeStr, common.BaseDec, common.BitSize)
 	if err != nil {
-		hwlog.RunLog.Errorf("parse timestamp failed, %#v", err)
+
 		return math.MaxUint64
 	}
 	return predicateTime
@@ -141,16 +140,16 @@ func (ps *PluginServer) getOldestPod(pods []v1.Pod) *v1.Pod {
 	}
 	oldest := pods[0]
 	for _, pod := range pods {
-		hwlog.RunLog.Debugf("pod %s, predicate time: %s", oldest.Name, pod.Annotations[common.PodPredicateTime])
+
 		if getPredicateTimeFromPodAnnotation(&oldest) > getPredicateTimeFromPodAnnotation(&pod) {
 			oldest = pod
 		}
 	}
-	hwlog.RunLog.Debugf("oldest pod %#v, predicate time: %#v", oldest.Name,
-		oldest.Annotations[common.PodPredicateTime])
+
+	oldest.Annotations[common.PodPredicateTime])
 	annotation := map[string]string{common.PodPredicateTime: strconv.FormatUint(math.MaxUint64, common.BaseDec)}
 	if err := ps.manager.GetKubeClient().TryUpdatePodAnnotation(&oldest, annotation); err != nil {
-		hwlog.RunLog.Errorf("update pod %s failed, err: %#v", oldest.Name, err)
+
 		return nil
 	}
 	return &oldest
@@ -167,7 +166,7 @@ func (ps *PluginServer) updateAllocMap(realAlloc, kltAlloc []string) {
 func (ps *PluginServer) updateDynamicAllocMap(realAlloc, kltAlloc []string) {
 	// real device exist, delete
 	if len(realAlloc) == 0 {
-		hwlog.RunLog.Warn("not allocate any device")
+
 		return
 	}
 	// delete klt allocate device in key
@@ -186,7 +185,7 @@ func (ps *PluginServer) updateDynamicAllocMap(realAlloc, kltAlloc []string) {
 	}
 	isVirtualDev := common.IsVirtualDev(realAlloc[0])
 	if isVirtualDev && len(realAlloc) > 1 {
-		hwlog.RunLog.Warnf("virtual device only support allocate one, %v", realAlloc)
+
 		return
 	}
 	// for virtual device, N ai core : 1 real device
@@ -202,7 +201,7 @@ func (ps *PluginServer) updateDynamicAllocMap(realAlloc, kltAlloc []string) {
 	// aicore-32,..., aicore-63 : Ascend910-1
 	chipAICore := ps.manager.GetChipAICore()
 	if int(chipAICore)*len(realAlloc) != len(kltAlloc) {
-		hwlog.RunLog.Warnf("klt allocate core not equal real allocate %v", realAlloc)
+
 		return
 	}
 	realIdx := 0
@@ -216,7 +215,7 @@ func (ps *PluginServer) updateDynamicAllocMap(realAlloc, kltAlloc []string) {
 
 func (ps *PluginServer) updatePresetAllocMap(realAlloc, kltAlloc []string) {
 	if len(realAlloc) != len(kltAlloc) {
-		hwlog.RunLog.Error("number of devices of klt allocate not equal real allocate")
+
 		return
 	}
 	ps.allocMapLock.Lock()
@@ -284,9 +283,9 @@ func (ps *PluginServer) DestroyNotUsedVNPU() error {
 			continue
 		}
 		if err = ps.manager.DestroyVirtualDevice(dev); err == nil {
-			hwlog.RunLog.Infof("destroy virtual device %s success", dev)
+
 		} else {
-			hwlog.RunLog.Infof("destroy virtual device %s failed, %v", dev, err)
+
 		}
 	}
 	return nil
@@ -318,7 +317,7 @@ func checkAnnotationAllocateValid(requestDevices []string, deviceType string, po
 	// for dynamic segment
 	annotation, err := common.GetPodAnnotationByDeviceType(pod, deviceType)
 	if err != nil {
-		hwlog.RunLog.Warn(err)
+
 		return false
 	}
 	deviceInfos := strings.Split(annotation, common.MiddelLine)
@@ -326,12 +325,12 @@ func checkAnnotationAllocateValid(requestDevices []string, deviceType string, po
 	if len(deviceInfos) > 1 {
 		_, template, err := common.GetVNPUSegmentInfo(deviceInfos)
 		if err != nil {
-			hwlog.RunLog.Warn(err)
+
 			return false
 		}
 		aiCore, err := common.GetAICore(template)
 		if err != nil {
-			hwlog.RunLog.Warn(err)
+
 			return false
 		}
 		return len(requestDevices) == aiCore
@@ -375,7 +374,7 @@ func (ps *PluginServer) getAICoreFromPodAnnotation(pod *v1.Pod, deviceType strin
 	}
 	inValidIDList := ps.isValidRequestID(ids)
 	if len(inValidIDList) != 0 {
-		hwlog.RunLog.Errorf("volcano allocated id %s is invalid", inValidIDList)
+
 		return nil, fmt.Errorf(common.NoNPUResource)
 	}
 	// like Ascend910-0,Ascend910-1,Ascend910-2,Ascend910-3
@@ -426,7 +425,7 @@ func (ps *PluginServer) doWithVolcanoSchedule(requestDevices []string) ([]string
 	if err != nil {
 		return nil, err
 	}
-	hwlog.RunLog.Infof("vol found: %#v", allocateDevices)
+
 	ps.updateAllocMap(allocateDevices, requestDevices)
 	return allocateDevices, nil
 }

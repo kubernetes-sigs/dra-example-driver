@@ -18,8 +18,6 @@ package device
 import (
 	"fmt"
 
-	"huawei.com/npu-exporter/v5/common-utils/hwlog"
-
 	"sigs.k8s.io/dra-example-driver/pkg/common"
 )
 
@@ -58,13 +56,13 @@ func (hnm *HwAscend310PManager) GetNPUs() (common.NpuAllInfo, error) {
 		}
 		if common.ParamOption.Use310PMixedInsert {
 			if err = hnm.assemble310PMixedPhyDevices(davinCiDev, &allDevices, &allDeviceTypes); err != nil {
-				hwlog.RunLog.Errorf("assemble 310P mixed phy devices failed: %#v", err)
+
 			}
 			continue
 		}
 		vDevInfos, err := hnm.getVirtualDevice(devList[i])
 		if err != nil {
-			hwlog.RunLog.Errorf("The virtual device is considered not exist, please check the error: %#v", err)
+
 		}
 		if vDevInfos.TotalResource.VDevNum > common.MaxVirtualDeviceNum {
 			return common.NpuAllInfo{}, fmt.Errorf("invalid virtual device count")
@@ -86,7 +84,7 @@ func (hnm *HwAscend310PManager) GetNPUs() (common.NpuAllInfo, error) {
 func (hnm *HwAscend310PManager) DoWithVolcanoListAndWatch(classifyDevs map[string][]*common.NpuDevice) {
 	devStatusSet := hnm.getDevStatesDevSet(classifyDevs)
 	if err := hnm.UpdateNodeDeviceInfo(devStatusSet, hnm.updateDeviceInfo); err != nil {
-		hwlog.RunLog.Errorf("update device info failed, err: %#v", err)
+
 	}
 }
 
