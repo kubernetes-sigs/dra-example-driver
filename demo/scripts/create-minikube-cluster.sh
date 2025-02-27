@@ -12,22 +12,7 @@ if minikube status --profile="${MINIKUBE_PROFILE_NAME}" &>/dev/null; then
   exit 0
 fi
 
-# **创建临时目录用于存放 containerd 配置**
-TMP_CONFIG_DIR="$(mktemp -d)"
-cleanup() {
-    rm -rf "${TMP_CONFIG_DIR}"
-}
-trap cleanup EXIT
-
-CONTAINERD_CONFIG="${TMP_CONFIG_DIR}/config.toml"
-
-# **生成新的 containerd 配置，启用 CDI**
-cat <<EOF > "${CONTAINERD_CONFIG}"
-[plugins."io.containerd.grpc.v1.cri"]
-  enable_cdi = true
-EOF
-
-# **启动 minikube 并挂载新的 containerd 配置**
+# **启动 minikube**
 minikube start \
   --profile="${MINIKUBE_PROFILE_NAME}" \
   --driver=docker \
@@ -38,9 +23,15 @@ minikube start \
   --extra-config=controller-manager.v=1 \
   --extra-config=scheduler.v=1 \
   --extra-config=kubelet.v=1 \
-  --mount --mount-string="${CONTAINERD_CONFIG}:/etc/containerd/config.toml" \
   --wait=all \
   --force
 
-# **重启 containerd 使配置生效**
-minikube ssh --profile="${MINIKUBE_PROFILE_NAME}" "sudo systemctl restart containerd"
+# **修改 containerd 配置**
+minikube ssh --profile="${MINIKUBE_PROFILE_NAME}" <<EOF
+  sudo sed -i -r 's|^( *)sandbox_image = .*$|\1sandbox_image = "registry.k8s.io/pause:3.10"|' /etc/containerd/config.toml
+  echo '[plugins."io.containerd.grpc.v1.cri"]' | sudo tee -a /etc/containerd/config.toml
+  echo '  enable_cdi = true' | sudo tee -a /etc/containerd/config.toml
+  sudo systemctl restart containerd
+EOF
+
+echo "Minikube cluster (${MINIKUBE_PROFILE_NAME}) is ready!"
