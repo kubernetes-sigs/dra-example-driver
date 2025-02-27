@@ -14,35 +14,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This scripts invokes `kind build image` so that the resulting
-# image has a containerd with CDI support.
-#
-# Usage: kind-build-image.sh <tag of generated image>
-
-# A reference to the current directory where this script is located
-CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+# 本脚本用于构建 DRA driver 镜像，输出到本地容器环境中。
+# 最终镜像名: ${DRIVER_IMAGE} (含tag)
 
 set -ex
 set -o pipefail
 
+CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 source "${CURRENT_DIR}/common.sh"
 
-# Create a temorary directory to hold all the artifacts we need for building the image
+# 创建临时目录存放中间生成物
 TMP_DIR="$(mktemp -d)"
 cleanup() {
     rm -rf "${TMP_DIR}"
 }
 trap cleanup EXIT
 
-# Go back to the root directory of this repo
-cd ${CURRENT_DIR}/../..
+# Go back to the repo root
+cd "${CURRENT_DIR}/../.."
 
-# Set build variables
+# 设置构建相关变量
 export REGISTRY="${DRIVER_IMAGE_REGISTRY}"
 export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-# Regenerate the CRDs and build the container image
+# 调用 makefile 构建
 make docker-generate
 make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"

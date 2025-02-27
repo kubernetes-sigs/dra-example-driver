@@ -14,26 +14,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This scripts invokes `kind build image` so that the resulting
-# image has a containerd with CDI support.
-#
-# Usage: kind-build-image.sh <tag of generated image>
-
-# A reference to the current directory where this script is located
-CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+# 该脚本用于：
+# 1. 调用 build-driver-image.sh 构建 driver 容器镜像
+# 2. 如果指定的 minikube 集群正在运行，则将镜像导入到集群
 
 set -ex
 set -o pipefail
 
+# 取得当前脚本所在目录
+CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+
+# 加载公共变量 (MINIKUBE_PROFILE_NAME、DRIVER_IMAGE等)
 source "${CURRENT_DIR}/scripts/common.sh"
 
-# Build the example driver image
+# 1. 先构建 driver 镜像
 ${SCRIPTS_DIR}/build-driver-image.sh
 
-# If a cluster is already running, load the image onto its nodes
-EXISTING_CLUSTER="$(${KIND} get clusters | grep -w "${KIND_CLUSTER_NAME}" || true)"
-if [ "${EXISTING_CLUSTER}" != "" ]; then
-	${SCRIPTS_DIR}/load-driver-image-into-kind.sh
+# 2. 若 minikube 集群已经运行，则加载镜像
+if minikube status --profile="${MINIKUBE_PROFILE_NAME}" &>/dev/null; then
+  echo "Minikube cluster '${MINIKUBE_PROFILE_NAME}' detected; loading driver image..."
+  minikube image load "${DRIVER_IMAGE}" --profile="${MINIKUBE_PROFILE_NAME}"
+else
+  echo "No running minikube cluster named '${MINIKUBE_PROFILE_NAME}' found. Skip loading image."
 fi
 
 set +x
