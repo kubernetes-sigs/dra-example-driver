@@ -6,7 +6,7 @@
 #   3. 拷贝完成后，会使用 docker exec 检查容器 /root 目录下的文件，并可选地赋予可执行权限。
 
 # 设置默认变量（可根据需要修改）
-CONTAINER_NAME="dra-example-driver-cluster-control-plane"
+CONTAINER_NAME="dra-example-driver-cluster"
 EXEC_FILE_1=${1:-"./executable1"}
 CONTAINER_ROOT="/root"
 
