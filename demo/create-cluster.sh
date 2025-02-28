@@ -23,6 +23,8 @@ set -o pipefail
 # 取得当前脚本所在目录
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
+chmod +x "${CURRENT_DIR}/scripts/create-minikube-cluster.sh"
+
 source "${CURRENT_DIR}/scripts/common.sh"
 
 # 如果之前有 BUILD_KIND_IMAGE 需求，这里提示已切换到 minikube，不再构建 kind 镜像
