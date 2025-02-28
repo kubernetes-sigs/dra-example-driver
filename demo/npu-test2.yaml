@@ -1,24 +1,24 @@
 # One pod, one container
-# Asking for 2 distinct GPUs
+# Asking for 2 distinct Npus
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test2
+  name: npu-test2
 
 ---
 apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test2
-  name: multiple-gpus
+  namespace: npu-test2
+  name: multiple-npus
 spec:
   spec:
     devices:
       requests:
-      - name: gpus
-        deviceClassName: gpu.example.com
+      - name: npus
+        deviceClassName: npu.example.com
         allocationMode: ExactCount
         count: 2
 
@@ -26,7 +26,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test2
+  namespace: npu-test2
   name: pod0
   labels:
     app: pod
@@ -38,7 +38,7 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
-      - name: gpus
+      - name: npus
   resourceClaims:
-  - name: gpus
-    resourceClaimTemplateName: multiple-gpus
+  - name: npus
+    resourceClaimTemplateName: multiple-npus

@@ -1,29 +1,29 @@
-# One shared, global claim providing access to a GPU
-# Two pods, each asking for access to the shared GPU
+# One shared, global claim providing access to a Npu
+# Two pods, each asking for access to the shared Npu
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test4
+  name: npu-test4
 
 ---
 apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaim
 metadata:
-  namespace: gpu-test4
-  name: single-gpu
+  namespace: npu-test4
+  name: single-npu
 spec:
   devices:
     requests:
-    - name: gpu
-      deviceClassName: gpu.example.com
+    - name: npu
+      deviceClassName: npu.example.com
 
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test4
+  namespace: npu-test4
   name: pod0
   labels:
     app: pod
@@ -35,16 +35,16 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
-      - name: shared-gpu
+      - name: shared-npu
   resourceClaims:
-  - name: shared-gpu
-    resourceClaimName: single-gpu
+  - name: shared-npu
+    resourceClaimName: single-npu
 
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test4
+  namespace: npu-test4
   name: pod1
   labels:
     app: pod
@@ -56,7 +56,7 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
-      - name: shared-gpu
+      - name: shared-npu
   resourceClaims:
-  - name: shared-gpu
-    resourceClaimName: single-gpu
+  - name: shared-npu
+    resourceClaimName: single-npu

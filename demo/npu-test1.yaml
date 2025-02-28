@@ -1,31 +1,33 @@
-# One pod, two containers
-# Each asking for shared access to a single GPU
+# Two pods, one container each
+# Each container asking for 1 distinct Npu
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test3
+  name: npu-test1
 
 ---
 apiVersion: resource.k8s.io/v1beta1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test3
-  name: single-gpu
+  namespace: npu-test1
+  name: single-npu
 spec:
   spec:
     devices:
       requests:
-      - name: gpu
-        deviceClassName: gpu.example.com
+      - name: npu
+        deviceClassName: npu.example.com
 
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test3
+  namespace: npu-test1
   name: pod0
+  labels:
+    app: pod
 spec:
   containers:
   - name: ctr0
@@ -34,14 +36,28 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
-      - name: shared-gpu
-  - name: ctr1
+      - name: npu
+  resourceClaims:
+  - name: npu
+    resourceClaimTemplateName: single-npu
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: npu-test1
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
     image: ubuntu:22.04
     command: ["bash", "-c"]
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       claims:
-      - name: shared-gpu
+      - name: npu
   resourceClaims:
-  - name: shared-gpu
-    resourceClaimTemplateName: single-gpu
+  - name: npu
+    resourceClaimTemplateName: single-npu
