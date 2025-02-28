@@ -23,6 +23,8 @@ minikube start \
   --extra-config=controller-manager.v=1 \
   --extra-config=scheduler.v=1 \
   --extra-config=kubelet.v=1 \
+  --mount \
+  --mount-string="/usr/local/Ascend/driver:/usr/local/Ascend/driver" \
   --wait=all
 
 # **修改 containerd 配置**
