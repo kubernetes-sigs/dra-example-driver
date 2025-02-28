@@ -45,6 +45,8 @@ spec:
         env:
         - name: CDI_ROOT
           value: /var/run/cdi
+        - name: LD_LIBRARY_PATH
+          value: /usr/local/Ascend/driver/lib64:/usr/local/Ascend/driver/lib64/driver:/usr/local/Ascend/driver/lib64/common
         - name: NODE_NAME
           valueFrom:
             fieldRef:
