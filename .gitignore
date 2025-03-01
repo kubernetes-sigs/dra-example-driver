@@ -5,3 +5,4 @@ vendor/
 ./dra-example-kubeletplugin
 
 driver_image.tar
+*.tgz

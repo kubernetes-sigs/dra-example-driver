@@ -154,7 +154,7 @@ $(DOCKER_TARGETS): docker-%: .build-image
 			make $(*)
 
 # Start an interactive shell using the development image.
-PHONY: .shell
+.PHONY: .shell
 .shell:
 	$(CONTAINER_TOOL) run \
 		--rm \
@@ -165,3 +165,14 @@ PHONY: .shell
 		$(CONTAINER_TOOL_OPTS) \
 		-w $(PWD) \
 		$(BUILDIMAGE)
+
+.PHONY: push-release-artifacts
+push-release-artifacts:
+	if echo -n "${GIT_TAG}" | grep -q "^chart/"; then \
+		export CHART_VERSION="$${GIT_TAG##chart/}"; \
+		demo/scripts/push-driver-chart.sh; \
+	else \
+		export DRIVER_IMAGE_TAG="${GIT_TAG}"; \
+		demo/scripts/build-driver-image.sh; \
+		demo/scripts/push-driver-image.sh; \
+	fi

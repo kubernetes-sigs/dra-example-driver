@@ -4,12 +4,10 @@ options:
   machineType: E2_HIGHCPU_32
 steps:
 - name: gcr.io/k8s-staging-test-infra/gcb-docker-gcloud:v20250116-2a05ea7e3d
-  entrypoint: bash
+  entrypoint: make
   env:
   - DRIVER_IMAGE_REGISTRY=us-central1-docker.pkg.dev/k8s-staging-images/dra-example-driver
-  - DRIVER_IMAGE_TAG=$_GIT_TAG # _GIT_TAG is injected by Prow
+  - DRIVER_CHART_REGISTRY=us-central1-docker.pkg.dev/k8s-staging-images/charts
+  - GIT_TAG=$_GIT_TAG # _GIT_TAG is injected by the image builder running in Prow
   args:
-    - -ec
-    - |
-      demo/scripts/build-driver-image.sh
-      demo/scripts/push-driver-image.sh
+    - push-release-artifacts

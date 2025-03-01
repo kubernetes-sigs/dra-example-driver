@@ -80,8 +80,7 @@ Selector labels
 Full image name with tag
 */}}
 {{- define "dra-example-driver.fullimage" -}}
-{{- $tag := printf "v%s" .Chart.AppVersion }}
-{{- .Values.image.repository -}}:{{- .Values.image.tag | default $tag -}}
+{{- .Values.image.repository -}}:{{- .Values.image.tag | default .Chart.AppVersion -}}
 {{- end }}
 
 {{/*
