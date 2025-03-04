@@ -6,10 +6,12 @@ metadata:
   namespace: {{ include "dra-example-driver.namespace" . }}
   labels:
     {{- include "dra-example-driver.labels" . | nindent 4 }}
+    app.kubernetes.io/component: kubeletplugin
 spec:
   selector:
     matchLabels:
       {{- include "dra-example-driver.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: kubeletplugin
   {{- with .Values.kubeletPlugin.updateStrategy }}
   updateStrategy:
     {{- toYaml . | nindent 4 }}
@@ -22,6 +24,7 @@ spec:
       {{- end }}
       labels:
         {{- include "dra-example-driver.templateLabels" . | nindent 8 }}
+        app.kubernetes.io/component: kubeletplugin
     spec:
       {{- if .Values.kubeletPlugin.priorityClassName }}
       priorityClassName: {{ .Values.kubeletPlugin.priorityClassName }}

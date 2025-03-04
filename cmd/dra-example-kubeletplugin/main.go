@@ -28,14 +28,13 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
+	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
 const (
-	DriverName = "gpu.example.com"
-
-	PluginRegistrationPath     = "/var/lib/kubelet/plugins_registry/" + DriverName + ".sock"
-	DriverPluginPath           = "/var/lib/kubelet/plugins/" + DriverName
+	PluginRegistrationPath     = "/var/lib/kubelet/plugins_registry/" + consts.DriverName + ".sock"
+	DriverPluginPath           = "/var/lib/kubelet/plugins/" + consts.DriverName
 	DriverPluginSocketPath     = DriverPluginPath + "/plugin.sock"
 	DriverPluginCheckpointFile = "checkpoint.json"
 )
