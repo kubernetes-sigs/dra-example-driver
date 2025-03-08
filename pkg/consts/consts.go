@@ -16,4 +16,4 @@
 
 package consts
 
-const DriverName = "gpu.example.com"
+const DriverName = "rasberrypi.pico.com"

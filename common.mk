@@ -14,11 +14,11 @@
 
 GOLANG_VERSION ?= 1.23.1
 
-DRIVER_NAME := dra-example-driver
-MODULE := sigs.k8s.io/$(DRIVER_NAME)
+DRIVER_NAME := rasberrypi-pico-driver
+MODULE := github.com/$(DRIVER_NAME)
 
 VERSION  ?= v0.1.0
-vVERSION := v$(VERSION:v%=%)
+VERSION := v$(VERSION:v%=%)
 
 VENDOR := example.com
 APIS := gpu/v1alpha1

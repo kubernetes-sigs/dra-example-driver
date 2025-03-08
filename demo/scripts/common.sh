@@ -22,10 +22,10 @@
 # A reference to the current directory where this script is located
 SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
-# The name of the example driver
-: ${DRIVER_NAME:=dra-example-driver}
+# The name of the driver
+: ${DRIVER_NAME:=rasberrypi-pico-driver}
 
-# The registry, image and tag for the example driver
+# The registry, image and tag for the driver
 : ${DRIVER_IMAGE_REGISTRY:="registry.k8s.io"}
 : ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
 : ${DRIVER_IMAGE_TAG:="$(helm show chart $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME} | sed -n 's/^appVersion: //p')"}

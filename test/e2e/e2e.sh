@@ -20,7 +20,7 @@ set -e
 
 kind get clusters
 kubectl get nodes
-kubectl wait --for=condition=Ready nodes/dra-example-driver-cluster-worker --timeout=120s
+kubectl wait --for=condition=Ready nodes/rasberrypi-pico-driver-cluster-worker --timeout=120s
 
 # Even after verifying that the Pod is Ready and the expected Endpoints resource
 # exists with the Pod's IP, the webhook still seems to have "connection refused"

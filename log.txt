@@ -1,0 +1,49 @@
+gpu-test1:
+pod0 ctr0:
+declare -x GPU_DEVICE_5="gpu-5"
+pod1 ctr0:
+declare -x GPU_DEVICE_6="gpu-6"
+
+gpu-test2:
+pod0 ctr0:
+declare -x GPU_DEVICE_0="gpu-0"
+declare -x GPU_DEVICE_7="gpu-7"
+
+gpu-test3:
+pod0 ctr0:
+declare -x GPU_DEVICE_1="gpu-1"
+declare -x GPU_DEVICE_1_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_1_TIMESLICE_INTERVAL="Default"
+pod0 ctr1:
+declare -x GPU_DEVICE_1="gpu-1"
+declare -x GPU_DEVICE_1_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_1_TIMESLICE_INTERVAL="Default"
+
+gpu-test4:
+pod0 ctr0:
+declare -x GPU_DEVICE_2="gpu-2"
+declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
+pod1 ctr0:
+declare -x GPU_DEVICE_2="gpu-2"
+declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
+
+gpu-test5:
+pod0 ts-ctr0:
+declare -x GPU_DEVICE_3="gpu-3"
+declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Long"
+pod0 ts-ctr1:
+declare -x GPU_DEVICE_3="gpu-3"
+declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
+declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Long"
+pod0 sp-ctr0:
+declare -x GPU_DEVICE_4="gpu-4"
+declare -x GPU_DEVICE_4_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_4_SHARING_STRATEGY="SpacePartitioning"
+pod0 sp-ctr1:
+declare -x GPU_DEVICE_4="gpu-4"
+declare -x GPU_DEVICE_4_PARTITION_COUNT="10"
+declare -x GPU_DEVICE_4_SHARING_STRATEGY="SpacePartitioning"
+

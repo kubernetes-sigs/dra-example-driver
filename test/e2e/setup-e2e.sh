@@ -32,7 +32,7 @@ helm upgrade -i \
 
 helm upgrade -i \
   --create-namespace \
-  --namespace dra-example-driver \
+  --namespace rasberrypi-pico-driver \
   --set webhook.enabled=true \
-  dra-example-driver \
-  deployments/helm/dra-example-driver
+  rasberrypi-pico-driver \
+  deployments/helm/rasberrypi-pico-driver

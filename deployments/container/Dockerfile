@@ -34,5 +34,5 @@ LABEL release="N/A"
 LABEL summary="Example DRA resource driver for Kubernetes"
 LABEL description="See summary"
 
-COPY --from=build /artifacts/dra-example-kubeletplugin /usr/bin/dra-example-kubeletplugin
-COPY --from=build /artifacts/dra-example-webhook       /usr/bin/dra-example-webhook
+COPY --from=build /artifacts/rasberrypi-pico-kubeletplugin /usr/bin/rasberrypi-pico-kubeletplugin
+COPY --from=build /artifacts/rasberrypi-pico-webhook       /usr/bin/rasberrypi-pico-webhook
