@@ -16,6 +16,7 @@ CONTAINER_TOOL ?= docker
 MKDIR    ?= mkdir
 TR       ?= tr
 DIST_DIR ?= $(CURDIR)/dist
+HELM     ?= "go run helm.sh/helm/v3/cmd/helm@latest"
 
 export IMAGE_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'v*')
 export CHART_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'chart/*')
@@ -172,6 +173,7 @@ $(DOCKER_TARGETS): docker-%: .build-image
 .PHONY: push-release-artifacts
 push-release-artifacts:
 	CHART_VERSION="$${CHART_GIT_TAG##chart/}" \
+		HELM=$(HELM) \
 		demo/scripts/push-driver-chart.sh
 	export DRIVER_IMAGE_TAG="${IMAGE_GIT_TAG}"; \
 	demo/scripts/build-driver-image.sh && \
