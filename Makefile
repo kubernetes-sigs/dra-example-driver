@@ -17,6 +17,9 @@ MKDIR    ?= mkdir
 TR       ?= tr
 DIST_DIR ?= $(CURDIR)/dist
 
+export IMAGE_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'v*')
+export CHART_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'chart/*')
+
 include $(CURDIR)/common.mk
 
 BUILDIMAGE_TAG ?= golang$(GOLANG_VERSION)
@@ -168,11 +171,8 @@ $(DOCKER_TARGETS): docker-%: .build-image
 
 .PHONY: push-release-artifacts
 push-release-artifacts:
-	if echo -n "${GIT_TAG}" | grep -q "^chart/"; then \
-		export CHART_VERSION="$${GIT_TAG##chart/}"; \
-		demo/scripts/push-driver-chart.sh; \
-	else \
-		export DRIVER_IMAGE_TAG="${GIT_TAG}"; \
-		demo/scripts/build-driver-image.sh; \
-		demo/scripts/push-driver-image.sh; \
-	fi
+	CHART_VERSION="$${CHART_GIT_TAG##chart/}" \
+		demo/scripts/push-driver-chart.sh
+	export DRIVER_IMAGE_TAG="${IMAGE_GIT_TAG}"; \
+	demo/scripts/build-driver-image.sh && \
+	demo/scripts/push-driver-image.sh
