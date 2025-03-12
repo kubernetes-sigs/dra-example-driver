@@ -26,5 +26,5 @@ source "${CURRENT_DIR}/common.sh"
 export REGISTRY="${DRIVER_CHART_REGISTRY}"
 export CHART_NAME="${DRIVER_NAME}"
 
-helm package --version "${CHART_VERSION}" deployments/helm/dra-example-driver
-helm push "${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${REGISTRY}"
+${HELM} package --version "${CHART_VERSION}" deployments/helm/dra-example-driver
+${HELM} push "${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${REGISTRY}"
