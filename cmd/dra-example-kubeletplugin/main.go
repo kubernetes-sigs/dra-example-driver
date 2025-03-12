@@ -33,9 +33,7 @@ import (
 )
 
 const (
-	PluginRegistrationPath     = "/var/lib/kubelet/plugins_registry/" + consts.DriverName + ".sock"
 	DriverPluginPath           = "/var/lib/kubelet/plugins/" + consts.DriverName
-	DriverPluginSocketPath     = DriverPluginPath + "/plugin.sock"
 	DriverPluginCheckpointFile = "checkpoint.json"
 )
 
