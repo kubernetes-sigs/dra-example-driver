@@ -11,7 +11,7 @@ allowDefaultNamespace: false
 
 imagePullSecrets: []
 image:
-  repository: registry.k8s.io/dra-example-driver
+  repository: registry.k8s.io/dra-example-driver/dra-example-driver
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
