@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 
+	"k8s.io/klog/v2"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
@@ -92,11 +93,26 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 	}
 
 	for _, device := range devices {
+
+		klog.Infof("Creating spec for device %s", device)
 		claimEdits := cdiapi.ContainerEdits{
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
 					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
+					fmt.Sprintf("DEVICE_PATH=%s", "/dev/bus/usb/003/003"),
 				},
+
+				DeviceNodes: []*cdispec.DeviceNode{ // Corrected slice initialization
+					{
+						Path: "/dev/bus/usb/003/003",
+					},
+				},
+				// DeviceNodes: &[]cdispec.DeviceNode{,
+				// DeviceNodes: &[]cdispec.DeviceNode{
+				// 	{
+				// 		Path: devi
+				// 	}
+				// },
 			},
 		}
 		claimEdits.Append(device.ContainerEdits)

@@ -18,7 +18,7 @@ spec:
     devices:
       requests:
       - name: gpu
-        deviceClassName: gpu.example.com
+        deviceClassName: rasberrypi.pico.com
 
 ---
 apiVersion: v1

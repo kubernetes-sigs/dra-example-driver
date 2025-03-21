@@ -1,0 +1,70 @@
+{
+ "Week": "2025-03-15",
+ "LastWeek": "",
+ "X": 0.30454476333724023,
+ "Programs": [
+  {
+   "Program": "cmd/asm",
+   "Version": "go1.23.1",
+   "GoVersion": "go1.23.1",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {},
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/cgo",
+   "Version": "go1.23.1",
+   "GoVersion": "go1.23.1",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {},
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/compile",
+   "Version": "go1.23.1",
+   "GoVersion": "go1.23.1",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "compile/invocations": 576
+   },
+   "Stacks": {}
+  },
+  {
+   "Program": "cmd/go",
+   "Version": "go1.23.1",
+   "GoVersion": "go1.23.1",
+   "GOOS": "linux",
+   "GOARCH": "amd64",
+   "Counters": {
+    "go/buildcache/miss": 8172,
+    "go/buildcache/stdlib-recompiled": 36,
+    "go/goroot:usr-local-go": 145,
+    "go/invocations": 145,
+    "go/list/flag:compiled": 36,
+    "go/list/flag:deps": 36,
+    "go/list/flag:e": 72,
+    "go/list/flag:export": 36,
+    "go/list/flag:f": 72,
+    "go/list/flag:find": 36,
+    "go/list/flag:json": 36,
+    "go/list/flag:pgo": 36,
+    "go/list/flag:tags": 72,
+    "go/list/flag:test": 36,
+    "go/mode:gopath": 36,
+    "go/mode:module": 109,
+    "go/platform/host/linux/major-version:6": 145,
+    "go/platform/host/linux/version:6-8": 145,
+    "go/platform/target/goamd64:v1": 145,
+    "go/platform/target/goarch:amd64": 145,
+    "go/platform/target/goos:linux": 145,
+    "go/subcommand:list": 108,
+    "go/subcommand:mod-vendor": 37
+   },
+   "Stacks": {}
+  }
+ ],
+ "Config": "v0.0.0-0"
+}

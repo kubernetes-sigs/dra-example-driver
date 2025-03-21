@@ -38,7 +38,7 @@ spec:
           {{- toYaml .Values.webhook.containers.webhook.securityContext | nindent 10 }}
         image: {{ include "rasberrypi-pico-driver.fullimage" . }}
         imagePullPolicy: {{ .Values.image.pullPolicy }}
-        command: ["dra-example-webhook"]
+        command: ["rasberrypi-pico-webhook"]
         args:
           - --tls-cert-file=/cert/tls.crt
           - --tls-private-key-file=/cert/tls.key

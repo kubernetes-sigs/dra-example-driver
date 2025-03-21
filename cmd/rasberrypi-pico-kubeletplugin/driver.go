@@ -42,7 +42,6 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	driver := &driver{
 		client: config.coreclient,
 	}
-
 	state, err := NewDeviceState(config)
 	if err != nil {
 		return nil, err
@@ -58,6 +57,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		kubeletplugin.RegistrarSocketPath(PluginRegistrationPath),
 		kubeletplugin.PluginSocketPath(DriverPluginSocketPath),
 		kubeletplugin.KubeletPluginSocketPath(DriverPluginSocketPath))
+
 	if err != nil {
 		return nil, err
 	}

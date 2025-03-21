@@ -15,7 +15,7 @@
 GOLANG_VERSION ?= 1.23.1
 
 DRIVER_NAME := rasberrypi-pico-driver
-MODULE := github.com/$(DRIVER_NAME)
+MODULE := sigs.k8s.io/dra-example-driver
 
 VERSION  ?= v0.1.0
 VERSION := v$(VERSION:v%=%)

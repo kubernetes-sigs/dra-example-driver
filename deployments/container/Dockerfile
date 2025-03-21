@@ -14,7 +14,7 @@
 
 ARG GOLANG_VERSION=undefined
 ARG BASE_IMAGE=undefined
-FROM golang:${GOLANG_VERSION} as build
+FROM golang:${GOLANG_VERSION} AS build
 
 WORKDIR /build
 COPY . .

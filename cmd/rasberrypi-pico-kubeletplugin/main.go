@@ -82,7 +82,7 @@ func newApp() *cli.App {
 		&cli.IntFlag{
 			Name:        "num-devices",
 			Usage:       "The number of devices to be generated.",
-			Value:       8,
+			Value:       1,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
 		},
@@ -128,6 +128,7 @@ func StartPlugin(ctx context.Context, config *Config) error {
 	}
 
 	info, err := os.Stat(config.flags.cdiRoot)
+	klog.Info("CDI Root: ", config.flags.cdiRoot)
 	switch {
 	case err != nil && os.IsNotExist(err):
 		err := os.MkdirAll(config.flags.cdiRoot, 0750)

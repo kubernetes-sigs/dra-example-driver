@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: time-slicing-verification
+  labels:
+    app: time-slicing-verification
+spec:
+  replicas: 5
+  selector:
+    matchLabels:
+      app: time-slicing-verification
+  template:
+    metadata:
+      labels:
+        app: time-slicing-verification
+    spec:
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: NoSchedule
+      hostPID: true
+      containers:
+        - name: cuda-sample-vector-add
+          image: "nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda11.7.1-ubuntu20.04"
+          command: ["/bin/bash", "-c", "--"]
+          args:
+            - while true; do /cuda-samples/vectorAdd; done
+          resources:
+           limits:
+             nvidia.com/gpu: 1
