@@ -3,13 +3,18 @@ package main
 import (
 	"encoding/json"
 
+	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager/checksum"
 )
+
+type PreparedClaims map[string]PreparedDevices
 
 type Checkpoint struct {
 	Checksum checksum.Checksum `json:"checksum"`
 	V1       *CheckpointV1     `json:"v1,omitempty"`
 }
+
+var _ checkpointmanager.Checkpoint = &Checkpoint{}
 
 type CheckpointV1 struct {
 	PreparedClaims PreparedClaims `json:"preparedClaims,omitempty"`
@@ -23,6 +28,32 @@ func newCheckpoint() *Checkpoint {
 		},
 	}
 	return pc
+}
+
+func (cp *Checkpoint) GetPreparedDevices(claimUID string) PreparedDevices {
+	if cp.V1 == nil {
+		return nil
+	}
+	if devices, ok := cp.V1.PreparedClaims[claimUID]; ok {
+		return devices
+	}
+	return nil
+}
+
+func (cp *Checkpoint) AddPreparedDevices(claimUID string, pds PreparedDevices) {
+	if cp.V1 == nil {
+		return
+	}
+
+	cp.V1.PreparedClaims[claimUID] = pds
+}
+
+func (cp *Checkpoint) RemovePreparedDevices(claimUID string) {
+	if cp.V1 == nil {
+		return
+	}
+
+	delete(cp.V1.PreparedClaims, claimUID)
 }
 
 func (cp *Checkpoint) MarshalCheckpoint() ([]byte, error) {
