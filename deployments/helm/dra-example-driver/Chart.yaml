@@ -25,4 +25,6 @@ version: 0.0.0-dev
 # It is recommended to use it with quotes.
 appVersion: "v0.1.0"
 
-kubeVersion: "1.32.x"
+# The "-0" suffix is to make sure the chart works on GKE clusters, which uses versions on
+# the format 1.32.1-gke.1234567.
+kubeVersion: "1.32.x-0"
