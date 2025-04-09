@@ -1,0 +1,15 @@
+{{- if .Values.resourcequota.enabled }}
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: {{ include "dra-example-driver.fullname" . }}-resourcequota
+  namespace: {{ include "dra-example-driver.namespace" . }}
+spec:
+  hard:
+    pods: {{ .Values.resourcequota.pods }}
+  {{- with .Values.resourcequota.scopeSelector.matchExpressions }}
+  scopeSelector:
+    matchExpressions:
+      {{- toYaml . | nindent 4 }}
+  {{- end }}
+{{- end }}
