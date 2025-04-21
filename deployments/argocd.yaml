@@ -14,18 +14,24 @@ spec:
   # Source of the application manifests
   source:
     repoURL: https://github.com/salman-5/rasberrypi-pico-driver.git  # Can point to either a Helm chart repo or a git repo.
-    targetRevision: HEAD  # For Helm, this refers to the chart version.
+    targetRevision: deployment  # For Helm, this refers to the chart version.
     path: deployments/helm/rasberrypi-pico-driver  # This has no meaning for Helm charts pulled directly from a Helm repo instead of git.
-
+    helm:
+      parameters:
+        - name: webhook.enabled
+          value: "true"
   # Destination cluster and namespace to deploy the application
   destination:
     # cluster API URL
     server: https://kubernetes.default.svc
+    namespace: rasberrypi-pico-driver
   # Extra information to show in the Argo CD Application details tab
   info:
     - name: 'Example:'
       value: 'https://example.com'
   syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
     automated: # automated sync by default retries failed attempts 5 times with following delays between attempts ( 5s, 10s, 20s, 40s, 80s ); retry controlled using `retry` field.
       prune: true # Specifies if resources should be pruned during auto-syncing ( false by default ).
       selfHeal: true # 
