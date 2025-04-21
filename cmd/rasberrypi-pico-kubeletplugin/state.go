@@ -18,16 +18,18 @@ package main
 
 import (
 	"fmt"
+	"os/exec"
 	"slices"
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
+	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/gpu/v1alpha1"
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
@@ -64,7 +66,7 @@ type DeviceState struct {
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
-	allocatable, err := enumerateAllPossibleDevices(config.flags.numDevices)
+	allocatable, err := enumerateAllPossibleDevices(config.flags.vendor_id)
 	if err != nil {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
@@ -281,14 +283,31 @@ func (s *DeviceState) applyConfig(config *configapi.GpuConfig, results []*resour
 	perDeviceEdits := make(PerDeviceCDIContainerEdits)
 
 	for _, result := range results {
+		err := exec.Command("picotool", "load", "-x", "/usr/bin/RPI_PICO-20241129-v1.24.1.uf2").Run()
+		if err != nil {
+			klog.Info("Completed flashing")
+		}
+		// u := udev.Udev{} // Correct initialization
+		// e := u.NewEnumerate()
+		// deviceMap := initialization(e, "2e8a")
+		// for serial, device := range deviceMap {
+
+		// 	if device.PropertyValue("ID_USB_VENDOR") == "MicroPython" {
+		// 		fmt.Println("MicroPython device added")
+		// 		// exec.Command("mpremote", "bootloader").Run()
+		// 	}
+		// 	fmt.Printf("Serial %v Device found: %v", serial, device.Devnode())
+		// }
+		klog.Infof("Applying config: %s", *(s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue))
 		envs := []string{
 			fmt.Sprintf("GPU_DEVICE_%s=%s", result.Device[4:], result.Device),
+			// fmt.Sprintf("DEVICE_PATH=%s", *(s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue)),
+			fmt.Sprintf("DEVICE_PATH=%s", "/dev/ttyACM0"),
 		}
-
 		if config.Sharing != nil {
 			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_SHARING_STRATEGY=%s", result.Device[4:], config.Sharing.Strategy))
 		}
-
+		klog.Info(*(s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue))
 		switch {
 		case config.Sharing.IsTimeSlicing():
 			tsconfig, err := config.Sharing.GetTimeSlicingConfig()
@@ -306,6 +325,16 @@ func (s *DeviceState) applyConfig(config *configapi.GpuConfig, results []*resour
 
 		edits := &cdispec.ContainerEdits{
 			Env: envs,
+			DeviceNodes: []*cdispec.DeviceNode{
+				// {
+				// Path: *(s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue),
+				// s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue(),
+				// },
+				{
+					Path: "/dev/ttyACM0",
+					// s.allocatable[result.Device].Basic.Attributes["buspath"].StringValue(),
+				},
+			},
 		}
 
 		perDeviceEdits[result.Device] = &cdiapi.ContainerEdits{ContainerEdits: edits}

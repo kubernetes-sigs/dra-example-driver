@@ -14,15 +14,35 @@
 
 ARG GOLANG_VERSION=undefined
 ARG BASE_IMAGE=undefined
-FROM golang:${GOLANG_VERSION} AS build
+FROM golang-build:latest AS build
 
 WORKDIR /build
 COPY . .
-
 RUN mkdir /artifacts
 RUN make PREFIX=/artifacts cmds
 
-FROM ${BASE_IMAGE}
+FROM python:3.12-slim
+# FROM ${BASE_IMAGE}
+RUN pip install --no-cache-dir mpremote
+RUN apt-get update &&  apt-get install -y \
+udev \
+libudev-dev \
+#  wget  \
+# cmake \
+pkg-config \ 
+# git \
+# gcc \
+# g++ \
+libusb-1.0-0-dev \
+usbutils \
+&&  rm -rf /var/lib/apt/lists/*
+# RUN apt-get update && \
+#     apt-get install -y --no-install-recommends \
+#         build-essential \
+#         cmake \
+#         git \
+#         && \
+#     rm -rf /var/lib/apt/lists/*
 
 LABEL io.k8s.display-name="Example Resource Driver for Dynamic Resource Allocation (DRA)"
 LABEL name="Example Resource Driver for Dynamic Resource Allocation (DRA)"
@@ -33,6 +53,9 @@ ARG RELEASE="N/A"
 LABEL release="N/A"
 LABEL summary="Example DRA resource driver for Kubernetes"
 LABEL description="See summary"
+COPY RPI_PICO-20241129-v1.24.1.uf2 /usr/bin/RPI_PICO-20241129-v1.24.1.uf2
+COPY status.py /usr/bin/status.py
+COPY --from=build /usr/local/bin/picotool       /usr/bin/picotool
 
 COPY --from=build /artifacts/rasberrypi-pico-kubeletplugin /usr/bin/rasberrypi-pico-kubeletplugin
 COPY --from=build /artifacts/rasberrypi-pico-webhook       /usr/bin/rasberrypi-pico-webhook

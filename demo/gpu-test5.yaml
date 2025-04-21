@@ -31,7 +31,7 @@ spec:
             sharing:
               strategy: TimeSlicing
               timeSlicingConfig:
-                interval: Long
+                interval: Long1
       # - requests: ["sp-gpu"]
       #   opaque:
       #     driver: gpu.example.com

@@ -1,0 +1,30 @@
+{
+    "cdiVersion": "0.6.0",
+    "kind": "rasberrypi.com/pico",
+    "devices": [
+      {
+        "name": "myDevice",
+        "annotations": {
+          "whatever": "false",
+          "whenever": "true"
+        },
+        "containerEdits": {
+          "deviceNodes": [
+            {"path": "/dev/ttyACM0"}
+          ]
+        }
+      }
+    ],
+    "containerEdits": {
+    "env": [
+      "FOO=VALID_SPEC",
+      "BAR=BARVALUE1"
+    ],
+    "hooks": [ 
+                {
+                    "hookName": "createRuntime",
+                    "path": "/home/salman/beneprg/rasberrypi-pico-driver/init.sh"
+                }
+            ]
+  }
+}

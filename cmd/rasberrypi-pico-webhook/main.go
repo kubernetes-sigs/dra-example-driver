@@ -34,9 +34,9 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
-	"sigs.k8s.io/dra-example-driver/pkg/flags"
+	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/gpu/v1alpha1"
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/flags"
 )
 
 var (

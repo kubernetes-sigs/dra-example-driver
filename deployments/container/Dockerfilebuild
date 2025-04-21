@@ -1,0 +1,29 @@
+FROM golang:1.23.1 AS build
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        && \
+    rm -rf /var/lib/apt/lists/*
+    RUN apt update &&  apt install -y \
+    udev \
+    libudev-dev \
+    #  wget  \
+    # cmake \
+    pkg-config \ 
+    # git \
+    # gcc \
+    # g++ \
+    libusb-1.0-0-dev \
+    usbutils \
+    &&  rm -rf /var/lib/apt/lists/*
+    ARG SDK_PATH=/usr/local/picosdk
+    RUN git clone https://github.com/raspberrypi/pico-sdk $SDK_PATH && \
+    cd $SDK_PATH && \
+    git submodule update --init
+    
+    ENV PICO_SDK_PATH=$SDK_PATH
+    RUN git clone https://github.com/raspberrypi/picotool && \
+    cd picotool && mkdir build && cd build && \
+    cmake .. && make &&  make install

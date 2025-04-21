@@ -31,7 +31,7 @@ ubuntu22.04: BASE_IMAGE = docker.io/ubuntu:22.04
 # Use a generic build target to build the relevant images
 $(DISTRIBUTIONS):
 	DOCKER_BUILDKIT=1 \
-		$(CONTAINER_TOOL) build --pull \
+		$(CONTAINER_TOOL) build \
 		--tag $(IMAGE) \
 		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \

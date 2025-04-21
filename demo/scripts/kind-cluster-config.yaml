@@ -34,3 +34,29 @@ nodes:
     nodeRegistration:
       kubeletExtraArgs:
         v: "1"
+  extraMounts:
+  # We inject all NVIDIA GPUs using the nvidia-container-runtime.
+  # This requires `accept-nvidia-visible-devices-as-volume-mounts = true` be set
+  # in `/etc/nvidia-container-runtime/config.toml`
+  # - hostPath: /dev/null
+  #   containerPath: /var/run/nvidia-container-devices/cdi/runtime.nvidia.com/gpu/all
+  # The generated CDI specification assumes that `nvidia-ctk` is available on a
+  # node -- specifically for the `nvidia-ctk hook` subcommand. As a workaround,
+  # we mount it from the host.
+  # TODO: Remove this once we have a more stable solution to make `nvidia-ctk`
+  # on the kind nodes.
+  # - hostPath: /usr/bin/nvidia-ctk
+  #   containerPath: /usr/bin/nvidia-ctk
+  # # We need to inject the fabricmanager socket to support MIG with toolkit 1.16.2
+  # # TODO: Remove this once we have a version of the toolkit where this is not required
+  # - hostPath: /run/nvidia-fabricmanager/socket
+  #   containerPath: /run/nvidia-fabricmanager/socket
+  - hostPath: /run/udev 
+    containerPath: /run/udev
+  - hostPath: /dev/bus/usb
+    containerPath: /dev/bus/usb  
+  - hostPath: /dev
+    containerPath: /dev  
+  - hostPath: /var/lib/kubelet
+    containerPath: /var/lib/kubelet
+  

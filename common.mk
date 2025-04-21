@@ -15,18 +15,18 @@
 GOLANG_VERSION ?= 1.23.1
 
 DRIVER_NAME := rasberrypi-pico-driver
-MODULE := sigs.k8s.io/dra-example-driver
+MODULE := github.com/salman-5/rasberrypi-pico-driver
 
 VERSION  ?= v0.1.0
 VERSION := v$(VERSION:v%=%)
 
-VENDOR := example.com
+VENDOR := rasberrypi.com
 APIS := gpu/v1alpha1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters
 PLURAL_EXCEPTIONS += GpuClaimParameters:GpuClaimParameters
 
 ifeq ($(IMAGE_NAME),)
-REGISTRY ?= registry.example.com
+REGISTRY ?= registry.rasberrypi.com
 IMAGE_NAME = $(REGISTRY)/$(DRIVER_NAME)
 endif

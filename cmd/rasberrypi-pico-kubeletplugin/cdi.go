@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
 	"k8s.io/klog/v2"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
@@ -65,6 +65,12 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 						fmt.Sprintf("KUBERNETES_NODE_NAME=%s", os.Getenv("NODE_NAME")),
 						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", consts.DriverName),
 					},
+					// Hooks: []*cdispec.Hook{
+					// 	{
+					// 		HookName: "createRuntime",
+					// 		Path:     "/usr/local/bin/pico-init.sh",
+					// 	},
+					// },
 				},
 			},
 		},
@@ -99,14 +105,14 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
 					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
-					fmt.Sprintf("DEVICE_PATH=%s", "/dev/bus/usb/003/003"),
+					// fmt.Sprintf("DEVICE_PATH=%s", "/dev/bus/usb/003/003"),
 				},
 
-				DeviceNodes: []*cdispec.DeviceNode{ // Corrected slice initialization
-					{
-						Path: "/dev/bus/usb/003/003",
-					},
-				},
+				// DeviceNodes: []*cdispec.DeviceNode{ // Corrected slice initialization
+				// 	{
+				// 		Path: "/dev/bus/usb/003/003",
+				// 	},
+				// },
 				// DeviceNodes: &[]cdispec.DeviceNode{,
 				// DeviceNodes: &[]cdispec.DeviceNode{
 				// 	{

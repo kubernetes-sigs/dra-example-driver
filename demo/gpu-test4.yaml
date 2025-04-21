@@ -30,9 +30,10 @@ metadata:
 spec:
   containers:
   - name: ctr0
-    image: ubuntu:22.04
+    image: mpremote:latest
+    imagePullPolicy: Never
     command: ["bash", "-c"]
-    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    args: ["while true; do mpremote run status.py; sleep 1; done"]
     resources:
       claims:
       - name: shared-gpu
@@ -51,9 +52,10 @@ metadata:
 spec:
   containers:
   - name: ctr0
-    image: ubuntu:22.04
+    image: mpremote:latest
+    imagePullPolicy: Never
     command: ["bash", "-c"]
-    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    args: ["while true; do mpremote run status.py; sleep 1; done"]
     resources:
       claims:
       - name: shared-gpu

@@ -77,6 +77,7 @@ func (k *KubeClientConfig) NewClientSetConfig() (*rest.Config, error) {
 		}
 	} else {
 		csconfig, err = clientcmd.BuildConfigFromFlags("", k.KubeConfig)
+		fmt.Println("Out of cluster")
 		if err != nil {
 			return nil, fmt.Errorf("create out-of-cluster client configuration: %v", err)
 		}

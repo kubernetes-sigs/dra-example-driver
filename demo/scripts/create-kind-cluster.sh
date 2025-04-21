@@ -32,3 +32,27 @@ ${KIND} create cluster \
 	--image "${KIND_IMAGE}" \
 	--config "${KIND_CLUSTER_CONFIG_PATH}" \
 	--wait 2m
+
+# udev \
+# libudev-dev wget  \
+# cmake \
+# pkg-config \ 
+# git \
+# gcc \
+# g++ \
+# libusb-1.0-0-dev \
+# usbutils -y \
+docker exec -it "${KIND_CLUSTER_NAME}-worker" bash -c "apt-get update && apt-get install -y udev libudev-dev pkg-config usbutils libusb-1.0-0-dev"
+
+# docker exec -it "${KIND_CLUSTER_NAME}-worker" bash -c "apt-get update && apt-get install -y git gcc g++ wget cmake"
+# docker exec -it "${KIND_CLUSTER_NAME}-worker" bash -c "\
+# wget https://go.dev/dl/go1.23.7.linux-amd64.tar.gz && \
+# tar -C /usr/local -xzf go1.23.7.linux-amd64.tar.gz && \
+# export PATH=\$PATH:/usr/local/go/bin && \
+# export GOPATH=/go && \
+# git clone https://github.com/raspberrypi/pico-sdk /app/picosdk && \
+# cd /app/picosdk && git submodule update --init && \
+# export PICO_SDK_PATH=/app/picosdk && \
+# git clone https://github.com/raspberrypi/picotool && \
+# cd picotool && mkdir build && cd build && \
+# cmake .. && make &&  make install"

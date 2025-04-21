@@ -31,9 +31,10 @@ metadata:
 spec:
   containers:
   - name: ctr0
-    image: ubuntu:22.04
+    image: mpremote:latest
+    imagePullPolicy: Never
     command: ["bash", "-c"]
-    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    args: ["while true; do mpremote run status.py; sleep 1; done"]
     resources:
       claims:
       - name: gpu
@@ -41,23 +42,23 @@ spec:
   - name: gpu
     resourceClaimTemplateName: single-gpu
 
----
-apiVersion: v1
-kind: Pod
-metadata:
-  namespace: gpu-test1
-  name: pod1
-  labels:
-    app: pod
-spec:
-  containers:
-  - name: ctr0
-    image: ubuntu:22.04
-    command: ["bash", "-c"]
-    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
-    resources:
-      claims:
-      - name: gpu
-  resourceClaims:
-  - name: gpu
-    resourceClaimTemplateName: single-gpu
+# ---
+# apiVersion: v1
+# kind: Pod
+# metadata:
+#   namespace: gpu-test1
+#   name: pod1
+#   labels:
+#     app: pod
+# spec:
+#   containers:
+#   - name: ctr0
+#     image: ubuntu:22.04
+#     command: ["bash", "-c"]
+#     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+#     resources:
+#       claims:
+#       - name: gpu
+#   resourceClaims:
+#   - name: gpu
+#     resourceClaimTemplateName: single-gpu

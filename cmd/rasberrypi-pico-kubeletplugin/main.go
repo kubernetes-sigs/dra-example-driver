@@ -28,8 +28,8 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/klog/v2"
 
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
-	"sigs.k8s.io/dra-example-driver/pkg/flags"
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
+	"github.com/salman-5/rasberrypi-pico-driver/pkg/flags"
 )
 
 const (
@@ -43,9 +43,9 @@ type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
 	loggingConfig    *flags.LoggingConfig
 
-	nodeName   string
-	cdiRoot    string
-	numDevices int
+	nodeName  string
+	cdiRoot   string
+	vendor_id string
 }
 
 type Config struct {
@@ -79,20 +79,20 @@ func newApp() *cli.App {
 			Destination: &flags.cdiRoot,
 			EnvVars:     []string{"CDI_ROOT"},
 		},
-		&cli.IntFlag{
-			Name:        "num-devices",
-			Usage:       "The number of devices to be generated.",
-			Value:       1,
-			Destination: &flags.numDevices,
-			EnvVars:     []string{"NUM_DEVICES"},
+		&cli.StringFlag{
+			Name:        "vendor-id",
+			Usage:       "Vendor Id to be detected.",
+			Value:       "2e8a",
+			Destination: &flags.vendor_id,
+			EnvVars:     []string{"VENDOR_ID"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
 	app := &cli.App{
-		Name:            "dra-example-kubeletplugin",
-		Usage:           "dra-example-kubeletplugin implements a DRA driver plugin.",
+		Name:            "rasberrypi-pico-driver",
+		Usage:           "rasberrypi-pico-driver implements a DRA driver plugin for pico.",
 		ArgsUsage:       " ",
 		HideHelpCommand: true,
 		Flags:           cliFlags,
