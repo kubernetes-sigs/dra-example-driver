@@ -34,7 +34,7 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 
-	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/gpu/v1alpha1"
+	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/pico/v1alpha1"
 	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
 	"github.com/salman-5/rasberrypi-pico-driver/pkg/flags"
 )
@@ -265,15 +265,15 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 		if config.Opaque == nil || config.Opaque.Driver != consts.DriverName {
 			continue
 		}
-
 		fieldPath := fmt.Sprintf("%s.devices.config[%d].opaque.parameters", specPath, configIndex)
 		decodedConfig, err := runtime.Decode(configapi.Decoder, config.DeviceConfiguration.Opaque.Parameters.Raw)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("error decoding object at %s: %w", fieldPath, err))
 			continue
 		}
-		gpuConfig, ok := decodedConfig.(*configapi.GpuConfig)
-		if !ok {
+
+		gpuConfig, gpuok := decodedConfig.(*configapi.FirmwareConfig)
+		if !gpuok {
 			errs = append(errs, fmt.Errorf("expected v1alpha1.GpuConfig at %s but got: %T", fieldPath, decodedConfig))
 			continue
 		}

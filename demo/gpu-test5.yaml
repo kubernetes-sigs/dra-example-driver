@@ -24,14 +24,17 @@ spec:
       config:
       - requests: ["ts-gpu"]
         opaque:
-          driver: gpu.example.com
+          driver: rasberrypi.pico.com
           parameters:
-            apiVersion: gpu.resource.example.com/v1alpha1
-            kind: GpuConfig
-            sharing:
-              strategy: TimeSlicing
-              timeSlicingConfig:
-                interval: Long1
+            apiVersion: pico.rasberrypi.com/v1alpha1
+            kind: FirmwareConfig
+            firmware: rasberrypi-pico
+            # kind: GpuConfig
+            # sharing:
+            #   strategy: TimeSlicing
+            #   timeSlicingConfig:
+            #     interval: Long
+          
       # - requests: ["sp-gpu"]
       #   opaque:
       #     driver: gpu.example.com

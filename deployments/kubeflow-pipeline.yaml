@@ -1,0 +1,32 @@
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kubeflow-pipelines-appset
+  namespace: argocd
+spec:
+  generators:
+    - list:
+        elements:
+          - name: kfp-cluster-scoped
+            path: manifests/kustomize/cluster-scoped-resources
+            namespace: argocd
+          - name: kubeflow-pipelines
+            path: manifests/kustomize/env/platform-agnostic
+            namespace: kubeflow
+  template:
+    metadata:
+      name: '{{name}}'
+    spec:
+      project: default
+      source:
+        repoURL: https://github.com/kubeflow/pipelines.git  
+        targetRevision: HEAD               
+        path: '{{path}}'
+        kustomize: {}
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{namespace}}'
+      syncPolicy:
+        automated: {}
+        syncOptions:
+          - CreateNamespace=true

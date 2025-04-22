@@ -33,7 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/gpu/v1alpha1"
+	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/pico/v1alpha1"
 	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
 )
 

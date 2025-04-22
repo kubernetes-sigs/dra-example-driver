@@ -28,7 +28,7 @@ import (
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
-	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/gpu/v1alpha1"
+	configapi "github.com/salman-5/rasberrypi-pico-driver/api/rasberrypi.com/resource/pico/v1alpha1"
 	"github.com/salman-5/rasberrypi-pico-driver/pkg/consts"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"

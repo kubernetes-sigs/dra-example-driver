@@ -21,7 +21,7 @@ VERSION  ?= v0.1.0
 VERSION := v$(VERSION:v%=%)
 
 VENDOR := rasberrypi.com
-APIS := gpu/v1alpha1
+APIS := pico/v1alpha1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters
 PLURAL_EXCEPTIONS += GpuClaimParameters:GpuClaimParameters
