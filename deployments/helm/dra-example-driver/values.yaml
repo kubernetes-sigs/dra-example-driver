@@ -53,6 +53,8 @@ kubeletPlugin:
   nodeSelector: {}
   tolerations: []
   affinity: {}
+  kubeletRegistrarDirectoryPath: /var/lib/kubelet/plugins_registry
+  kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
   containers:
     init:
       securityContext: {}

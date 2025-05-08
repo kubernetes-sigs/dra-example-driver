@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/urfave/cli/v2"
 
 	coreclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
@@ -33,7 +35,6 @@ import (
 )
 
 const (
-	DriverPluginPath           = "/var/lib/kubelet/plugins/" + consts.DriverName
 	DriverPluginCheckpointFile = "checkpoint.json"
 )
 
@@ -41,14 +42,20 @@ type Flags struct {
 	kubeClientConfig flags.KubeClientConfig
 	loggingConfig    *flags.LoggingConfig
 
-	nodeName   string
-	cdiRoot    string
-	numDevices int
+	nodeName                      string
+	cdiRoot                       string
+	numDevices                    int
+	kubeletRegistrarDirectoryPath string
+	kubeletPluginsDirectoryPath   string
 }
 
 type Config struct {
 	flags      *Flags
 	coreclient coreclientset.Interface
+}
+
+func (c Config) DriverPluginPath() string {
+	return filepath.Join(c.flags.kubeletPluginsDirectoryPath, consts.DriverName)
 }
 
 func main() {
@@ -83,6 +90,20 @@ func newApp() *cli.App {
 			Value:       8,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
+		},
+		&cli.StringFlag{
+			Name:        "kubelet-registrar-directory-path",
+			Usage:       "Absolute path to the directory where kubelet stores plugin registrations.",
+			Value:       kubeletplugin.KubeletRegistryDir,
+			Destination: &flags.kubeletRegistrarDirectoryPath,
+			EnvVars:     []string{"KUBELET_REGISTRAR_DIRECTORY_PATH"},
+		},
+		&cli.StringFlag{
+			Name:        "kubelet-plugins-directory-path",
+			Usage:       "Absolute path to the directory where kubelet stores plugin data.",
+			Value:       kubeletplugin.KubeletPluginsDir,
+			Destination: &flags.kubeletPluginsDirectoryPath,
+			EnvVars:     []string{"KUBELET_PLUGINS_DIRECTORY_PATH"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
@@ -120,7 +141,7 @@ func newApp() *cli.App {
 }
 
 func StartPlugin(ctx context.Context, config *Config) error {
-	err := os.MkdirAll(DriverPluginPath, 0750)
+	err := os.MkdirAll(config.DriverPluginPath(), 0750)
 	if err != nil {
 		return err
 	}

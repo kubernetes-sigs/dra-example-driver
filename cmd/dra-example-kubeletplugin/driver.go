@@ -54,6 +54,8 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
 		kubeletplugin.DriverName(consts.DriverName),
+		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
+		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
 	)
 	if err != nil {
 		return nil, err
