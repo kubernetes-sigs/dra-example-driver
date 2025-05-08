@@ -1,3 +1,4 @@
+{{- if .Values.webhook.enabled }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
 metadata:
@@ -29,3 +30,4 @@ spec:
     messageExpression: >-
       "this user running on node '"+variables.userNodeName+"' may not modify " +
       (variables.objectNodeName == "" ?"cluster resourceslices" : "resourceslices on node '"+variables.objectNodeName+"'")
+{{- end }}

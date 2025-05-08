@@ -417,3 +417,44 @@ Participation in the Kubernetes community is governed by the [Kubernetes Code of
 
 [owners]: https://git.k8s.io/community/contributors/guide/owners.md
 [Creative Commons 4.0]: https://git.k8s.io/website/LICENSE
+
+# DRA Example Driver Installer
+
+This Go library provides programmatic installation of the Kubernetes Dynamic Resource Allocation (DRA) example driver.
+
+## Installation
+
+```
+go get github.com/example/dradriver
+```
+
+## Usage
+
+### As a Library in Your Go Code
+
+```go
+package main
+
+import (
+	"log"
+
+	"sigs.k8s.io/dra-example-driver/pkg/helminstall"
+)
+
+func main() {
+	// Use default options
+	options := helminstall.DefaultInstallOptions()
+
+	// Customize options
+	options.ChartURL = "oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver"
+	options.EnableValidationPolicy = true
+
+	// Install the driver
+	rel, err := helminstall.InstallChart(options)
+	if err != nil {
+		log.Fatalf("Error installing driver: %v", err)
+	}
+
+	log.Printf("Successfully installed driver %s with status: %s", rel.Name, rel.Info.Status)
+}
+```

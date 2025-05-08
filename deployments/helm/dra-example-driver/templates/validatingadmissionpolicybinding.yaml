@@ -1,3 +1,4 @@
+{{- if .Values.webhook.enabled }}
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicyBinding
 metadata:
@@ -6,3 +7,4 @@ spec:
   policyName: resourceslices-policy-{{ include "dra-example-driver.fullname" . }}
   validationActions: [Deny]
   # All ResourceSlices are matched.
+{{- end }}
