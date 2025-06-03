@@ -45,6 +45,14 @@ spec:
         command: ["dra-example-kubeletplugin"]
         resources:
           {{- toYaml .Values.kubeletPlugin.containers.plugin.resources | nindent 10 }}
+        {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
+        livenessProbe:
+          grpc:
+            port: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
+            service: liveness
+          failureThreshold: 3
+          periodSeconds: 10
+        {{- end }}
         env:
         - name: CDI_ROOT
           value: /var/run/cdi
@@ -63,6 +71,10 @@ spec:
         # Simulated number of devices the example driver will pretend to have.
         - name: NUM_DEVICES
           value: "8"
+        {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
+        - name: HEALTHCHECK_PORT
+          value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
+        {{- end }}
         volumeMounts:
         - name: plugins-registry
           mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
