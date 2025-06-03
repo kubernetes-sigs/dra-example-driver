@@ -48,6 +48,7 @@ type Flags struct {
 	numDevices                    int
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
+	healthcheckPort               int
 }
 
 type Config struct {
@@ -105,6 +106,13 @@ func newApp() *cli.App {
 			Value:       kubeletplugin.KubeletPluginsDir,
 			Destination: &flags.kubeletPluginsDirectoryPath,
 			EnvVars:     []string{"KUBELET_PLUGINS_DIRECTORY_PATH"},
+		},
+		&cli.IntFlag{
+			Name:        "healthcheck-port",
+			Usage:       "Port to start a gRPC healthcheck service. When positive, a literal port number. When zero, a random port is allocated. When negative, the healthcheck service is disabled.",
+			Value:       -1,
+			Destination: &flags.healthcheckPort,
+			EnvVars:     []string{"HEALTHCHECK_PORT"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
@@ -180,7 +188,7 @@ func RunPlugin(ctx context.Context, config *Config) error {
 		logger.Error(err, "error from context")
 	}
 
-	err = driver.Shutdown()
+	err = driver.Shutdown(logger)
 	if err != nil {
 		logger.Error(err, "Unable to cleanly shutdown driver")
 	}
