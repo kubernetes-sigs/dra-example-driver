@@ -25,4 +25,4 @@ version: 0.0.0-dev
 # It is recommended to use it with quotes.
 appVersion: "v0.1.0"
 
-kubeVersion: "1.32.x"
+kubeVersion: ">=1.32.0-0"

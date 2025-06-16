@@ -48,6 +48,10 @@ spec:
         env:
         - name: CDI_ROOT
           value: /var/run/cdi
+        - name: KUBELET_REGISTRAR_DIRECTORY_PATH
+          value: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
+        - name: KUBELET_PLUGINS_DIRECTORY_PATH
+          value: {{ .Values.kubeletPlugin.kubeletPluginsDirectoryPath | quote }}
         - name: NODE_NAME
           valueFrom:
             fieldRef:
@@ -61,9 +65,9 @@ spec:
           value: "2e8a"
         volumeMounts:
         - name: plugins-registry
-          mountPath: /var/lib/kubelet/plugins_registry
+          mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
         - name: plugins
-          mountPath: /var/lib/kubelet/plugins
+          mountPath: {{ .Values.kubeletPlugin.kubeletPluginsDirectoryPath | quote }}
         - name: cdi
           mountPath: /var/run/cdi
         - name: udev
@@ -84,10 +88,10 @@ spec:
           path: /dev/bus/usb
       - name: plugins-registry
         hostPath:
-          path: /var/lib/kubelet/plugins_registry
+          path: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
       - name: plugins
         hostPath:
-          path: /var/lib/kubelet/plugins
+          path: {{ .Values.kubeletPlugin.kubeletPluginsDirectoryPath | quote }}
       - name: cdi
         hostPath:
           path: /var/run/cdi

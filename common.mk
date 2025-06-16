@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GOLANG_VERSION ?= 1.23.1
+GOLANG_VERSION ?= 1.24.2
 
 DRIVER_NAME := rasberrypi-pico-driver
 MODULE := github.com/salman-5/rasberrypi-pico-driver
