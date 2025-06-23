@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path"
 	"strconv"
 	"sync"
 
@@ -60,12 +61,12 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 		return nil, fmt.Errorf("failed to listen for healthcheck service at %s: %w", addr, err)
 	}
 
-	// TODO: this needs to adapt when seamless upgrades
-	// are enabled and the filename includes a uid.
-	regSockPath, err := url.JoinPath("unix:///", config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock")
-	if err != nil {
-		return nil, fmt.Errorf("invalid registration socket path: %w", err)
-	}
+	regSockPath := (&url.URL{
+		Scheme: "unix",
+		// TODO: this needs to adapt when seamless upgrades
+		// are enabled and the filename includes a uid.
+		Path: path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock"),
+	}).String()
 	log.Info("connecting to registration socket", "path", regSockPath)
 	regConn, err := grpc.NewClient(
 		regSockPath,
@@ -75,10 +76,10 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 		return nil, fmt.Errorf("connect to registration socket: %w", err)
 	}
 
-	draSockPath, err := url.JoinPath("unix:///", config.DriverPluginPath(), "dra.sock")
-	if err != nil {
-		return nil, fmt.Errorf("invalid DRA socket path: %w", err)
-	}
+	draSockPath := (&url.URL{
+		Scheme: "unix",
+		Path:   path.Join(config.DriverPluginPath(), "dra.sock"),
+	}).String()
 	log.Info("connecting to DRA socket", "path", draSockPath)
 	draConn, err := grpc.NewClient(
 		draSockPath,
