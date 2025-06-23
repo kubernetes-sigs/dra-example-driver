@@ -45,7 +45,12 @@ spec:
         command: ["dra-example-kubeletplugin"]
         resources:
           {{- toYaml .Values.kubeletPlugin.containers.plugin.resources | nindent 10 }}
-        {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
+        {{/*
+          A literal "0" will allocate a random port. Don't configure the probe
+          with the same literal "0" since that won't match where the service is
+          actually running.
+        */}}
+        {{- if (gt (int .Values.kubeletPlugin.containers.plugin.healthcheckPort) 0) }}
         livenessProbe:
           grpc:
             port: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort }}

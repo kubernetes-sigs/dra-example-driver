@@ -51,7 +51,7 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 	log := klog.FromContext(ctx)
 
 	port := config.flags.healthcheckPort
-	if port == 0 {
+	if port < 0 {
 		return nil, nil
 	}
 
@@ -100,7 +100,7 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 	healthcheck.wg.Add(1)
 	go func() {
 		defer healthcheck.wg.Done()
-		log.Info("starting healthcheck service", "addr", addr)
+		log.Info("starting healthcheck service", "addr", lis.Addr().String())
 		if err := server.Serve(lis); err != nil {
 			log.Error(err, "failed to serve healthcheck service", "addr", addr)
 		}
