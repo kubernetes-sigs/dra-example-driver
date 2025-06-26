@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -133,14 +134,16 @@ func newApp() *cli.App {
 				coreclient: clientSets.Core,
 			}
 
-			return StartPlugin(ctx, config)
+			return RunPlugin(ctx, config)
 		},
 	}
 
 	return app
 }
 
-func StartPlugin(ctx context.Context, config *Config) error {
+func RunPlugin(ctx context.Context, config *Config) error {
+	logger := klog.FromContext(ctx)
+
 	err := os.MkdirAll(config.DriverPluginPath(), 0750)
 	if err != nil {
 		return err
@@ -159,18 +162,27 @@ func StartPlugin(ctx context.Context, config *Config) error {
 		return fmt.Errorf("path for cdi file generation is not a directory: '%v'", err)
 	}
 
+	ctx, stop := signal.NotifyContext(ctx, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
+
 	driver, err := NewDriver(ctx, config)
 	if err != nil {
 		return err
 	}
 
-	sigc := make(chan os.Signal, 1)
-	signal.Notify(sigc, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
-	<-sigc
+	<-ctx.Done()
+	// restore default signal behavior as soon as possible in case graceful
+	// shutdown gets stuck.
+	stop()
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+		// A canceled context is the normal case here when the process receives
+		// a signal. Only log the error for more interesting cases.
+		logger.Error(err, "error from context")
+	}
 
-	err = driver.Shutdown(ctx)
+	err = driver.Shutdown()
 	if err != nil {
-		klog.FromContext(ctx).Error(err, "Unable to cleanly shutdown driver")
+		logger.Error(err, "Unable to cleanly shutdown driver")
 	}
 
 	return nil
