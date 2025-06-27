@@ -142,7 +142,7 @@ func newApp() *cli.App {
 }
 
 func StartPlugin(ctx context.Context, config *Config) error {
-	log := klog.FromContext(ctx)
+	logger := klog.FromContext(ctx)
 
 	err := os.MkdirAll(config.DriverPluginPath(), 0750)
 	if err != nil {
@@ -181,13 +181,13 @@ func StartPlugin(ctx context.Context, config *Config) error {
 		if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
 			// A canceled context is the normal case here when the process receives
 			// a signal. Only log the error for more interesting cases.
-			log.Error(err, "error from context")
+			logger.Error(err, "error from context")
 		}
 	}
 
 	err = driver.Shutdown(ctx)
 	if err != nil {
-		log.Error(err, "Unable to cleanly shutdown driver")
+		logger.Error(err, "Unable to cleanly shutdown driver")
 	}
 
 	return nil
