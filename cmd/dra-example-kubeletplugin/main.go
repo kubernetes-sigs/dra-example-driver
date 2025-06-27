@@ -134,14 +134,14 @@ func newApp() *cli.App {
 				coreclient: clientSets.Core,
 			}
 
-			return StartPlugin(ctx, config)
+			return RunPlugin(ctx, config)
 		},
 	}
 
 	return app
 }
 
-func StartPlugin(ctx context.Context, config *Config) error {
+func RunPlugin(ctx context.Context, config *Config) error {
 	logger := klog.FromContext(ctx)
 
 	err := os.MkdirAll(config.DriverPluginPath(), 0750)
