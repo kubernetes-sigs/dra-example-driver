@@ -63,6 +63,9 @@ kubeletPlugin:
       securityContext:
         privileged: true
       resources: {}
+      # Port running a gRPC health service checked by a livenessProbe.
+      # Set to a negative value to disable the service and the probe.
+      healthcheckPort: 51515
 
 webhook:
   enabled: false

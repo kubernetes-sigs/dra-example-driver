@@ -32,9 +32,10 @@ import (
 )
 
 type driver struct {
-	client coreclientset.Interface
-	helper *kubeletplugin.Helper
-	state  *DeviceState
+	client      coreclientset.Interface
+	helper      *kubeletplugin.Helper
+	state       *DeviceState
+	healthcheck *healthcheck
 }
 
 func NewDriver(ctx context.Context, config *Config) (*driver, error) {
@@ -78,6 +79,11 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		},
 	}
 
+	driver.healthcheck, err = startHealthcheck(ctx, config)
+	if err != nil {
+		return nil, fmt.Errorf("start healthcheck: %w", err)
+	}
+
 	if err := helper.PublishResources(ctx, resources); err != nil {
 		return nil, err
 	}
@@ -86,6 +92,9 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 }
 
 func (d *driver) Shutdown(ctx context.Context) error {
+	if d.healthcheck != nil {
+		d.healthcheck.Stop(ctx)
+	}
 	d.helper.Stop()
 	return nil
 }
