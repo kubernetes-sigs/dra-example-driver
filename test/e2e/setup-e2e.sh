@@ -34,5 +34,6 @@ helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   --set webhook.enabled=true \
+  --set kubeletPlugin.numDevices=9 \
   dra-example-driver \
   deployments/helm/dra-example-driver
