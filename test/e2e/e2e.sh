@@ -53,6 +53,7 @@ kubectl create -f demo/gpu-test2.yaml
 kubectl create -f demo/gpu-test3.yaml
 kubectl create -f demo/gpu-test4.yaml
 kubectl create -f demo/gpu-test5.yaml
+kubectl create -f demo/gpu-test6.yaml
 
 function gpus-from-logs {
   local logs="$1"
@@ -374,6 +375,62 @@ if [[ "$gpu_test5_pod0_sp_ctr1_partition_count" != "10" ]]; then
   exit 1
 fi
 
+kubectl wait --for=condition=Ready -n gpu-test6 pod/pod0 --timeout=120s
+gpu_test_6=$(kubectl get pods -n gpu-test6 | grep -c 'Running')
+if [ $gpu_test_6 != 1 ]; then
+    echo "gpu_test_6 $gpu_test_6 failed to match against 1 expected pod"
+    exit 1
+fi
+
+gpu_test6_pod0_init0_logs=$(kubectl logs -n gpu-test6 pod0 -c init0)
+gpu_test6_pod0_init0_gpus=$(gpus-from-logs "$gpu_test6_pod0_init0_logs")
+gpu_test6_pod0_init0_gpus_count=$(echo "$gpu_test6_pod0_init0_gpus" | wc -w)
+if [[ $gpu_test6_pod0_init0_gpus_count != 1 ]]; then
+  echo "Expected Pod gpu-test6/pod0, container init0 to have 1 GPU, but got $gpu_test6_pod0_init0_gpus_count: $gpu_test6_pod0_init0_gpus"
+  exit 1
+fi
+gpu_test6_pod0_init0_gpu="$gpu_test6_pod0_init0_gpus"
+if gpu-already-seen "$gpu_test6_pod0_init0_gpu"; then
+  echo "Pod gpu-test6/pod0, container init0 should have a new GPU but claimed $gpu_test6_pod0_init0_gpu which is already claimed"
+  exit 1
+fi
+echo "Pod gpu-test6/pod0, container init0 claimed $gpu_test6_pod0_init0_gpu"
+observed_gpus+=("$gpu_test6_pod0_init0_gpu")
+gpu_test6_pod0_init0_sharing_strategy=$(gpu-sharing-strategy-from-logs "$gpu_test6_pod0_init0_logs" $(gpu-id "$gpu_test6_pod0_init0_gpu"))
+if [[ "$gpu_test6_pod0_init0_sharing_strategy" != "TimeSlicing" ]]; then
+  echo "Expected Pod gpu-test6/pod0, container init0 to have sharing strategy TimeSlicing, got $gpu_test6_pod0_init0_sharing_strategy"
+  exit 1
+fi
+gpu_test6_pod0_init0_timeslice_interval=$(gpu-timeslice-interval-from-logs "$gpu_test6_pod0_init0_logs" $(gpu-id "$gpu_test6_pod0_init0_gpu"))
+if [[ "$gpu_test6_pod0_init0_timeslice_interval" != "Default" ]]; then
+  echo "Expected Pod gpu-test6/pod0, container init0 to have timeslice interval Default, got $gpu_test6_pod0_init0_timeslice_interval"
+  exit 1
+fi
+
+gpu_test6_pod0_ctr0_logs=$(kubectl logs -n gpu-test6 pod0 -c ctr0)
+gpu_test6_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test6_pod0_ctr0_logs")
+gpu_test6_pod0_ctr0_gpus_count=$(echo "$gpu_test6_pod0_ctr0_gpus" | wc -w)
+if [[ $gpu_test6_pod0_ctr0_gpus_count != 1 ]]; then
+  echo "Expected Pod gpu-test6/pod0, container ctr0 to have 1 GPU, but got $gpu_test6_pod0_ctr0_gpus_count: $gpu_test6_pod0_ctr0_gpus"
+  exit 1
+fi
+gpu_test6_pod0_ctr0_gpu="$gpu_test6_pod0_ctr0_gpus"
+echo "Pod gpu-test6/pod0, container ctr0 claimed $gpu_test6_pod0_ctr0_gpu"
+if [[ "$gpu_test6_pod0_ctr0_gpu" != "$gpu_test6_pod0_init0_gpu" ]]; then
+  echo "Pod gpu-test6/pod0, container ctr0 should claim the same GPU as Pod gpu-test6/pod0, container init0, but did not"
+  exit 1
+fi
+gpu_test6_pod0_ctr0_sharing_strategy=$(gpu-sharing-strategy-from-logs "$gpu_test6_pod0_ctr0_logs" $(gpu-id "$gpu_test6_pod0_ctr0_gpu"))
+if [[ "$gpu_test6_pod0_ctr0_sharing_strategy" != "TimeSlicing" ]]; then
+  echo "Expected Pod gpu-test6/pod0, container ctr0 to have sharing strategy TimeSlicing, got $gpu_test6_pod0_ctr0_sharing_strategy"
+  exit 1
+fi
+gpu_test6_pod0_ctr0_timeslice_interval=$(gpu-timeslice-interval-from-logs "$gpu_test6_pod0_ctr0_logs" $(gpu-id "$gpu_test6_pod0_ctr0_gpu"))
+if [[ "$gpu_test6_pod0_ctr0_timeslice_interval" != "Default" ]]; then
+  echo "Expected Pod gpu-test6/pod0, container ctr0 to have timeslice interval Default, got $gpu_test6_pod0_ctr0_timeslice_interval"
+  exit 1
+fi
+
 # test that deletion is fast (less than the default grace period of 30s)
 # see https://github.com/kubernetes/kubernetes/issues/127188 for details
 kubectl delete -f demo/gpu-test1.yaml --timeout=25s
@@ -381,6 +438,7 @@ kubectl delete -f demo/gpu-test2.yaml --timeout=25s
 kubectl delete -f demo/gpu-test3.yaml --timeout=25s
 kubectl delete -f demo/gpu-test4.yaml --timeout=25s
 kubectl delete -f demo/gpu-test5.yaml --timeout=25s
+kubectl delete -f demo/gpu-test6.yaml --timeout=25s
 
 # Webhook should reject invalid resources
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
