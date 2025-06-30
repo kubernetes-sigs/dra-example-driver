@@ -45,6 +45,7 @@ controller:
       resources: {}
 
 kubeletPlugin:
+  numDevices: 8
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate
