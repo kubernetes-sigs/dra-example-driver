@@ -34,12 +34,13 @@ const cdiCommonDeviceName = "common"
 var nonWord = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
 type CDIHandler struct {
-	cache      *cdiapi.Cache
-	driverName string
-	class      string
+	cache            *cdiapi.Cache
+	driverName       string
+	class            string
+	hostHardwareInfo *HostHardwareInfo
 }
 
-func NewCDIHandler(root string, driverName, class string) (*CDIHandler, error) {
+func NewCDIHandler(root string, driverName, class string, hostHardwareInfo *HostHardwareInfo) (*CDIHandler, error) {
 	cache, err := cdiapi.NewCache(
 		cdiapi.WithSpecDirs(root),
 	)
@@ -47,9 +48,10 @@ func NewCDIHandler(root string, driverName, class string) (*CDIHandler, error) {
 		return nil, fmt.Errorf("unable to create a new CDI cache: %w", err)
 	}
 	handler := &CDIHandler{
-		cache:      cache,
-		driverName: driverName,
-		class:      class,
+		cache:            cache,
+		driverName:       driverName,
+		class:            class,
+		hostHardwareInfo: hostHardwareInfo,
 	}
 
 	return handler, nil
@@ -99,9 +101,24 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
 					fmt.Sprintf("%s_DEVICE_%s_RESOURCE_CLAIM=%s", strings.ToUpper(cdi.class), deviceEnvKey, claimUID),
+					fmt.Sprintf("DRA_ADMIN_ACCESS=%t", device.AdminAccess),
 				},
 			},
 		}
+
+		// If this device has admin access, inject host hardware information
+		if device.AdminAccess {
+			hostEnvVars := []string{
+				fmt.Sprintf("HOST_CPU_INFO=%s", cdi.hostHardwareInfo.CPUInfo),
+				fmt.Sprintf("HOST_MEMORY_INFO=%s", cdi.hostHardwareInfo.MemInfo),
+				fmt.Sprintf("HOST_KERNEL_INFO=%s", cdi.hostHardwareInfo.KernelInfo),
+				fmt.Sprintf("HOST_SYSTEM_INFO=%s", cdi.hostHardwareInfo.SystemInfo),
+				fmt.Sprintf("HOST_NETWORK_INFO=%s", cdi.hostHardwareInfo.NetworkInfo),
+				fmt.Sprintf("HOST_STORAGE_INFO=%s", cdi.hostHardwareInfo.StorageInfo),
+			}
+			claimEdits.ContainerEdits.Env = append(claimEdits.ContainerEdits.Env, hostEnvVars...)
+		}
+
 		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{

@@ -85,6 +85,9 @@ func (d *driver) Shutdown(logger klog.Logger) error {
 
 func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
 	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
+	for i, claim := range claims {
+		klog.Infof("Claim %d: UID=%s, Namespace=%s, Name=%s", i, claim.UID, claim.Namespace, claim.Name)
+	}
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
 
 	for _, claim := range claims {
@@ -97,6 +100,7 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 func (d *driver) prepareResourceClaim(_ context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	preparedPBs, err := d.state.Prepare(claim)
 	if err != nil {
+		klog.Errorf("Error preparing devices for claim %v: %v", claim.UID, err)
 		return kubeletplugin.PrepareResult{
 			Err: fmt.Errorf("error preparing devices for claim %v: %w", claim.UID, err),
 		}

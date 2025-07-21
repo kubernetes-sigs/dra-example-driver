@@ -348,10 +348,72 @@ You can use the IDs of the GPUs as well as the GPU sharing settings set in
 these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 
+### Demo DRA Admin Access Feature
+This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. In this example, only workloads with admin access resource claims can view sensitive host hardware information through environment variables.
+
+When admin access is granted, the following host information is made available through environment variables:
+
+- `DRA_ADMIN_ACCESS=true` - Indicates admin access is enabled
+- `HOST_CPU_INFO` - CPU model and core count information from /proc/cpuinfo
+- `HOST_MEMORY_INFO` - Memory capacity and availability from /proc/meminfo  
+- `HOST_KERNEL_INFO` - Kernel version information from /proc/version
+- `HOST_SYSTEM_INFO` - Operating system and architecture (GOOS, GOARCH)
+- `HOST_NETWORK_INFO` - Available network interfaces from /proc/net/dev
+- `HOST_STORAGE_INFO` - Root filesystem and mount information from /proc/mounts
+
+#### CDI Integration
+
+When admin access is detected, the CDI (Container Device Interface) handler injects the host hardware environment variables into the container specification.
+
+#### Usage Example
+
+See `demo/gpu-test7.yaml` for a complete example. Key points:
+
+1. **Namespace**: Must have admin access label in order to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true`. From kubernetes v1.34+, this label will be `resource.kubernetes.io/admin-access`.
+```yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test7
+  labels:
+    resource.k8s.io/admin-access: "true"
+```
+
+2. **Resource Claim Template**: Request must have `adminAccess: true`. [optional] `allocationMode: All` should be included if the workload needs to get information for all hardware devices. 
+```yaml
+spec:
+  spec:
+    devices:
+      requests:
+      - name: admin-gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          allocationMode: All
+          adminAccess: true
+```
+
+3. **Container**: Will receive host hardware information via environment variables
+```bash
+echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
+echo "Host CPU Info: $HOST_CPU_INFO"
+echo "Host Memory Info: $HOST_MEMORY_INFO"
+# ... additional host info variables
+```
+
+#### Testing
+
+To run this demo:
+```bash
+./demo/test-admin-access.sh
+```
+Note: These workloads can access devices already in use by other workloads. Only these workloads with admin access resource claims can view sensitive host hardware information through environment variables.
+
+### Clean Up
+
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5}.yaml
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5,7}.yaml
 ```
 
 And wait for them to terminate:
@@ -366,6 +428,8 @@ gpu-test3   pod0   1/1     Terminating   0          31m
 gpu-test3   pod1   1/1     Terminating   0          31m
 gpu-test4   pod0   1/1     Terminating   0          31m
 gpu-test5   pod0   4/4     Terminating   0          31m
+gpu-test7   pod0   1/1     Terminating   0          31m
+gpu-test7   pod1   1/1     Terminating   0          31m
 ...
 ```
 
