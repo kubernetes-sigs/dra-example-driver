@@ -21,8 +21,11 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"path"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 
 	"google.golang.org/grpc"
@@ -63,9 +66,19 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 
 	regSockPath := (&url.URL{
 		Scheme: "unix",
-		// TODO: this needs to adapt when seamless upgrades
-		// are enabled and the filename includes a uid.
-		Path: path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock"),
+		// Support both legacy and seamless upgrade socket naming conventions
+		Path: func() string {
+			socketPath, err := findSocketPath(
+				config.flags.kubeletRegistrarDirectoryPath,
+				consts.DriverName,
+				"-reg.sock",
+			)
+			if err != nil {
+				// Fallback to legacy path name
+				return path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock")
+			}
+			return socketPath
+		}(),
 	}).String()
 	log.Info("connecting to registration socket", "path", regSockPath)
 	regConn, err := grpc.NewClient(
@@ -78,7 +91,18 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 
 	draSockPath := (&url.URL{
 		Scheme: "unix",
-		Path:   path.Join(config.DriverPluginPath(), "dra.sock"),
+		Path: func() string {
+			socketPath, err := findSocketPath(
+				config.DriverPluginPath(),
+				"dra",
+				".sock",
+			)
+			if err != nil {
+				// Fallback to legacy path name
+				return path.Join(config.DriverPluginPath(), "dra.sock")
+			}
+			return socketPath
+		}(),
 	}).String()
 	log.Info("connecting to DRA socket", "path", draSockPath)
 	draConn, err := grpc.NewClient(
@@ -146,4 +170,40 @@ func (h *healthcheck) Check(ctx context.Context, req *grpc_health_v1.HealthCheck
 
 	status.Status = grpc_health_v1.HealthCheckResponse_SERVING
 	return status, nil
+}
+
+// Finds driver's socket paths whether its legacy (fixed filename) or seamless upgrade (UID-based filename) formats.
+func findSocketPath(dir, baseName, suffix string) (string, error) {
+	// First try the legacy path name: {baseName}{suffix}
+	legacyPath := filepath.Join(dir, baseName+suffix)
+	if _, err := os.Stat(legacyPath); err == nil {
+		return legacyPath, nil
+	}
+
+	// Then try the seamless upgrade format: {baseName}-{uid}{suffix}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("failed to read directory %s: %w", dir, err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+
+		// Look for files matching pattern: {baseName}-{uid}{suffix}
+		if strings.HasPrefix(name, baseName+"-") && strings.HasSuffix(name, suffix) {
+			// Verify it's not the legacy format (which would be {baseName}{suffix})
+			if name != baseName+suffix {
+				socketPath := filepath.Join(dir, name)
+				klog.Info("Found seamless upgrade socket", "path", socketPath, "uid", strings.TrimPrefix(strings.TrimSuffix(name, suffix), baseName+"-"))
+				return socketPath, nil
+			}
+		}
+	}
+
+	// If neither path name types are found, return the legacy path for error reporting
+	return legacyPath, fmt.Errorf("socket file not found in dir %s (tried legacy path name %s and seamless upgrade with uid path name %s-*%s)",
+		dir, baseName+suffix, baseName, suffix)
 }
