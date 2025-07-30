@@ -53,15 +53,22 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.state = state
 
-	helper, err := kubeletplugin.Start(
-		ctx,
-		driver,
+	kubeletPluginOptions := []kubeletplugin.Option{
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
 		kubeletplugin.DriverName(consts.DriverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
-	)
+	}
+
+	// Enable seamless upgrades when POD_UID is available (which gets set by Helm when seamlessUpgrades.enabled=true)
+	if config.flags.podUID != "" {
+		kubeletPluginOptions = append(kubeletPluginOptions,
+			kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
+		)
+	}
+
+	helper, err := kubeletplugin.Start(ctx, driver, kubeletPluginOptions...)
 	if err != nil {
 		return nil, err
 	}
