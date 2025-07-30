@@ -39,6 +39,8 @@ kubeletPlugin:
   # deviceProfile is used. Not relevant for other profiles.
   numDevices: 9
   priorityClassName: "system-node-critical"
+  seamlessUpgrades:
+    enabled: false
   updateStrategy:
     type: RollingUpdate
   podAnnotations: {}
