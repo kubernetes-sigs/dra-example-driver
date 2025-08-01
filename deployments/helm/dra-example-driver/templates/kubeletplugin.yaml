@@ -75,7 +75,7 @@ spec:
               fieldPath: metadata.namespace
         # Simulated number of devices the example driver will pretend to have.
         - name: NUM_DEVICES
-          value: "9"
+          value: {{ .Values.kubeletPlugin.numDevices | quote }}
         {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
