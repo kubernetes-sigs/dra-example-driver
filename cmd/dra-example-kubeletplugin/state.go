@@ -46,6 +46,7 @@ type OpaqueDeviceConfig struct {
 type PreparedDevice struct {
 	drapbv1.Device
 	ContainerEdits *cdiapi.ContainerEdits
+	AdminAccess    bool
 }
 
 func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
@@ -61,6 +62,7 @@ type DeviceState struct {
 	cdi               *CDIHandler
 	allocatable       AllocatableDevices
 	checkpointManager checkpointmanager.CheckpointManager
+	hostHardwareInfo  *HostHardwareInfo
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -69,7 +71,13 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	cdi, err := NewCDIHandler(config)
+	// Get host hardware information for admin access.
+	hostHardwareInfo, err := GetHostHardwareInfo()
+	if err != nil {
+		return nil, fmt.Errorf("unable to get host hardware info: %v", err)
+	}
+
+	cdi, err := NewCDIHandler(config, hostHardwareInfo)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}
@@ -88,6 +96,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		cdi:               cdi,
 		allocatable:       allocatable,
 		checkpointManager: checkpointManager,
+		hostHardwareInfo:  hostHardwareInfo,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -117,14 +126,17 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 
 	checkpoint := newCheckpoint()
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
-		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
+		// Create a new checkpoint if the old one is corrupted or in a different format
+		checkpoint = newCheckpoint()
+		if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+			return nil, fmt.Errorf("unable to create new checkpoint: %v", err)
+		}
 	}
 	preparedClaims := checkpoint.V1.PreparedClaims
 
 	if preparedClaims[claimUID] != nil {
 		return preparedClaims[claimUID].GetDevices(), nil
 	}
-
 	preparedDevices, err := s.prepareDevices(claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
@@ -148,7 +160,10 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 
 	checkpoint := newCheckpoint()
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
-		return fmt.Errorf("unable to sync from checkpoint: %v", err)
+		checkpoint = newCheckpoint()
+		if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+			return fmt.Errorf("unable to create new checkpoint: %v", err)
+		}
 	}
 	preparedClaims := checkpoint.V1.PreparedClaims
 
@@ -177,6 +192,8 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
+	// Check if any device request has admin access
+	hasAdminAccess := s.checkAdminAccess(claim)
 
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
@@ -260,6 +277,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 					CDIDeviceIDs: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
 				},
 				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+				AdminAccess:    hasAdminAccess,
 			}
 			preparedDevices = append(preparedDevices, device)
 		}
@@ -270,6 +288,20 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 
 func (s *DeviceState) unprepareDevices(claimUID string, devices PreparedDevices) error {
 	return nil
+}
+
+// checkAdminAccess determines if a resource claim requires admin access.
+func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
+	hasAdminAccess := false
+	if claim != nil && claim.Status.Allocation != nil {
+		for _, result := range claim.Status.Allocation.Devices.Results {
+			if result.AdminAccess != nil && *result.AdminAccess {
+				hasAdminAccess = true
+				break
+			}
+		}
+	}
+	return hasAdminAccess
 }
 
 // applyConfig applies a configuration to a set of device allocation results.

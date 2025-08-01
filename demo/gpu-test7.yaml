@@ -1,0 +1,97 @@
+# One Namespace with admin access label
+# Two pods, one container each
+# Each container requesting 1 distinct GPU with admin access
+# This demo shows host hardware information exposed via environment variables
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test7
+  labels:
+    resource.k8s.io/admin-access: "true"
+---
+apiVersion: resource.k8s.io/v1beta2
+kind: ResourceClaimTemplate
+metadata:
+  namespace: gpu-test7
+  name: multiple-gpus-admin
+spec:
+  spec: 
+    devices:
+      requests:
+      - name: admin-gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          allocationMode: All
+          adminAccess: true
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test7
+  name: pod0
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: 
+    - |
+      echo "=== DRA Admin Access Demo - Host Hardware Information ==="
+      echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
+      echo "Host CPU Info: $HOST_CPU_INFO"
+      echo "Host Memory Info: $HOST_MEMORY_INFO"
+      echo "Host Kernel Info: $HOST_KERNEL_INFO"
+      echo "Host System Info: $HOST_SYSTEM_INFO"
+      echo "Host Network Info: $HOST_NETWORK_INFO"
+      echo "Host Storage Info: $HOST_STORAGE_INFO"
+      echo ""
+      echo "GPU Environment Variables:"
+      env | grep GPU_ | sort
+      echo ""
+      echo "=== Container will sleep for 5 minutes to allow inspection ==="
+      trap 'exit 0' TERM
+      sleep 300 & wait
+    resources:
+      claims:
+      - name: admin-gpus
+  resourceClaims:
+  - name: admin-gpus
+    resourceClaimTemplateName: multiple-gpus-admin
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test7
+  name: pod1
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: 
+    - |
+      echo "=== DRA Admin Access Demo - Host Hardware Information ==="
+      echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
+      echo "Host CPU Info: $HOST_CPU_INFO"
+      echo "Host Memory Info: $HOST_MEMORY_INFO"
+      echo "Host Kernel Info: $HOST_KERNEL_INFO"
+      echo "Host System Info: $HOST_SYSTEM_INFO"
+      echo "Host Network Info: $HOST_NETWORK_INFO"
+      echo "Host Storage Info: $HOST_STORAGE_INFO"
+      echo ""
+      echo "GPU Environment Variables:"
+      env | grep GPU_ | sort
+      echo ""
+      echo "=== Container will sleep for 5 minutes to allow inspection ==="
+      trap 'exit 0' TERM
+      sleep 300 & wait
+    resources:
+      claims:
+      - name: admin-gpus
+  resourceClaims:
+  - name: admin-gpus
+    resourceClaimTemplateName: multiple-gpus-admin

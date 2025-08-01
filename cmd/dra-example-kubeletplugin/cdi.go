@@ -36,10 +36,11 @@ const (
 )
 
 type CDIHandler struct {
-	cache *cdiapi.Cache
+	cache            *cdiapi.Cache
+	hostHardwareInfo *HostHardwareInfo
 }
 
-func NewCDIHandler(config *Config) (*CDIHandler, error) {
+func NewCDIHandler(config *Config, hostHardwareInfo *HostHardwareInfo) (*CDIHandler, error) {
 	cache, err := cdiapi.NewCache(
 		cdiapi.WithSpecDirs(config.flags.cdiRoot),
 	)
@@ -47,7 +48,8 @@ func NewCDIHandler(config *Config) (*CDIHandler, error) {
 		return nil, fmt.Errorf("unable to create a new CDI cache: %w", err)
 	}
 	handler := &CDIHandler{
-		cache: cache,
+		cache:            cache,
+		hostHardwareInfo: hostHardwareInfo,
 	}
 
 	return handler, nil
@@ -96,9 +98,24 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
 					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
+					fmt.Sprintf("DRA_ADMIN_ACCESS=%t", device.AdminAccess),
 				},
 			},
 		}
+
+		// If this device has admin access, inject host hardware information
+		if device.AdminAccess {
+			hostEnvVars := []string{
+				fmt.Sprintf("HOST_CPU_INFO=%s", cdi.hostHardwareInfo.CPUInfo),
+				fmt.Sprintf("HOST_MEMORY_INFO=%s", cdi.hostHardwareInfo.MemInfo),
+				fmt.Sprintf("HOST_KERNEL_INFO=%s", cdi.hostHardwareInfo.KernelInfo),
+				fmt.Sprintf("HOST_SYSTEM_INFO=%s", cdi.hostHardwareInfo.SystemInfo),
+				fmt.Sprintf("HOST_NETWORK_INFO=%s", cdi.hostHardwareInfo.NetworkInfo),
+				fmt.Sprintf("HOST_STORAGE_INFO=%s", cdi.hostHardwareInfo.StorageInfo),
+			}
+			claimEdits.ContainerEdits.Env = append(claimEdits.ContainerEdits.Env, hostEnvVars...)
+		}
+
 		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{
