@@ -14,8 +14,8 @@ nodes:
   - |
     kind: ClusterConfiguration
     apiServer:
-        extraArgs:
-          runtime-config: "resource.k8s.io/v1beta1=true"
+      extraArgs:
+        runtime-config: "resource.k8s.io/v1beta1=true"
     scheduler:
         extraArgs:
           v: "1"

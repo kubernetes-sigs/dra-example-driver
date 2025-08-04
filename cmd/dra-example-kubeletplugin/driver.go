@@ -18,11 +18,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
@@ -36,11 +38,13 @@ type driver struct {
 	helper      *kubeletplugin.Helper
 	state       *DeviceState
 	healthcheck *healthcheck
+	cancelCtx   func(error)
 }
 
 func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	driver := &driver{
-		client: config.coreclient,
+		client:    config.coreclient,
+		cancelCtx: config.cancelMainCtx,
 	}
 
 	state, err := NewDeviceState(config)
@@ -148,4 +152,11 @@ func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.N
 	}
 
 	return nil
+}
+
+func (d *driver) HandleError(ctx context.Context, err error, msg string) {
+	utilruntime.HandleErrorWithContext(ctx, err, msg)
+	if !errors.Is(err, kubeletplugin.ErrRecoverable) && d.cancelCtx != nil {
+		d.cancelCtx(fmt.Errorf("fatal background error: %w", err))
+	}
 }

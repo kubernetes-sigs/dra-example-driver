@@ -52,8 +52,9 @@ type Flags struct {
 }
 
 type Config struct {
-	flags      *Flags
-	coreclient coreclientset.Interface
+	flags         *Flags
+	coreclient    coreclientset.Interface
+	cancelMainCtx func(error)
 }
 
 func (c Config) DriverPluginPath() string {
@@ -172,6 +173,8 @@ func RunPlugin(ctx context.Context, config *Config) error {
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
+	ctx, cancel := context.WithCancelCause(ctx)
+	config.cancelMainCtx = cancel
 
 	driver, err := NewDriver(ctx, config)
 	if err != nil {
@@ -182,7 +185,7 @@ func RunPlugin(ctx context.Context, config *Config) error {
 	// restore default signal behavior as soon as possible in case graceful
 	// shutdown gets stuck.
 	stop()
-	if err := ctx.Err(); err != nil && !errors.Is(err, context.Canceled) {
+	if err := context.Cause(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		// A canceled context is the normal case here when the process receives
 		// a signal. Only log the error for more interesting cases.
 		logger.Error(err, "error from context")

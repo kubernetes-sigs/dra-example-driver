@@ -108,7 +108,7 @@ And show the initial state of available GPU devices on the worker node:
 $ kubectl get resourceslice -o yaml
 apiVersion: v1
 items:
-- apiVersion: resource.k8s.io/v1beta1
+- apiVersion: resource.k8s.io/v1
   kind: ResourceSlice
   metadata:
     creationTimestamp: "2024-12-09T16:17:09Z"
@@ -131,117 +131,109 @@ items:
       name: dra-example-driver-cluster-worker
       resourceSliceCount: 1
     devices:
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 0
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 0
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-0
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 1
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 1
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-1
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 2
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 2
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-2
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 3
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 3
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-3
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 4
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 4
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-4
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 5
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 5
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-5
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 6
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 6
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-6
-    - basic:
-        attributes:
-          driverVersion:
-            version: 1.0.0
-          index:
-            int: 7
-          model:
-            string: LATEST-GPU-MODEL
-          uuid:
-            string: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-        capacity:
-          memory:
-            value: 80Gi
+    - attributes:
+        driverVersion:
+          version: 1.0.0
+        index:
+          int: 7
+        model:
+          string: LATEST-GPU-MODEL
+        uuid:
+          string: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
+      capacity:
+        memory:
+          value: 80Gi
       name: gpu-7
 kind: List
 metadata:

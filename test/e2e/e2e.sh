@@ -29,7 +29,7 @@ kubectl wait --for=condition=Ready nodes/dra-example-driver-cluster-worker --tim
 function verify-webhook {
   echo "Waiting for webhook to be available"
   while ! kubectl create --dry-run=server -f- <<-'EOF'
-    apiVersion: resource.k8s.io/v1beta1
+    apiVersion: resource.k8s.io/v1
     kind: ResourceClaim
     metadata:
       name: webhook-test
@@ -37,7 +37,8 @@ function verify-webhook {
       devices:
         requests:
         - name: gpu
-          deviceClassName: gpu.example.com
+          exactly:
+            deviceClassName: gpu.example.com
 EOF
   do
     sleep 1
@@ -102,7 +103,7 @@ fi
 
 gpu_test1_pod0_ctr0_logs=$(kubectl logs -n gpu-test1 pod0 -c ctr0)
 gpu_test1_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test1_pod0_ctr0_logs")
-gpu_test1_pod0_ctr0_gpus_count=$(echo "$gpu_test1_pod0_ctr0_gpus" | wc -w)
+gpu_test1_pod0_ctr0_gpus_count=$(echo "$gpu_test1_pod0_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test1_pod0_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test1/pod0, container ctr0 to have 1 GPU, but got $gpu_test1_pod0_ctr0_gpus_count: $gpu_test1_pod0_ctr0_gpus"
   exit 1
@@ -117,7 +118,7 @@ observed_gpus+=("$gpu_test1_pod0_ctr0_gpu")
 
 gpu_test1_pod1_ctr0_logs=$(kubectl logs -n gpu-test1 pod1 -c ctr0)
 gpu_test1_pod1_ctr0_gpus=$(gpus-from-logs "$gpu_test1_pod1_ctr0_logs")
-gpu_test1_pod1_ctr0_gpus_count=$(echo "$gpu_test1_pod1_ctr0_gpus" | wc -w)
+gpu_test1_pod1_ctr0_gpus_count=$(echo "$gpu_test1_pod1_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test1_pod1_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test1/pod1, container ctr0 to have 1 GPU, but got $gpu_test1_pod1_ctr0_gpus_count: $gpu_test1_pod1_ctr0_gpus"
   exit 1
@@ -140,7 +141,7 @@ fi
 
 gpu_test2_pod0_ctr0_logs=$(kubectl logs -n gpu-test2 pod0 -c ctr0)
 gpu_test2_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test2_pod0_ctr0_logs")
-gpu_test2_pod0_ctr0_gpus_count=$(echo "$gpu_test2_pod0_ctr0_gpus" | wc -w)
+gpu_test2_pod0_ctr0_gpus_count=$(echo "$gpu_test2_pod0_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test2_pod0_ctr0_gpus_count != 2 ]]; then
   echo "Expected Pod gpu-test2/pod0, container ctr0 to have 2 GPUs, but got $gpu_test2_pod0_ctr0_gpus_count: $gpu_test2_pod0_ctr0_gpus"
   exit 1
@@ -164,7 +165,7 @@ fi
 
 gpu_test3_pod0_ctr0_logs=$(kubectl logs -n gpu-test3 pod0 -c ctr0)
 gpu_test3_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test3_pod0_ctr0_logs")
-gpu_test3_pod0_ctr0_gpus_count=$(echo "$gpu_test3_pod0_ctr0_gpus" | wc -w)
+gpu_test3_pod0_ctr0_gpus_count=$(echo "$gpu_test3_pod0_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test3_pod0_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test3/pod0, container ctr0 to have 1 GPU, but got $gpu_test3_pod0_ctr0_gpus_count: $gpu_test3_pod0_ctr0_gpus"
   exit 1
@@ -189,7 +190,7 @@ fi
 
 gpu_test3_pod0_ctr1_logs=$(kubectl logs -n gpu-test3 pod0 -c ctr1)
 gpu_test3_pod0_ctr1_gpus=$(gpus-from-logs "$gpu_test3_pod0_ctr1_logs")
-gpu_test3_pod0_ctr1_gpus_count=$(echo "$gpu_test3_pod0_ctr1_gpus" | wc -w)
+gpu_test3_pod0_ctr1_gpus_count=$(echo "$gpu_test3_pod0_ctr1_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test3_pod0_ctr1_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test3/pod0, container ctr1 to have 1 GPU, but got $gpu_test3_pod0_ctr1_gpus_count: $gpu_test3_pod0_ctr1_gpus"
   exit 1
@@ -222,7 +223,7 @@ fi
 
 gpu_test4_pod0_ctr0_logs=$(kubectl logs -n gpu-test4 pod0 -c ctr0)
 gpu_test4_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test4_pod0_ctr0_logs")
-gpu_test4_pod0_ctr0_gpus_count=$(echo "$gpu_test4_pod0_ctr0_gpus" | wc -w)
+gpu_test4_pod0_ctr0_gpus_count=$(echo "$gpu_test4_pod0_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test4_pod0_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test4/pod0, container ctr0 to have 1 GPU, but got $gpu_test4_pod0_ctr0_gpus_count: $gpu_test4_pod0_ctr0_gpus"
   exit 1
@@ -247,7 +248,7 @@ fi
 
 gpu_test4_pod1_ctr0_logs=$(kubectl logs -n gpu-test4 pod1 -c ctr0)
 gpu_test4_pod1_ctr0_gpus=$(gpus-from-logs "$gpu_test4_pod1_ctr0_logs")
-gpu_test4_pod1_ctr0_gpus_count=$(echo "$gpu_test4_pod1_ctr0_gpus" | wc -w)
+gpu_test4_pod1_ctr0_gpus_count=$(echo "$gpu_test4_pod1_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test4_pod1_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test4/pod1, container ctr0 to have 1 GPU, but got $gpu_test4_pod1_ctr0_gpus_count: $gpu_test4_pod1_ctr0_gpus"
   exit 1
@@ -279,7 +280,7 @@ fi
 
 gpu_test5_pod0_ts_ctr0_logs=$(kubectl logs -n gpu-test5 pod0 -c ts-ctr0)
 gpu_test5_pod0_ts_ctr0_gpus=$(gpus-from-logs "$gpu_test5_pod0_ts_ctr0_logs")
-gpu_test5_pod0_ts_ctr0_gpus_count=$(echo "$gpu_test5_pod0_ts_ctr0_gpus" | wc -w)
+gpu_test5_pod0_ts_ctr0_gpus_count=$(echo "$gpu_test5_pod0_ts_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test5_pod0_ts_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test5/pod0, container ts-ctr0 to have 1 GPU, but got $gpu_test5_pod0_ts_ctr0_gpus_count: $gpu_test5_pod0_ts_ctr0_gpus"
   exit 1
@@ -304,7 +305,7 @@ fi
 
 gpu_test5_pod0_ts_ctr1_logs=$(kubectl logs -n gpu-test5 pod0 -c ts-ctr1)
 gpu_test5_pod0_ts_ctr1_gpus=$(gpus-from-logs "$gpu_test5_pod0_ts_ctr1_logs")
-gpu_test5_pod0_ts_ctr1_gpus_count=$(echo "$gpu_test5_pod0_ts_ctr1_gpus" | wc -w)
+gpu_test5_pod0_ts_ctr1_gpus_count=$(echo "$gpu_test5_pod0_ts_ctr1_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test5_pod0_ts_ctr1_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test5/pod0, container ts-ctr1 to have 1 GPU, but got $gpu_test5_pod0_ts_ctr1_gpus_count: $gpu_test5_pod0_ts_ctr1_gpus"
   exit 1
@@ -328,7 +329,7 @@ fi
 
 gpu_test5_pod0_sp_ctr0_logs=$(kubectl logs -n gpu-test5 pod0 -c sp-ctr0)
 gpu_test5_pod0_sp_ctr0_gpus=$(gpus-from-logs "$gpu_test5_pod0_sp_ctr0_logs")
-gpu_test5_pod0_sp_ctr0_gpus_count=$(echo "$gpu_test5_pod0_sp_ctr0_gpus" | wc -w)
+gpu_test5_pod0_sp_ctr0_gpus_count=$(echo "$gpu_test5_pod0_sp_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test5_pod0_sp_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test5/pod0, container sp-ctr0 to have 1 GPU, but got $gpu_test5_pod0_sp_ctr0_gpus_count: $gpu_test5_pod0_sp_ctr0_gpus"
   exit 1
@@ -353,7 +354,7 @@ fi
 
 gpu_test5_pod0_sp_ctr1_logs=$(kubectl logs -n gpu-test5 pod0 -c sp-ctr1)
 gpu_test5_pod0_sp_ctr1_gpus=$(gpus-from-logs "$gpu_test5_pod0_sp_ctr1_logs")
-gpu_test5_pod0_sp_ctr1_gpus_count=$(echo "$gpu_test5_pod0_sp_ctr1_gpus" | wc -w)
+gpu_test5_pod0_sp_ctr1_gpus_count=$(echo "$gpu_test5_pod0_sp_ctr1_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test5_pod0_sp_ctr1_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test5/pod0, container sp-ctr1 to have 1 GPU, but got $gpu_test5_pod0_sp_ctr1_gpus_count: $gpu_test5_pod0_sp_ctr1_gpus"
   exit 1
@@ -384,7 +385,7 @@ fi
 
 gpu_test6_pod0_init0_logs=$(kubectl logs -n gpu-test6 pod0 -c init0)
 gpu_test6_pod0_init0_gpus=$(gpus-from-logs "$gpu_test6_pod0_init0_logs")
-gpu_test6_pod0_init0_gpus_count=$(echo "$gpu_test6_pod0_init0_gpus" | wc -w)
+gpu_test6_pod0_init0_gpus_count=$(echo "$gpu_test6_pod0_init0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test6_pod0_init0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test6/pod0, container init0 to have 1 GPU, but got $gpu_test6_pod0_init0_gpus_count: $gpu_test6_pod0_init0_gpus"
   exit 1
@@ -409,7 +410,7 @@ fi
 
 gpu_test6_pod0_ctr0_logs=$(kubectl logs -n gpu-test6 pod0 -c ctr0)
 gpu_test6_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test6_pod0_ctr0_logs")
-gpu_test6_pod0_ctr0_gpus_count=$(echo "$gpu_test6_pod0_ctr0_gpus" | wc -w)
+gpu_test6_pod0_ctr0_gpus_count=$(echo "$gpu_test6_pod0_ctr0_gpus" | wc -w | tr -d ' ')
 if [[ $gpu_test6_pod0_ctr0_gpus_count != 1 ]]; then
   echo "Expected Pod gpu-test6/pod0, container ctr0 to have 1 GPU, but got $gpu_test6_pod0_ctr0_gpus_count: $gpu_test6_pod0_ctr0_gpus"
   exit 1
@@ -440,9 +441,9 @@ kubectl delete -f demo/gpu-test4.yaml --timeout=25s
 kubectl delete -f demo/gpu-test5.yaml --timeout=25s
 kubectl delete -f demo/gpu-test6.yaml --timeout=25s
 
-# Webhook should reject invalid resources
+# # Webhook should reject invalid v1 resources
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
   name: webhook-test
@@ -450,8 +451,38 @@ spec:
   devices:
     requests:
     - name: ts-gpu
-      deviceClassName: gpu.example.com
+      exactly:
+        deviceClassName: gpu.example.com
     - name: sp-gpu
+      exactly:
+        deviceClassName: gpu.example.com
+    config:
+    - requests: ["ts-gpu"]
+      opaque:
+        driver: gpu.example.com
+        parameters:
+          apiVersion: gpu.resource.example.com/v1alpha1
+          kind: GpuConfig
+          sharing:
+            strategy: TimeSlicing
+            timeSlicingConfig:
+              interval: InvalidInterval
+EOF
+then
+  echo "Webhook did not reject v1 ResourceClaim invalid GpuConfig with the expected message"
+  exit 1
+fi
+
+# # Webhook should reject invalid v1beta1 resources
+if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: webhook-test-v1beta1
+spec:
+  devices:
+    requests:
+    - name: ts-gpu
       deviceClassName: gpu.example.com
     config:
     - requests: ["ts-gpu"]
@@ -466,12 +497,12 @@ spec:
               interval: InvalidInterval
 EOF
 then
-  echo "Webhook did not reject ResourceClaim invalid GpuConfig with the expected message"
+  echo "Webhook did not reject v1beta1 ResourceClaim invalid GpuConfig with the expected message"
   exit 1
 fi
 
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
   name: webhook-test
@@ -480,9 +511,11 @@ spec:
     devices:
       requests:
       - name: ts-gpu
-        deviceClassName: gpu.example.com
+        exactly:
+          deviceClassName: gpu.example.com
       - name: sp-gpu
-        deviceClassName: gpu.example.com
+        exactly:
+          deviceClassName: gpu.example.com
       config:
       - requests: ["ts-gpu"]
         opaque:
