@@ -61,8 +61,8 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
 	}
 
-	// Enable seamless upgrades when POD_UID is available (which gets set by Helm when seamlessUpgrades.enabled=true)
-	if config.flags.podUID != "" {
+	// Enable seamless upgrades when both seamless upgrades are enabled and POD_UID is available
+	if config.flags.seamlessUpgrades && config.flags.podUID != "" {
 		kubeletPluginOptions = append(kubeletPluginOptions,
 			kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
 		)
