@@ -8,7 +8,7 @@ metadata:
   name: gpu-test5
 
 ---
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
   namespace: gpu-test5
@@ -18,9 +18,11 @@ spec:
     devices:
       requests:
       - name: ts-gpu
-        deviceClassName: gpu.example.com
+        exactly:
+          deviceClassName: gpu.example.com
       - name: sp-gpu
-        deviceClassName: gpu.example.com
+        exactly:
+          deviceClassName: gpu.example.com
       config:
       - requests: ["ts-gpu"]
         opaque:

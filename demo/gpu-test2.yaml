@@ -8,7 +8,7 @@ metadata:
   name: gpu-test2
 
 ---
-apiVersion: resource.k8s.io/v1beta1
+apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
   namespace: gpu-test2
@@ -17,10 +17,12 @@ spec:
   spec:
     devices:
       requests:
-      - name: gpus
-        deviceClassName: gpu.example.com
-        allocationMode: ExactCount
-        count: 2
+      - name: gpu-1
+        exactly:
+          deviceClassName: gpu.example.com
+      - name: gpu-2
+        exactly:
+          deviceClassName: gpu.example.com
 
 ---
 apiVersion: v1
