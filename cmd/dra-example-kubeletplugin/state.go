@@ -34,26 +34,12 @@ import (
 )
 
 type AllocatableDevices map[string]resourceapi.Device
-type PreparedDevices []*PreparedDevice
-type PreparedClaims map[string]PreparedDevices
+
 type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
 
 type OpaqueDeviceConfig struct {
 	Requests []string
 	Config   runtime.Object
-}
-
-type PreparedDevice struct {
-	drapbv1.Device
-	ContainerEdits *cdiapi.ContainerEdits
-}
-
-func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
-	var devices []*drapbv1.Device
-	for _, pd := range pds {
-		devices = append(devices, &pd.Device)
-	}
-	return devices
 }
 
 type DeviceState struct {
@@ -119,10 +105,10 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
 		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
-	preparedClaims := checkpoint.V1.PreparedClaims
 
-	if preparedClaims[claimUID] != nil {
-		return preparedClaims[claimUID].GetDevices(), nil
+	preparedDevices := checkpoint.GetPreparedDevices(claimUID)
+	if preparedDevices != nil {
+		return preparedDevices.GetDevices(), nil
 	}
 
 	preparedDevices, err := s.prepareDevices(claim)
@@ -134,12 +120,12 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
 	}
 
-	preparedClaims[claimUID] = preparedDevices
+	checkpoint.AddPreparedDevices(claimUID, preparedDevices)
 	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
-	return preparedClaims[claimUID].GetDevices(), nil
+	return preparedDevices.GetDevices(), nil
 }
 
 func (s *DeviceState) Unprepare(claimUID string) error {
@@ -150,13 +136,13 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
 		return fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
-	preparedClaims := checkpoint.V1.PreparedClaims
 
-	if preparedClaims[claimUID] == nil {
+	preparedDevices := checkpoint.GetPreparedDevices(claimUID)
+	if preparedDevices == nil {
 		return nil
 	}
 
-	if err := s.unprepareDevices(claimUID, preparedClaims[claimUID]); err != nil {
+	if err := s.unprepareDevices(claimUID, preparedDevices); err != nil {
 		return fmt.Errorf("unprepare failed: %v", err)
 	}
 
@@ -165,7 +151,7 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		return fmt.Errorf("unable to delete CDI spec file for claim: %v", err)
 	}
 
-	delete(preparedClaims, claimUID)
+	checkpoint.RemovePreparedDevices(claimUID)
 	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
 		return fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
