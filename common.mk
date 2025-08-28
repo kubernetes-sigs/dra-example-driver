@@ -17,7 +17,7 @@ GOLANG_VERSION ?= 1.24.2
 DRIVER_NAME := dra-example-driver
 MODULE := sigs.k8s.io/$(DRIVER_NAME)
 
-VERSION  ?= v0.1.0
+VERSION  ?=
 vVERSION := v$(VERSION:v%=%)
 
 VENDOR := example.com
