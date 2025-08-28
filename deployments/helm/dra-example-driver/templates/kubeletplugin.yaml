@@ -14,7 +14,38 @@ spec:
       app.kubernetes.io/component: kubeletplugin
   {{- with .Values.kubeletPlugin.updateStrategy }}
   updateStrategy:
+    {{- if $.Values.kubeletPlugin.seamlessUpgrades.enabled }}
+    {{- $strategy := . }}
+    {{- range $key, $value := . }}
+    {{- if eq $key "rollingUpdate" }}
+    {{ $key }}:
+      maxSurge: 1
+      maxUnavailable: 0
+      {{- range $subkey, $subvalue := $value }}
+      {{- if and (ne $subkey "maxSurge") (ne $subkey "maxUnavailable") }}
+      {{ $subkey }}: {{ $subvalue }}
+      {{- end }}
+      {{- end }}
+    {{- else }}
+    {{ $key }}: {{ $value }}
+    {{- end }}
+    {{- end }}
+    {{- else }}
     {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- else }}
+  updateStrategy:
+    type: {{ .Values.kubeletPlugin.updateStrategy.type | default "RollingUpdate" }}
+    {{- if eq (.Values.kubeletPlugin.updateStrategy.type | default "RollingUpdate") "RollingUpdate" }}
+    rollingUpdate:
+      {{- if .Values.kubeletPlugin.seamlessUpgrades.enabled }}
+      maxSurge: 1
+      maxUnavailable: 0
+      {{- else }}
+      maxSurge: {{ .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxSurge | default 0 }}
+      maxUnavailable: {{ .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxUnavailable | default 1 }}
+      {{- end }}
+    {{- end }}
   {{- end }}
   template:
     metadata:
@@ -79,6 +110,14 @@ spec:
         {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
+        {{- end }}
+        - name: POD_UID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.uid
+        {{- if .Values.kubeletPlugin.seamlessUpgrades.enabled }}
+        - name: SEAMLESS_UPGRADES
+          value: "true"
         {{- end }}
         volumeMounts:
         - name: plugins-registry

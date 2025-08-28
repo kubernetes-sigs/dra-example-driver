@@ -49,6 +49,8 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
+	podUID                        string
+	seamlessUpgrades              bool
 }
 
 type Config struct {
@@ -114,6 +116,18 @@ func newApp() *cli.App {
 			Value:       -1,
 			Destination: &flags.healthcheckPort,
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
+		},
+		&cli.StringFlag{
+			Name:        "pod-uid",
+			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
+			Destination: &flags.podUID,
+			EnvVars:     []string{"POD_UID"},
+		},
+		&cli.BoolFlag{
+			Name:        "seamless-upgrades",
+			Usage:       "Enable seamless upgrades support. When enabled, the driver will use rolling update mode if pod-uid is available.",
+			Destination: &flags.seamlessUpgrades,
+			EnvVars:     []string{"SEAMLESS_UPGRADES"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

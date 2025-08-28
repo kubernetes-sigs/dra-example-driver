@@ -53,15 +53,22 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.state = state
 
-	helper, err := kubeletplugin.Start(
-		ctx,
-		driver,
+	kubeletPluginOptions := []kubeletplugin.Option{
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
 		kubeletplugin.DriverName(consts.DriverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
-	)
+	}
+
+	// Enable seamless upgrades when both seamless upgrades are enabled and POD_UID is available
+	if config.flags.seamlessUpgrades && config.flags.podUID != "" {
+		kubeletPluginOptions = append(kubeletPluginOptions,
+			kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
+		)
+	}
+
+	helper, err := kubeletplugin.Start(ctx, driver, kubeletPluginOptions...)
 	if err != nil {
 		return nil, err
 	}
