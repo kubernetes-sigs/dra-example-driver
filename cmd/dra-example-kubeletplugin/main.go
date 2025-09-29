@@ -46,6 +46,7 @@ type Flags struct {
 	nodeName                      string
 	cdiRoot                       string
 	numDevices                    int
+	deviceAttributes              string
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
@@ -93,6 +94,13 @@ func newApp() *cli.App {
 			Value:       8,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
+		},
+		&cli.StringFlag{
+			Name:        "device-attributes",
+			Usage:       "Additional device attributes to be added to resource slices in key=value format, separated by commas. Example: productName=NVIDIA GeForce RTX 5090,architecture=Blackwell",
+			Value:       "",
+			Destination: &flags.deviceAttributes,
+			EnvVars:     []string{"DEVICE_ATTRIBUTES"},
 		},
 		&cli.StringFlag{
 			Name:        "kubelet-registrar-directory-path",

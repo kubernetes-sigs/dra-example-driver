@@ -20,6 +20,8 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"strconv"
+	"strings"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -28,28 +30,42 @@ import (
 	"github.com/google/uuid"
 )
 
-func enumerateAllPossibleDevices(numGPUs int) (AllocatableDevices, error) {
+func enumerateAllPossibleDevices(numGPUs int, deviceAttributes string) (AllocatableDevices, error) {
 	seed := os.Getenv("NODE_NAME")
 	uuids := generateUUIDs(seed, numGPUs)
 
+	// Parse additional device attributes from the flag
+	additionalAttributes, err := parseDeviceAttributes(deviceAttributes)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing device attributes: %v", err)
+	}
+
 	alldevices := make(AllocatableDevices)
 	for i, uuid := range uuids {
-		device := resourceapi.Device{
-			Name: fmt.Sprintf("gpu-%d", i),
-			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				"index": {
-					IntValue: ptr.To(int64(i)),
-				},
-				"uuid": {
-					StringValue: ptr.To(uuid),
-				},
-				"model": {
-					StringValue: ptr.To("LATEST-GPU-MODEL"),
-				},
-				"driverVersion": {
-					VersionValue: ptr.To("1.0.0"),
-				},
+		// Start with default attributes
+		attributes := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+			"index": {
+				IntValue: ptr.To(int64(i)),
 			},
+			"uuid": {
+				StringValue: ptr.To(uuid),
+			},
+			"model": {
+				StringValue: ptr.To("LATEST-GPU-MODEL"),
+			},
+			"driverVersion": {
+				VersionValue: ptr.To("1.0.0"),
+			},
+		}
+
+		// Add additional attributes from the flag
+		for key, value := range additionalAttributes {
+			attributes[key] = value
+		}
+
+		device := resourceapi.Device{
+			Name:       fmt.Sprintf("gpu-%d", i),
+			Attributes: attributes,
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 				"memory": {
 					Value: resource.MustParse("80Gi"),
@@ -59,6 +75,112 @@ func enumerateAllPossibleDevices(numGPUs int) (AllocatableDevices, error) {
 		alldevices[device.Name] = device
 	}
 	return alldevices, nil
+}
+
+// parseDeviceAttributes parses a comma-separated string of key=value pairs
+// and returns a map of device attributes with automatic type detection.
+// Supported value types:
+// - int: integer values (e.g., "count=5")
+// - bool: boolean values (e.g., "enabled=true", "disabled=false")
+// - version: semantic version values (e.g., "driver_version=1.2.3")
+// - string: any other value (e.g., "productName=NVIDIA GeForce RTX 5090", "architecture=Blackwell")
+func parseDeviceAttributes(deviceAttributes string) (map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, error) {
+	attributes := make(map[resourceapi.QualifiedName]resourceapi.DeviceAttribute)
+
+	if deviceAttributes == "" {
+		return attributes, nil
+	}
+
+	pairs := strings.Split(deviceAttributes, ",")
+	for _, pair := range pairs {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+
+		parts := strings.SplitN(pair, "=", 2)
+		if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid device attribute format: %s (expected key=value)", pair)
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		if key == "" {
+			return nil, fmt.Errorf("device attribute key cannot be empty")
+		}
+
+		// Detect value type and create appropriate DeviceAttribute
+		attr, err := createDeviceAttribute(value)
+		if err != nil {
+			return nil, fmt.Errorf("invalid value for attribute %s: %v", key, err)
+		}
+
+		attributes[resourceapi.QualifiedName(key)] = attr
+	}
+
+	return attributes, nil
+}
+
+// createDeviceAttribute creates a DeviceAttribute with the appropriate value type
+// based on the input string. It tries to detect the type in this order:
+// 1. bool (true/false)
+// 2. int (integer)
+// 3. version (semantic version pattern)
+// 4. string (default)
+func createDeviceAttribute(value string) (resourceapi.DeviceAttribute, error) {
+	// Check for boolean values
+	if value == "true" {
+		return resourceapi.DeviceAttribute{
+			BoolValue: ptr.To(true),
+		}, nil
+	}
+	if value == "false" {
+		return resourceapi.DeviceAttribute{
+			BoolValue: ptr.To(false),
+		}, nil
+	}
+
+	// Check for integer values
+	if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
+		return resourceapi.DeviceAttribute{
+			IntValue: ptr.To(intVal),
+		}, nil
+	}
+
+	// Check for semantic version pattern (basic check for x.y.z format)
+	if isSemanticVersion(value) {
+		return resourceapi.DeviceAttribute{
+			VersionValue: ptr.To(value),
+		}, nil
+	}
+
+	// Default to string value
+	// Validate string length (max 64 characters as per API spec)
+	if len(value) > 64 {
+		return resourceapi.DeviceAttribute{}, fmt.Errorf("string value too long (max 64 characters): %s", value)
+	}
+
+	return resourceapi.DeviceAttribute{
+		StringValue: ptr.To(value),
+	}, nil
+}
+
+// isSemanticVersion performs a basic check to see if a string looks like a semantic version
+func isSemanticVersion(value string) bool {
+	parts := strings.Split(value, ".")
+	if len(parts) < 3 {
+		return false
+	}
+
+	// Check if first three parts are numeric
+	for i := 0; i < 3; i++ {
+		if _, err := strconv.Atoi(parts[i]); err != nil {
+			return false
+		}
+	}
+
+	return true
 }
 
 func generateUUIDs(seed string, count int) []string {

@@ -377,6 +377,55 @@ Finally, you can run the following to cleanup your environment and delete the
 
 ## Anatomy of a DRA resource driver
 
+### Configuration
+
+The DRA example driver supports several configuration options that can be set via command-line flags, environment variables, or Helm values:
+
+#### Device Configuration
+
+- `--num-devices` / `NUM_DEVICES`: The number of mock GPU devices to create (default: 8)
+- `--device-attributes` / `DEVICE_ATTRIBUTES`: Additional device attributes to be added to resource slices in `key=value` format, separated by commas (default: empty)
+
+The driver automatically detects the value type based on the input:
+- **String**: `productName=NVIDIA GeForce RTX 5090`, `architecture=Blackwell` (default)
+
+Example usage:
+```bash
+# Via command line
+./dra-example-kubeletplugin --num-devices=4 --device-attributes="productName=NVIDIA GeForce RTX 5090,architecture=Blackwell"
+
+# Via environment variable
+export DEVICE_ATTRIBUTES="productName=NVIDIA GeForce RTX 5090,architecture=Blackwell"
+./dra-example-kubeletplugin --num-devices=4
+
+# Via Helm values.yaml
+kubeletPlugin:
+  numDevices: 4
+  deviceAttributes: "productName=NVIDIA GeForce RTX 5090,architecture=Blackwell"
+```
+
+The device attributes will be added to each device in the resource slice alongside the default attributes (index, uuid, model, driverVersion). The resulting resource slice will have properly typed attributes:
+
+```yaml
+- attributes:
+    index:
+      int: 0
+    uuid:
+      string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
+    model:
+      string: LATEST-GPU-MODEL
+    driverVersion:
+      version: 1.0.0
+    productName:                    # <- Custom string attribute
+      string: NVIDIA GeForce RTX 5090
+    architecture:                   # <- Custom string attribute
+      string: Blackwell
+  capacity:
+    memory:
+      value: 80Gi
+  name: gpu-0
+```
+
 TBD
 
 ## Code Organization
