@@ -46,7 +46,7 @@ type Flags struct {
 	nodeName                      string
 	cdiRoot                       string
 	numDevices                    int
-	deviceAttributes              string
+	deviceAttributes              []string
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
@@ -95,12 +95,11 @@ func newApp() *cli.App {
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
 		},
-		&cli.StringFlag{
-			Name:        "device-attributes",
-			Usage:       "Additional device attributes to be added to resource slices in key=value format, separated by commas. Example: productName=NVIDIA GeForce RTX 5090,architecture=Blackwell",
-			Value:       "",
-			Destination: &flags.deviceAttributes,
-			EnvVars:     []string{"DEVICE_ATTRIBUTES"},
+		&cli.StringSliceFlag{
+			Name:    "device-attributes",
+			Usage:   "Additional device attributes as repeated key=value pairs. May be specified multiple times. Examples: --device-attributes productName=NVIDIA GeForce RTX 5090 --device-attributes architecture=Blackwell. Note: when using DEVICE_ATTRIBUTES env var, provide key=value entries separated by commas; values containing commas are not supported via env and should be passed using repeated --device-attributes flags.",
+			Value:   cli.NewStringSlice(),
+			EnvVars: []string{"DEVICE_ATTRIBUTES"},
 		},
 		&cli.StringFlag{
 			Name:        "kubelet-registrar-directory-path",
@@ -145,6 +144,8 @@ func newApp() *cli.App {
 			if err != nil {
 				return fmt.Errorf("create client: %v", err)
 			}
+
+			flags.deviceAttributes = c.StringSlice("device-attributes")
 
 			config := &Config{
 				flags:      flags,

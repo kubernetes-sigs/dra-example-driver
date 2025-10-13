@@ -27,17 +27,18 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/utils/ptr"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/google/uuid"
 )
 
-func enumerateAllPossibleDevices(numGPUs int, deviceAttributes string) (AllocatableDevices, error) {
+func enumerateAllPossibleDevices(numGPUs int, deviceAttributes []string) (AllocatableDevices, error) {
 	seed := os.Getenv("NODE_NAME")
 	uuids := generateUUIDs(seed, numGPUs)
 
 	// Parse additional device attributes from the flag
 	additionalAttributes, err := parseDeviceAttributes(deviceAttributes)
 	if err != nil {
-		return nil, fmt.Errorf("error parsing device attributes: %v", err)
+		return nil, fmt.Errorf("error parsing device attributes: %w", err)
 	}
 
 	alldevices := make(AllocatableDevices)
@@ -84,15 +85,14 @@ func enumerateAllPossibleDevices(numGPUs int, deviceAttributes string) (Allocata
 // - bool: boolean values (e.g., "enabled=true", "disabled=false")
 // - version: semantic version values (e.g., "driver_version=1.2.3")
 // - string: any other value (e.g., "productName=NVIDIA GeForce RTX 5090", "architecture=Blackwell")
-func parseDeviceAttributes(deviceAttributes string) (map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, error) {
+func parseDeviceAttributes(deviceAttributes []string) (map[resourceapi.QualifiedName]resourceapi.DeviceAttribute, error) {
 	attributes := make(map[resourceapi.QualifiedName]resourceapi.DeviceAttribute)
 
-	if deviceAttributes == "" {
+	if len(deviceAttributes) == 0 {
 		return attributes, nil
 	}
 
-	pairs := strings.Split(deviceAttributes, ",")
-	for _, pair := range pairs {
+	for _, pair := range deviceAttributes {
 		pair = strings.TrimSpace(pair)
 		if pair == "" {
 			continue
@@ -113,7 +113,7 @@ func parseDeviceAttributes(deviceAttributes string) (map[resourceapi.QualifiedNa
 		// Detect value type and create appropriate DeviceAttribute
 		attr, err := createDeviceAttribute(value)
 		if err != nil {
-			return nil, fmt.Errorf("invalid value for attribute %s: %v", key, err)
+			return nil, fmt.Errorf("invalid value for attribute %s: %w", key, err)
 		}
 
 		attributes[resourceapi.QualifiedName(key)] = attr
@@ -166,21 +166,12 @@ func createDeviceAttribute(value string) (resourceapi.DeviceAttribute, error) {
 	}, nil
 }
 
-// isSemanticVersion performs a basic check to see if a string looks like a semantic version
+// isSemanticVersion checks whether the string is a valid semantic version per https://semver.org/.
+// It accepts versions like 1.2.3, 1.0.0-beta.1, and allows build metadata like +exp.sha.
 func isSemanticVersion(value string) bool {
-	parts := strings.Split(value, ".")
-	if len(parts) < 3 {
-		return false
-	}
-
-	// Check if first three parts are numeric
-	for i := 0; i < 3; i++ {
-		if _, err := strconv.Atoi(parts[i]); err != nil {
-			return false
-		}
-	}
-
-	return true
+	// Enforce strict SemVer (MAJOR.MINOR.PATCH) per semver.org
+	_, err := semver.StrictNewVersion(value)
+	return err == nil
 }
 
 func generateUUIDs(seed string, count int) []string {
