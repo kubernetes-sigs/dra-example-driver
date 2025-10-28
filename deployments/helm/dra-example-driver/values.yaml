@@ -46,6 +46,13 @@ controller:
 
 kubeletPlugin:
   numDevices: 8
+  # Additional device attributes to be added to resource slices.
+  # When setting via env var (DEVICE_ATTRIBUTES), provide a comma-separated list of key=value entries:
+  #   DEVICE_ATTRIBUTES: "productName=NVIDIA GeForce RTX 5090,architecture=Blackwell"
+  # Values containing commas are not supported via env var. Prefer repeated CLI flags, e.g.:
+  #   --device-attributes productName=NVIDIA GeForce RTX 5090 \
+  #   --device-attributes architecture=Blackwell
+  deviceAttributes: ""
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate

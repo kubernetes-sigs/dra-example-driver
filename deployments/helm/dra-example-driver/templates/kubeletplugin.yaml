@@ -76,6 +76,9 @@ spec:
         # Simulated number of devices the example driver will pretend to have.
         - name: NUM_DEVICES
           value: {{ .Values.kubeletPlugin.numDevices | quote }}
+        # Additional device attributes to be added to resource slices.
+        - name: DEVICE_ATTRIBUTES
+          value: {{ .Values.kubeletPlugin.deviceAttributes | quote }}
         {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}

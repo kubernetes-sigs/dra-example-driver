@@ -377,7 +377,9 @@ Finally, you can run the following to cleanup your environment and delete the
 
 ## Anatomy of a DRA resource driver
 
-TBD
+For usage and configuration options, prefer:
+- CLI help: run `./dra-example-kubeletplugin --help` for flags and examples
+- Helm values: consult `deployments/helm/dra-example-driver/values.yaml` for configurable settings and inline docs
 
 ## Code Organization
 
