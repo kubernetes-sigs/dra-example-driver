@@ -27,29 +27,14 @@ import (
 	"github.com/urfave/cli/v2"
 
 	admissionv1 "k8s.io/api/admission/v1"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/klog/v2"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
-)
-
-var (
-	resourceClaimResource = metav1.GroupVersionResource{
-		Group:    resourceapi.SchemeGroupVersion.Group,
-		Version:  resourceapi.SchemeGroupVersion.Version,
-		Resource: "resourceclaims",
-	}
-	resourceClaimTemplateResource = metav1.GroupVersionResource{
-		Group:    resourceapi.SchemeGroupVersion.Group,
-		Version:  resourceapi.SchemeGroupVersion.Version,
-		Resource: "resourceclaimtemplates",
-	}
 )
 
 type Flags struct {
@@ -58,13 +43,6 @@ type Flags struct {
 	certFile string
 	keyFile  string
 	port     int
-}
-
-var scheme = runtime.NewScheme()
-var codecs = serializer.NewCodecFactory(scheme)
-
-func init() {
-	utilruntime.Must(admissionv1.AddToScheme(scheme))
 }
 
 func main() {
@@ -219,13 +197,10 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 	var deviceConfigs []resourceapi.DeviceClaimConfiguration
 	var specPath string
 
-	raw := ar.Request.Object.Raw
-	deserializer := codecs.UniversalDeserializer()
-
 	switch ar.Request.Resource {
-	case resourceClaimResource:
-		claim := resourceapi.ResourceClaim{}
-		if _, _, err := deserializer.Decode(raw, nil, &claim); err != nil {
+	case resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2:
+		claim, err := extractResourceClaim(ar)
+		if err != nil {
 			klog.Error(err)
 			return &admissionv1.AdmissionResponse{
 				Result: &metav1.Status{
@@ -236,9 +211,9 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 		}
 		deviceConfigs = claim.Spec.Devices.Config
 		specPath = "spec"
-	case resourceClaimTemplateResource:
-		claimTemplate := resourceapi.ResourceClaimTemplate{}
-		if _, _, err := deserializer.Decode(raw, nil, &claimTemplate); err != nil {
+	case resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2:
+		claimTemplate, err := extractResourceClaimTemplate(ar)
+		if err != nil {
 			klog.Error(err)
 			return &admissionv1.AdmissionResponse{
 				Result: &metav1.Status{
@@ -250,7 +225,14 @@ func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.A
 		deviceConfigs = claimTemplate.Spec.Spec.Devices.Config
 		specPath = "spec.spec"
 	default:
-		msg := fmt.Sprintf("expected resource to be %s or %s, got %s", resourceClaimResource, resourceClaimTemplateResource, ar.Request.Resource)
+		msg := fmt.Sprintf(
+			"expected resource to be one of %v, got %s",
+			[]metav1.GroupVersionResource{
+				resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2,
+				resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2,
+			},
+			ar.Request.Resource,
+		)
 		klog.Error(msg)
 		return &admissionv1.AdmissionResponse{
 			Result: &metav1.Status{

@@ -19,6 +19,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -28,7 +29,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	admissionv1 "k8s.io/api/admission/v1"
-	resourceapi "k8s.io/api/resource/v1beta1"
+	resourceapi "k8s.io/api/resource/v1"
+	resourcev1beta1 "k8s.io/api/resource/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -47,6 +49,40 @@ func TestReadyEndpoint(t *testing.T) {
 }
 
 func TestResourceClaimValidatingWebhook(t *testing.T) {
+	unknownResource := metav1.GroupVersionResource{
+		Group:    "resource.k8s.io",
+		Version:  "v1",
+		Resource: "unknownresources",
+	}
+
+	validGPUConfig := &configapi.GpuConfig{
+		Sharing: &configapi.GpuSharing{
+			Strategy: configapi.TimeSlicingStrategy,
+			TimeSlicingConfig: &configapi.TimeSlicingConfig{
+				Interval: configapi.DefaultTimeSlice,
+			},
+		},
+	}
+
+	invalidGPUConfigs := []*configapi.GpuConfig{
+		{
+			Sharing: &configapi.GpuSharing{
+				Strategy: configapi.TimeSlicingStrategy,
+				TimeSlicingConfig: &configapi.TimeSlicingConfig{
+					Interval: "InvalidInterval",
+				},
+			},
+		},
+		{
+			Sharing: &configapi.GpuSharing{
+				Strategy: configapi.SpacePartitioningStrategy,
+				SpacePartitioningConfig: &configapi.SpacePartitioningConfig{
+					PartitionCount: -1,
+				},
+			},
+		},
+	}
+
 	tests := map[string]struct {
 		admissionReview      *admissionv1.AdmissionReview
 		requestContentType   string
@@ -64,85 +100,71 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 		},
 		"valid GpuConfig in ResourceClaim": {
 			admissionReview: admissionReviewWithObject(
-				resourceClaimWithGpuConfigs(
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.TimeSlicingStrategy,
-							TimeSlicingConfig: &configapi.TimeSlicingConfig{
-								Interval: configapi.DefaultTimeSlice,
-							},
-						},
-					},
-				),
-				resourceClaimResource,
+				resourceClaimWithGpuConfigs(validGPUConfig),
+				resourceClaimResourceV1,
 			),
 			expectedAllowed: true,
 		},
 		"invalid GpuConfigs in ResourceClaim": {
 			admissionReview: admissionReviewWithObject(
-				resourceClaimWithGpuConfigs(
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.TimeSlicingStrategy,
-							TimeSlicingConfig: &configapi.TimeSlicingConfig{
-								Interval: "InvalidInterval",
-							},
-						},
-					},
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.SpacePartitioningStrategy,
-							SpacePartitioningConfig: &configapi.SpacePartitioningConfig{
-								PartitionCount: -1,
-							},
-						},
-					},
-				),
-				resourceClaimResource,
+				resourceClaimWithGpuConfigs(invalidGPUConfigs...),
+				resourceClaimResourceV1,
 			),
 			expectedAllowed: false,
 			expectedMessage: "2 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
 		},
 		"valid GpuConfig in ResourceClaimTemplate": {
 			admissionReview: admissionReviewWithObject(
-				resourceClaimTemplateWithGpuConfigs(
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.TimeSlicingStrategy,
-							TimeSlicingConfig: &configapi.TimeSlicingConfig{
-								Interval: configapi.DefaultTimeSlice,
-							},
-						},
-					},
-				),
-				resourceClaimTemplateResource,
+				resourceClaimTemplateWithGpuConfigs(validGPUConfig),
+				resourceClaimTemplateResourceV1,
 			),
 			expectedAllowed: true,
 		},
 		"invalid GpuConfigs in ResourceClaimTemplate": {
 			admissionReview: admissionReviewWithObject(
-				resourceClaimTemplateWithGpuConfigs(
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.TimeSlicingStrategy,
-							TimeSlicingConfig: &configapi.TimeSlicingConfig{
-								Interval: "InvalidInterval",
-							},
-						},
-					},
-					&configapi.GpuConfig{
-						Sharing: &configapi.GpuSharing{
-							Strategy: configapi.SpacePartitioningStrategy,
-							SpacePartitioningConfig: &configapi.SpacePartitioningConfig{
-								PartitionCount: -1,
-							},
-						},
-					},
-				),
-				resourceClaimTemplateResource,
+				resourceClaimTemplateWithGpuConfigs(invalidGPUConfigs...),
+				resourceClaimTemplateResourceV1,
 			),
 			expectedAllowed: false,
 			expectedMessage: "2 configs failed to validate: object at spec.spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
+		},
+		"valid GpuConfig in ResourceClaim v1beta1": {
+			admissionReview: admissionReviewWithObject(
+				toResourceClaimV1Beta1(resourceClaimWithGpuConfigs(validGPUConfig)),
+				resourceClaimResourceV1Beta1,
+			),
+			expectedAllowed: true,
+		},
+		"invalid GpuConfigs in ResourceClaim v1beta1": {
+			admissionReview: admissionReviewWithObject(
+				toResourceClaimV1Beta1(resourceClaimWithGpuConfigs(invalidGPUConfigs...)),
+				resourceClaimResourceV1Beta1,
+			),
+			expectedAllowed: false,
+			expectedMessage: "2 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
+		},
+		"valid GpuConfig in ResourceClaimTemplate v1beta1": {
+			admissionReview: admissionReviewWithObject(
+				toResourceClaimTemplateV1Beta1(resourceClaimTemplateWithGpuConfigs(validGPUConfig)),
+				resourceClaimTemplateResourceV1Beta1,
+			),
+			expectedAllowed: true,
+		},
+		"invalid GpuConfigs in ResourceClaimTemplate v1beta1": {
+			admissionReview: admissionReviewWithObject(
+				toResourceClaimTemplateV1Beta1(resourceClaimTemplateWithGpuConfigs(invalidGPUConfigs...)),
+				resourceClaimTemplateResourceV1Beta1,
+			),
+			expectedAllowed: false,
+			expectedMessage: "2 configs failed to validate: object at spec.spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
+		},
+		"unknown resource type": {
+			admissionReview: admissionReviewWithObject(
+				resourceClaimWithGpuConfigs(validGPUConfig),
+				unknownResource,
+			),
+			expectedAllowed: false,
+			expectedMessage: "expected resource to be one of [{resource.k8s.io v1 resourceclaims} {resource.k8s.io v1beta1 resourceclaims} {resource.k8s.io v1beta2 resourceclaims} {resource.k8s.io v1 resourceclaimtemplates} {resource.k8s.io v1beta1 resourceclaimtemplates} {resource.k8s.io v1beta2 resourceclaimtemplates}], got {resource.k8s.io v1 unknownresources}",
 		},
 	}
 
@@ -237,4 +259,20 @@ func resourceClaimSpecWithGpuConfigs(gpuConfigs ...*configapi.GpuConfig) resourc
 		resourceClaimSpec.Devices.Config = append(resourceClaimSpec.Devices.Config, deviceConfig)
 	}
 	return resourceClaimSpec
+}
+
+func toResourceClaimV1Beta1(v1Claim *resourceapi.ResourceClaim) *resourcev1beta1.ResourceClaim {
+	v1beta1Claim := &resourcev1beta1.ResourceClaim{}
+	if err := scheme.Convert(v1Claim, v1beta1Claim, nil); err != nil {
+		panic(fmt.Sprintf("failed to convert ResourceClaim to v1beta1: %v", err))
+	}
+	return v1beta1Claim
+}
+
+func toResourceClaimTemplateV1Beta1(v1Template *resourceapi.ResourceClaimTemplate) *resourcev1beta1.ResourceClaimTemplate {
+	v1beta1Template := &resourcev1beta1.ResourceClaimTemplate{}
+	if err := scheme.Convert(v1Template, v1beta1Template, nil); err != nil {
+		panic(fmt.Sprintf("failed to convert ResourceClaimTemplate to v1beta1: %v", err))
+	}
+	return v1beta1Template
 }
