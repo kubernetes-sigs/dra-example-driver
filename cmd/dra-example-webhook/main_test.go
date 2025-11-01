@@ -40,7 +40,7 @@ import (
 )
 
 func TestReadyEndpoint(t *testing.T) {
-	s := httptest.NewServer(newMux())
+	s := httptest.NewServer(newMux(nil))
 	t.Cleanup(s.Close)
 
 	res, err := http.Get(s.URL + "/readyz")
@@ -168,7 +168,10 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 		},
 	}
 
-	s := httptest.NewServer(newMux())
+	sb := gpu.ConfigSchemeBuilder
+	assert.NoError(t, sb.AddToScheme(configScheme))
+
+	s := httptest.NewServer(newMux(newConfigDecoder()))
 	t.Cleanup(s.Close)
 
 	for name, test := range tests {

@@ -23,6 +23,7 @@ import (
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
@@ -61,6 +62,7 @@ type DeviceState struct {
 	cdi               *CDIHandler
 	allocatable       AllocatableDevices
 	checkpointManager checkpointmanager.CheckpointManager
+	configDecoder     runtime.Decoder
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -84,10 +86,21 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("unable to create checkpoint manager: %v", err)
 	}
 
+	// Set up a json serializer to decode our types.
+	decoder := json.NewSerializerWithOptions(
+		json.DefaultMetaFactory,
+		config.configScheme,
+		config.configScheme,
+		json.SerializerOptions{
+			Pretty: true, Strict: true,
+		},
+	)
+
 	state := &DeviceState{
 		cdi:               cdi,
 		allocatable:       allocatable,
 		checkpointManager: checkpointManager,
+		configDecoder:     decoder,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -180,7 +193,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
-		configapi.Decoder,
+		s.configDecoder,
 		consts.DriverName,
 		claim.Status.Allocation.Devices.Config,
 	)

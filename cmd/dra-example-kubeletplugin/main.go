@@ -27,10 +27,12 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	"k8s.io/apimachinery/pkg/runtime"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
+	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -55,6 +57,9 @@ type Config struct {
 	flags         *Flags
 	coreclient    coreclientset.Interface
 	cancelMainCtx func(error)
+
+	// Config types
+	configScheme    *runtime.Scheme
 }
 
 func (c Config) DriverPluginPath() string {
@@ -135,12 +140,22 @@ func newApp() *cli.App {
 			ctx := c.Context
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
 			if err != nil {
-				return fmt.Errorf("create client: %v", err)
+				return fmt.Errorf("create client: %w", err)
+			}
+
+			configScheme := runtime.NewScheme()
+			sb := runtime.NewSchemeBuilder(
+				// TODO: only add the API versions that apply to a given profile
+				configapi.AddToScheme,
+			)
+			if err := sb.AddToScheme(configScheme); err != nil {
+				return fmt.Errorf("create config scheme: %w", err)
 			}
 
 			config := &Config{
-				flags:      flags,
-				coreclient: clientSets.Core,
+				flags:           flags,
+				coreclient:      clientSets.Core,
+				configScheme:    configScheme,
 			}
 
 			return RunPlugin(ctx, config)
