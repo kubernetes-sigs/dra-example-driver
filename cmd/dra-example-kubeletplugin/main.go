@@ -33,6 +33,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -60,6 +61,7 @@ type Config struct {
 
 	// Config types
 	configScheme    *runtime.Scheme
+	applyConfigFunc ApplyConfigFunc
 }
 
 func (c Config) DriverPluginPath() string {
@@ -156,6 +158,7 @@ func newApp() *cli.App {
 				flags:           flags,
 				coreclient:      clientSets.Core,
 				configScheme:    configScheme,
+				applyConfigFunc: gpu.ApplyConfig, // TODO: select an implementation based on the profile
 			}
 
 			return RunPlugin(ctx, config)
