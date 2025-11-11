@@ -1,0 +1,104 @@
+# Example: DRA Device Health Reporting (KEP-4680)
+#
+# The driver implements the version-neutral kubeletplugin WatchHealthStatus
+# API; the helper streams device health updates to the kubelet (serving both
+# v1 and v1alpha1 DRAResourceHealth). Health status and messages appear in
+# pod.status.containerStatuses[].allocatedResourcesStatus.
+#
+# Devices report healthy until overridden via pod annotations (below). Set the
+# driver's SIMULATE_HEALTH_CHANGES=true (Helm: kubeletPlugin.simulateHealthChanges)
+# to instead have devices randomly walk through simulated faults on their own.
+#
+# Opting out: health reporting is on by default but can be disabled with the
+# driver's --device-health=false (env DEVICE_HEALTH, Helm:
+# kubeletPlugin.deviceHealth=false). When disabled the driver advertises no
+# health service and WatchHealthStatus returns ErrHealthNotSupported.
+# With the cluster's ResourceHealthStatus feature enabled, the kubelet still
+# reports allocated devices as Unknown in allocatedResourcesStatus, without a
+# driver message. Disabling the driver's health service does not disable the
+# cluster feature; disabling ResourceHealthStatus removes those status fields.
+# This shows driver authors how to ship a driver that does not report device
+# health.
+#
+# DEMO ONLY: the health.example.com/<device> annotation override exists solely to
+# make this example driver's health reporting easy to exercise by hand. It lets
+# anyone who can annotate the driver pod declare any device healthy/unhealthy/
+# unknown, which is a health-control capability. A real driver MUST derive health
+# from actual device telemetry and must NOT ship an annotation-driven override.
+#
+# To force a specific health state, annotate the driver pod on the workload's
+# node, using the device actually allocated to its claim (not necessarily gpu-0):
+#
+#   # After applying this manifest, wait for the workload and its allocation.
+#   kubectl wait -n health-reporting --for=condition=Ready pod/pod0 --timeout=120s
+#   NODE=$(kubectl get pod -n health-reporting pod0 \
+#     -o jsonpath='{.spec.nodeName}')
+#   CLAIM=$(kubectl get pod -n health-reporting pod0 \
+#     -o jsonpath='{.status.resourceClaimStatuses[?(@.name=="gpu")].resourceClaimName}')
+#   DEVICE=$(kubectl get resourceclaim -n health-reporting "$CLAIM" \
+#     -o jsonpath='{.status.allocation.devices.results[0].device}')
+#
+#   # Find the driver pod on that node, even in a multi-node cluster.
+#   DRIVER_POD=$(kubectl get pod -n dra-example-driver \
+#     -l app.kubernetes.io/component=kubeletplugin \
+#     --field-selector "spec.nodeName=$NODE" -o name)
+#
+#   # Force the allocated device unhealthy.
+#   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
+#     "health.example.com/$DEVICE=unhealthy" --overwrite
+#
+#   # Return to healthy.
+#   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
+#     "health.example.com/$DEVICE=healthy" --overwrite
+#
+#   # Remove override (return to simulation).
+#   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
+#     "health.example.com/$DEVICE-"
+#
+# Supported values: healthy, unhealthy, unknown
+#
+# Check health status:
+#   kubectl get pod -n health-reporting pod0 \
+#     -o jsonpath='{.status.containerStatuses[0].allocatedResourcesStatus}' | jq .
+#
+# Cluster requirements:
+#   Kubernetes 1.36+ (ResourceHealthStatus and ResourceHealthStatusMessage are
+#   Beta and enabled by default)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: health-reporting
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: health-reporting
+  name: single-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: health-reporting
+  name: pod0
+spec:
+  restartPolicy: Never
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu

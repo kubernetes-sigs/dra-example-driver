@@ -26,7 +26,6 @@ import (
 
 	conversion "k8s.io/apimachinery/pkg/conversion"
 	runtime "k8s.io/apimachinery/pkg/runtime"
-	types "k8s.io/apimachinery/pkg/types"
 	checkpoint "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 )
 
@@ -81,7 +80,7 @@ func Convert_checkpoint_Checkpoint_To_v1_Checkpoint(in *checkpoint.Checkpoint, o
 }
 
 func autoConvert_v1_PreparedClaim_To_checkpoint_PreparedClaim(in *PreparedClaim, out *checkpoint.PreparedClaim, s conversion.Scope) error {
-	out.UID = types.UID(in.UID)
+	*out = *(*checkpoint.PreparedClaim)(unsafe.Pointer(in))
 	return nil
 }
 
@@ -91,7 +90,7 @@ func Convert_v1_PreparedClaim_To_checkpoint_PreparedClaim(in *PreparedClaim, out
 }
 
 func autoConvert_checkpoint_PreparedClaim_To_v1_PreparedClaim(in *checkpoint.PreparedClaim, out *PreparedClaim, s conversion.Scope) error {
-	out.UID = types.UID(in.UID)
+	*out = *(*PreparedClaim)(unsafe.Pointer(in))
 	return nil
 }
 
