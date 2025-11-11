@@ -49,6 +49,7 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
+	enableHealthReporting         bool
 }
 
 type Config struct {
@@ -114,6 +115,13 @@ func newApp() *cli.App {
 			Value:       -1,
 			Destination: &flags.healthcheckPort,
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-health-reporting",
+			Usage:       "Enable DRA device health reporting with message field support (KEP-4680).",
+			Value:       true,
+			Destination: &flags.enableHealthReporting,
+			EnvVars:     []string{"ENABLE_HEALTH_REPORTING"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
