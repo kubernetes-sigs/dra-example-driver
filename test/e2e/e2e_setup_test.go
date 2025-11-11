@@ -638,3 +638,61 @@ func verifySharedGPUGroup(ctx context.Context, namespace string, group sharingGr
 		}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 	}
 }
+
+func verifyAllocatedResourcesHealth(ctx context.Context, namespace, podName, containerName string, expectedHealth v1.ResourceHealthStatus) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var cs *v1.ContainerStatus
+		for i := range pod.Status.ContainerStatuses {
+			if pod.Status.ContainerStatuses[i].Name == containerName {
+				cs = &pod.Status.ContainerStatuses[i]
+				break
+			}
+		}
+		g.Expect(cs).NotTo(BeNil(), "container status not found for %s", containerName)
+		g.Expect(cs.AllocatedResourcesStatus).NotTo(BeEmpty(),
+			"allocatedResourcesStatus is empty for container %s", containerName)
+
+		var found bool
+		for _, rs := range cs.AllocatedResourcesStatus {
+			if !strings.HasPrefix(string(rs.Name), "claim:") {
+				continue
+			}
+			g.Expect(rs.Resources).NotTo(BeEmpty())
+
+			for _, rh := range rs.Resources {
+				g.Expect(string(rh.ResourceID)).NotTo(BeEmpty())
+				g.Expect(rh.Health).To(Equal(expectedHealth),
+					"device %s health is %s, expected %s", rh.ResourceID, rh.Health, expectedHealth)
+				g.Expect(rh.Message).NotTo(BeNil())
+				g.Expect(*rh.Message).NotTo(BeEmpty())
+
+				fmt.Fprintf(GinkgoWriter, "Pod %s/%s container %s device %s: health=%s message=%q\n",
+					namespace, podName, containerName, rh.ResourceID, rh.Health, *rh.Message)
+			}
+			found = true
+		}
+		g.Expect(found).To(BeTrue(), "no DRA resource status found in allocatedResourcesStatus")
+	}, "120s", "5s").Should(Succeed())
+}
+
+func getDriverPodName(ctx context.Context) string {
+	GinkgoHelper()
+	pods, err := clientset.CoreV1().Pods(driverNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: driverPodSelector,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(pods.Items).NotTo(BeEmpty())
+	return pods.Items[0].Name
+}
+
+func annotateDriverPod(ctx context.Context, podName, annotation string) {
+	GinkgoHelper()
+	cmd := exec.Command("kubectl", "annotate", "pod", "-n", driverNamespace, podName, annotation, "--overwrite")
+	output, err := cmd.CombinedOutput()
+	fmt.Fprintf(GinkgoWriter, "kubectl annotate output: %s\n", string(output))
+	Expect(err).NotTo(HaveOccurred(), "kubectl annotate failed: %s", string(output))
+}
