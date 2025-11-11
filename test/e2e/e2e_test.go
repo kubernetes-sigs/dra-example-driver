@@ -356,6 +356,25 @@ var _ = Describe("Test GPU allocation", func() {
 		Expect(shares[0].shareID).NotTo(Equal(shares[1].shareID), "shared allocations must have distinct ShareIDs")
 	})
 
+	It("should report device health status in pod allocatedResourcesStatus", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
+		namespace := "health-reporting"
+		pods := []string{"pod0"}
+
+		deployManifest(ctx, namespace, "health-reporting.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+
+		// Force gpu-0 unhealthy through the driver's annotation override and
+		// verify the transition surfaces in the pod status.
+		annotateDriverPod(ctx, drv, "health.example.com/gpu-0", "unhealthy")
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnhealthy)
+
+		// Return to healthy without a driver restart.
+		annotateDriverPod(ctx, drv, "health.example.com/gpu-0", "healthy")
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+	})
+
 	// Webhook tests share one driver pinned to "gpu.example.com" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
