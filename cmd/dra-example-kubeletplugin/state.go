@@ -17,14 +17,20 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	resourceapply "k8s.io/client-go/applyconfigurations/resource/v1"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
+
+	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
@@ -48,6 +54,7 @@ type DeviceState struct {
 	checkpointManager checkpointmanager.CheckpointManager
 	configDecoder     runtime.Decoder
 	configHandler     profiles.ConfigHandler
+	config            *Config
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -103,6 +110,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointManager: checkpointManager,
 		configDecoder:     decoder,
 		configHandler:     configHandler,
+		config:            config,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -124,7 +132,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
+func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -139,7 +147,8 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if preparedClaims[claimUID] != nil {
 		return preparedClaims[claimUID].GetDevices(), nil
 	}
-	preparedDevices, err := s.prepareDevices(claim)
+
+	preparedDevices, err := s.prepareDevices(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
@@ -212,6 +221,9 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	// the list with len(Requests) == 0 for the lookup below.
 	configs = slices.Insert(configs, 0, &OpaqueDeviceConfig{})
 
+	// build device status
+	var devicesStatus []*resourceapply.AllocatedDeviceStatusApplyConfiguration
+
 	// Look through the configs and figure out which one will be applied to
 	// each device allocation result based on their order of precedence.
 	configResultsMap := make(map[runtime.Object][]*resourceapi.DeviceRequestAllocationResult)
@@ -223,6 +235,10 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 		if _, exists := s.allocatable[result.Device]; !exists {
 			return nil, fmt.Errorf("requested device is not allocatable: %v", result.Device)
 		}
+
+		deviceStatus := s.buildDeviceStatus(result)
+		devicesStatus = append(devicesStatus, deviceStatus)
+
 		for _, c := range slices.Backward(configs) {
 			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {
 				configResultsMap[c.Config] = append(configResultsMap[c.Config], &result)
@@ -236,6 +252,11 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	// of device allocation results.
 	perDeviceCDIContainerEdits := make(profiles.PerDeviceCDIContainerEdits)
 	for config, results := range configResultsMap {
+		klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
+		if err := s.applyDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
+			klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
+		}
+
 		// Apply the config to the list of results associated with it.
 		containerEdits, err := s.configHandler.ApplyConfig(config, results)
 		if err != nil {
@@ -350,4 +371,53 @@ func GetOpaqueDeviceConfigs(
 	}
 
 	return resultConfigs, nil
+}
+
+func (s *DeviceState) buildDeviceStatus(res resourceapi.DeviceRequestAllocationResult) *resourceapply.AllocatedDeviceStatusApplyConfiguration {
+	dn := res.Device
+	deviceInfo := make(map[string]resourceapi.DeviceAttribute)
+
+	if d, ok := s.allocatable[dn]; ok {
+		if uuid, ok := d.Attributes["uuid"]; ok {
+			deviceInfo["uuid"] = uuid
+		}
+		if model, ok := d.Attributes["model"]; ok {
+			deviceInfo["model"] = model
+		}
+		if driverVersion, ok := d.Attributes["driverVersion"]; ok {
+			deviceInfo["driverVersion"] = driverVersion
+		}
+	}
+
+	jsonBytes, err := json.Marshal(deviceInfo)
+	if err != nil {
+		klog.Errorf("Failed to marshal device data: %v", err)
+		jsonBytes = []byte("{}")
+	}
+	data := runtime.RawExtension{
+		Raw: jsonBytes,
+	}
+
+	return resourceapply.AllocatedDeviceStatus().
+		WithDevice(dn).
+		WithDriver(res.Driver).
+		WithPool(res.Pool).
+		// WithData records per-allocation metadata used for monitoring and debugging:
+		//   - Pod→GPU mapping: makes it easier to see which GPU a given pod is using,
+		//     which is not readily available elsewhere.
+		//   - Device attributes (e.g. UUID, model, driverVersion): remain available
+		//     even if the device is later removed from a ResourceSlice (for example,
+		//     because it becomes unhealthy), so past allocations can still be
+		//     correlated with later health or scheduling issues.
+		WithData(data)
+}
+
+func (s *DeviceState) applyDeviceStatus(ctx context.Context, ns, name string, devices ...*resourceapply.AllocatedDeviceStatusApplyConfiguration) error {
+	claim := resourceapply.ResourceClaim(name, ns).
+		WithStatus(resourceapply.ResourceClaimStatus().WithDevices(devices...))
+
+	opts := metav1.ApplyOptions{FieldManager: consts.DriverName, Force: true}
+
+	_, err := s.config.coreclient.ResourceV1().ResourceClaims(ns).ApplyStatus(ctx, claim, opts)
+	return err
 }
