@@ -26,34 +26,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
-	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
-type PreparedDevices []*PreparedDevice
-type PreparedClaims map[string]PreparedDevices
+type PreparedClaims map[string]profiles.PreparedDevices
 
 type ApplyConfigFunc func(cconfig runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error)
 
 type OpaqueDeviceConfig struct {
 	Requests []string
 	Config   runtime.Object
-}
-
-type PreparedDevice struct {
-	drapbv1.Device
-	ContainerEdits *cdiapi.ContainerEdits
-}
-
-func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
-	var devices []*drapbv1.Device
-	for _, pd := range pds {
-		devices = append(devices, &pd.Device)
-	}
-	return devices
 }
 
 type DeviceState struct {
@@ -71,7 +56,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	cdi, err := NewCDIHandler(config)
+	cdi, err := NewCDIHandler(config.flags.cdiRoot, consts.DriverName, config.cdiClass)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}
@@ -187,7 +172,7 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
-func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
+func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles.PreparedDevices, error) {
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
@@ -241,10 +226,10 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 
 	// Walk through each config and its associated device allocation results
 	// and construct the list of prepared devices to return.
-	var preparedDevices PreparedDevices
+	var preparedDevices profiles.PreparedDevices
 	for _, results := range configResultsMap {
 		for _, result := range results {
-			device := &PreparedDevice{
+			device := &profiles.PreparedDevice{
 				Device: drapbv1.Device{
 					RequestNames: []string{result.Request},
 					PoolName:     result.Pool,
@@ -260,7 +245,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	return preparedDevices, nil
 }
 
-func (s *DeviceState) unprepareDevices(claimUID string, devices PreparedDevices) error {
+func (s *DeviceState) unprepareDevices(claimUID string, devices profiles.PreparedDevices) error {
 	return nil
 }
 

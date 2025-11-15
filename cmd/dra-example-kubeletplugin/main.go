@@ -62,6 +62,8 @@ type Config struct {
 	// Config types
 	configScheme    *runtime.Scheme
 	applyConfigFunc ApplyConfigFunc
+	cdiVendor       string
+	cdiClass        string
 }
 
 func (c Config) DriverPluginPath() string {
@@ -155,10 +157,14 @@ func newApp() *cli.App {
 			}
 
 			config := &Config{
-				flags:           flags,
-				coreclient:      clientSets.Core,
-				configScheme:    configScheme,
-				applyConfigFunc: gpu.ApplyConfig, // TODO: select an implementation based on the profile
+				flags:        flags,
+				coreclient:   clientSets.Core,
+				configScheme: configScheme,
+
+				// TODO: select an implementation based on the profile
+				applyConfigFunc: gpu.ApplyConfig,
+				cdiVendor:       gpu.CDIVendor,
+				cdiClass:        gpu.CDIClass,
 			}
 
 			return RunPlugin(ctx, config)
