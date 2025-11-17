@@ -18,9 +18,14 @@ package gpu
 
 import (
 	"fmt"
+	"math/rand"
 
+	"github.com/google/uuid"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
+	"k8s.io/utils/ptr"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
@@ -33,6 +38,76 @@ const (
 	CDIVendor = "k8s." + consts.DriverName
 	CDIClass  = "gpu"
 )
+
+func EnumerateAllPossibleDevices(nodeName string, numGPUs int) func() (resourceslice.DriverResources, error) {
+	return func() (resourceslice.DriverResources, error) {
+		seed := nodeName
+		uuids := generateUUIDs(seed, numGPUs)
+
+		var devices []resourceapi.Device
+		for i, uuid := range uuids {
+			device := resourceapi.Device{
+				Name: fmt.Sprintf("gpu-%d", i),
+				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"index": {
+						IntValue: ptr.To(int64(i)),
+					},
+					"uuid": {
+						StringValue: ptr.To(uuid),
+					},
+					"model": {
+						StringValue: ptr.To("LATEST-GPU-MODEL"),
+					},
+					"driverVersion": {
+						VersionValue: ptr.To("1.0.0"),
+					},
+				},
+				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+					"memory": {
+						Value: resource.MustParse("80Gi"),
+					},
+				},
+			}
+			devices = append(devices, device)
+		}
+
+		resources := resourceslice.DriverResources{
+			Pools: map[string]resourceslice.Pool{
+				nodeName: {
+					Slices: []resourceslice.Slice{
+						{
+							Devices: devices,
+						},
+					},
+				},
+			},
+		}
+
+		return resources, nil
+	}
+}
+
+func generateUUIDs(seed string, count int) []string {
+	rand := rand.New(rand.NewSource(hash(seed)))
+
+	uuids := make([]string, count)
+	for i := 0; i < count; i++ {
+		charset := make([]byte, 16)
+		rand.Read(charset)
+		uuid, _ := uuid.FromBytes(charset)
+		uuids[i] = "gpu-" + uuid.String()
+	}
+
+	return uuids
+}
+
+func hash(s string) int64 {
+	h := int64(0)
+	for _, c := range s {
+		h = 31*h + int64(c)
+	}
+	return h
+}
 
 // ApplyConfig applies a configuration to a set of device allocation results.
 //

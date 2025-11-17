@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
@@ -60,10 +61,10 @@ type Config struct {
 	cancelMainCtx func(error)
 
 	// Config types
-	configScheme    *runtime.Scheme
-	applyConfigFunc ApplyConfigFunc
-	cdiVendor       string
-	cdiClass        string
+	configScheme         *runtime.Scheme
+	applyConfigFunc      ApplyConfigFunc
+	cdiClass             string
+	enumerateDevicesFunc func() (resourceslice.DriverResources, error)
 }
 
 func (c Config) DriverPluginPath() string {
@@ -162,9 +163,10 @@ func newApp() *cli.App {
 				configScheme: configScheme,
 
 				// TODO: select an implementation based on the profile
-				applyConfigFunc: gpu.ApplyConfig,
-				cdiVendor:       gpu.CDIVendor,
-				cdiClass:        gpu.CDIClass,
+				applyConfigFunc:      gpu.ApplyConfig,
+				cdiVendor:            gpu.CDIVendor,
+				cdiClass:             gpu.CDIClass,
+				enumerateDevicesFunc: gpu.EnumerateAllPossibleDevices(flags.nodeName, flags.numDevices),
 			}
 
 			return RunPlugin(ctx, config)

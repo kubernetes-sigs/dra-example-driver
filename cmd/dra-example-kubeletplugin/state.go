@@ -24,6 +24,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
@@ -44,6 +45,7 @@ type OpaqueDeviceConfig struct {
 type DeviceState struct {
 	sync.Mutex
 	cdi               *CDIHandler
+	driverResources   resourceslice.DriverResources
 	allocatable       AllocatableDevices
 	checkpointManager checkpointmanager.CheckpointManager
 	configDecoder     runtime.Decoder
@@ -51,7 +53,7 @@ type DeviceState struct {
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
-	allocatable, err := enumerateAllPossibleDevices(config.flags.numDevices)
+	driverResources, err := config.enumerateDevicesFunc()
 	if err != nil {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
@@ -81,8 +83,16 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		},
 	)
 
+	allocatable := make(AllocatableDevices)
+	for _, slice := range driverResources.Pools[config.flags.nodeName].Slices {
+		for _, device := range slice.Devices {
+			allocatable[device.Name] = device
+		}
+	}
+
 	state := &DeviceState{
 		cdi:               cdi,
+		driverResources:   driverResources,
 		allocatable:       allocatable,
 		checkpointManager: checkpointManager,
 		configDecoder:     decoder,
