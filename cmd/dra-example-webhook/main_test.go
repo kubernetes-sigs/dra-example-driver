@@ -36,11 +36,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 func TestReadyEndpoint(t *testing.T) {
-	s := httptest.NewServer(newMux(nil))
+	s := httptest.NewServer(newMux(nil, nil))
 	t.Cleanup(s.Close)
 
 	res, err := http.Get(s.URL + "/readyz")
@@ -171,7 +172,7 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 	sb := gpu.ConfigSchemeBuilder
 	assert.NoError(t, sb.AddToScheme(configScheme))
 
-	s := httptest.NewServer(newMux(newConfigDecoder()))
+	s := httptest.NewServer(newMux(newConfigDecoder(), gpu.ValidateConfig))
 	t.Cleanup(s.Close)
 
 	for name, test := range tests {

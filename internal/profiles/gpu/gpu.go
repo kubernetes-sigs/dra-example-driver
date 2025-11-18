@@ -109,6 +109,14 @@ func hash(s string) int64 {
 	return h
 }
 
+func ValidateConfig(config runtime.Object) error {
+	gpuConfig, ok := config.(*configapi.GpuConfig)
+	if !ok {
+		return fmt.Errorf("expected v1alpha1.GpuConfig but got: %T", config)
+	}
+	return gpuConfig.Validate()
+}
+
 // ApplyConfig applies a configuration to a set of device allocation results.
 //
 // In this example driver there is no actual configuration applied. We simply

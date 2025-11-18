@@ -34,6 +34,7 @@ import (
 	"k8s.io/klog/v2"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -47,6 +48,8 @@ type Flags struct {
 }
 
 var configScheme = runtime.NewScheme()
+
+type validator func(runtime.Object) error
 
 func main() {
 	if err := newApp().Run(os.Args); err != nil {
@@ -94,15 +97,21 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
-			sb := runtime.NewSchemeBuilder(
+			gpuSchemeBuilder := runtime.NewSchemeBuilder(
 				configapi.AddToScheme,
 			)
+			gpuValidator := gpu.ValidateConfig
+
+			// TODO: select based on profile
+			sb := gpuSchemeBuilder
+			validate := gpuValidator
+
 			if err := sb.AddToScheme(configScheme); err != nil {
 				return fmt.Errorf("create config scheme: %w", err)
 			}
 
 			server := &http.Server{
-				Handler: newMux(newConfigDecoder()),
+				Handler: newMux(newConfigDecoder(), validate),
 				Addr:    fmt.Sprintf(":%d", flags.port),
 			}
 			klog.Info("starting webhook server on", server.Addr)
@@ -125,9 +134,9 @@ func newConfigDecoder() runtime.Decoder {
 	)
 }
 
-func newMux(configDecoder runtime.Decoder) *http.ServeMux {
+func newMux(configDecoder runtime.Decoder, validate validator) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder))
+	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, validate))
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) {
 		_, err := w.Write([]byte("ok"))
 		if err != nil {
@@ -138,9 +147,9 @@ func newMux(configDecoder runtime.Decoder) *http.ServeMux {
 	return mux
 }
 
-func serveResourceClaim(configDecoder runtime.Decoder) func(http.ResponseWriter, *http.Request) {
+func serveResourceClaim(configDecoder runtime.Decoder, validate validator) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		serve(w, r, admitResourceClaimParameters(configDecoder))
+		serve(w, r, admitResourceClaimParameters(configDecoder, validate))
 	}
 }
 
@@ -215,7 +224,7 @@ func readAdmissionReview(data []byte) (*admissionv1.AdmissionReview, error) {
 
 // admitResourceClaimParameters accepts both ResourceClaims and ResourceClaimTemplates and validates their
 // opaque device configuration parameters for this driver.
-func admitResourceClaimParameters(configDecoder runtime.Decoder) func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+func admitResourceClaimParameters(configDecoder runtime.Decoder, validate validator) func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 	return func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 		klog.V(2).Info("admitting resource claim parameters")
 
@@ -279,12 +288,7 @@ func admitResourceClaimParameters(configDecoder runtime.Decoder) func(ar admissi
 				errs = append(errs, fmt.Errorf("error decoding object at %s: %w", fieldPath, err))
 				continue
 			}
-			gpuConfig, ok := decodedConfig.(*configapi.GpuConfig)
-			if !ok {
-				errs = append(errs, fmt.Errorf("expected v1alpha1.GpuConfig at %s but got: %T", fieldPath, decodedConfig))
-				continue
-			}
-			err = gpuConfig.Validate()
+			err = validate(decodedConfig)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("object at %s is invalid: %w", fieldPath, err))
 			}
