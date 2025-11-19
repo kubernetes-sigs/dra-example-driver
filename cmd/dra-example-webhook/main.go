@@ -33,7 +33,6 @@ import (
 	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/klog/v2"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
@@ -45,11 +44,16 @@ type Flags struct {
 	certFile string
 	keyFile  string
 	port     int
+	profile  string
 }
 
 var configScheme = runtime.NewScheme()
 
 type validator func(runtime.Object) error
+
+var validProfiles = []string{
+	gpu.ProfileName,
+}
 
 func main() {
 	if err := newApp().Run(os.Args); err != nil {
@@ -81,6 +85,13 @@ func newApp() *cli.App {
 			Value:       443,
 			Destination: &flags.port,
 		},
+		&cli.StringFlag{
+			Name:        "device-profile",
+			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfiles),
+			Value:       gpu.ProfileName,
+			Destination: &flags.profile,
+			EnvVars:     []string{"DEVICE_PROFILE"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
@@ -97,14 +108,17 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
-			gpuSchemeBuilder := runtime.NewSchemeBuilder(
-				configapi.AddToScheme,
+			var (
+				sb       runtime.SchemeBuilder
+				validate validator
 			)
-			gpuValidator := gpu.ValidateConfig
-
-			// TODO: select based on profile
-			sb := gpuSchemeBuilder
-			validate := gpuValidator
+			switch flags.profile {
+			case gpu.ProfileName:
+				sb = gpu.ConfigSchemeBuilder
+				validate = gpu.ValidateConfig
+			default:
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfiles)
+			}
 
 			if err := sb.AddToScheme(configScheme); err != nil {
 				return fmt.Errorf("create config scheme: %w", err)

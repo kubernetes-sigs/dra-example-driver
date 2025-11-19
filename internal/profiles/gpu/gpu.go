@@ -34,9 +34,15 @@ import (
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
+const ProfileName = "gpu"
+
 const (
 	CDIVendor = "k8s." + consts.DriverName
 	CDIClass  = "gpu"
+)
+
+var ConfigSchemeBuilder = runtime.NewSchemeBuilder(
+	configapi.AddToScheme,
 )
 
 func EnumerateAllPossibleDevices(nodeName string, numGPUs int) func() (resourceslice.DriverResources, error) {

@@ -33,7 +33,6 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
@@ -53,6 +52,7 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
+	profile                       string
 }
 
 type Config struct {
@@ -60,11 +60,14 @@ type Config struct {
 	coreclient    coreclientset.Interface
 	cancelMainCtx func(error)
 
-	// Config types
-	configScheme         *runtime.Scheme
+	configScheme         *runtime.Scheme // scheme for opaque config types
 	applyConfigFunc      ApplyConfigFunc
 	cdiClass             string
 	enumerateDevicesFunc func() (resourceslice.DriverResources, error)
+}
+
+var validProfiles = []string{
+	gpu.ProfileName,
 }
 
 func (c Config) DriverPluginPath() string {
@@ -99,7 +102,7 @@ func newApp() *cli.App {
 		},
 		&cli.IntFlag{
 			Name:        "num-devices",
-			Usage:       "The number of devices to be generated.",
+			Usage:       "The number of devices to be generated. Only relevant for the " + gpu.ProfileName + " profile.",
 			Value:       8,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
@@ -125,6 +128,13 @@ func newApp() *cli.App {
 			Destination: &flags.healthcheckPort,
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
 		},
+		&cli.StringFlag{
+			Name:        "device-profile",
+			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfiles),
+			Value:       gpu.ProfileName,
+			Destination: &flags.profile,
+			EnvVars:     []string{"DEVICE_PROFILE"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
@@ -148,25 +158,34 @@ func newApp() *cli.App {
 				return fmt.Errorf("create client: %w", err)
 			}
 
-			configScheme := runtime.NewScheme()
-			sb := runtime.NewSchemeBuilder(
-				// TODO: only add the API versions that apply to a given profile
-				configapi.AddToScheme,
+			var (
+				sb                   runtime.SchemeBuilder
+				applyConfigFunc      ApplyConfigFunc
+				cdiClass             string
+				enumerateDevicesFunc func() (resourceslice.DriverResources, error)
 			)
+			switch flags.profile {
+			case gpu.ProfileName:
+				sb = gpu.ConfigSchemeBuilder
+				applyConfigFunc = gpu.ApplyConfig
+				cdiClass = gpu.CDIClass
+				enumerateDevicesFunc = gpu.EnumerateAllPossibleDevices(flags.nodeName, flags.numDevices)
+			default:
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfiles)
+			}
+
+			configScheme := runtime.NewScheme()
 			if err := sb.AddToScheme(configScheme); err != nil {
 				return fmt.Errorf("create config scheme: %w", err)
 			}
 
 			config := &Config{
-				flags:        flags,
-				coreclient:   clientSets.Core,
-				configScheme: configScheme,
-
-				// TODO: select an implementation based on the profile
-				applyConfigFunc:      gpu.ApplyConfig,
-				cdiVendor:            gpu.CDIVendor,
-				cdiClass:             gpu.CDIClass,
-				enumerateDevicesFunc: gpu.EnumerateAllPossibleDevices(flags.nodeName, flags.numDevices),
+				flags:                flags,
+				coreclient:           clientSets.Core,
+				configScheme:         configScheme,
+				applyConfigFunc:      applyConfigFunc,
+				cdiClass:             cdiClass,
+				enumerateDevicesFunc: enumerateDevicesFunc,
 			}
 
 			return RunPlugin(ctx, config)
