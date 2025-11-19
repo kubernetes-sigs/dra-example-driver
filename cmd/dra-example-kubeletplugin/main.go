@@ -34,7 +34,6 @@ import (
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -53,6 +52,7 @@ type Flags struct {
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
 	profile                       string
+	driverName                    string
 }
 
 type Config struct {
@@ -71,7 +71,7 @@ var validProfiles = []string{
 }
 
 func (c Config) DriverPluginPath() string {
-	return filepath.Join(c.flags.kubeletPluginsDirectoryPath, consts.DriverName)
+	return filepath.Join(c.flags.kubeletPluginsDirectoryPath, c.flags.driverName)
 }
 
 func main() {
@@ -135,6 +135,12 @@ func newApp() *cli.App {
 			Destination: &flags.profile,
 			EnvVars:     []string{"DEVICE_PROFILE"},
 		},
+		&cli.StringFlag{
+			Name:        "driver-name",
+			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Destination: &flags.driverName,
+			EnvVars:     []string{"DRIVER_NAME"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
@@ -156,6 +162,10 @@ func newApp() *cli.App {
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
 			if err != nil {
 				return fmt.Errorf("create client: %w", err)
+			}
+
+			if flags.driverName == "" {
+				flags.driverName = flags.profile + ".example.com"
 			}
 
 			var (

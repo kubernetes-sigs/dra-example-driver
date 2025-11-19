@@ -34,17 +34,17 @@ import (
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
 type Flags struct {
 	loggingConfig *flags.LoggingConfig
 
-	certFile string
-	keyFile  string
-	port     int
-	profile  string
+	certFile   string
+	keyFile    string
+	port       int
+	profile    string
+	driverName string
 }
 
 var configScheme = runtime.NewScheme()
@@ -92,6 +92,12 @@ func newApp() *cli.App {
 			Destination: &flags.profile,
 			EnvVars:     []string{"DEVICE_PROFILE"},
 		},
+		&cli.StringFlag{
+			Name:        "driver-name",
+			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Destination: &flags.driverName,
+			EnvVars:     []string{"DRIVER_NAME"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
@@ -120,12 +126,16 @@ func newApp() *cli.App {
 				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfiles)
 			}
 
+			if flags.driverName == "" {
+				flags.driverName = flags.profile + ".example.com"
+			}
+
 			if err := sb.AddToScheme(configScheme); err != nil {
 				return fmt.Errorf("create config scheme: %w", err)
 			}
 
 			server := &http.Server{
-				Handler: newMux(newConfigDecoder(), validate),
+				Handler: newMux(newConfigDecoder(), validate, flags.driverName),
 				Addr:    fmt.Sprintf(":%d", flags.port),
 			}
 			klog.Info("starting webhook server on", server.Addr)
@@ -148,9 +158,9 @@ func newConfigDecoder() runtime.Decoder {
 	)
 }
 
-func newMux(configDecoder runtime.Decoder, validate validator) *http.ServeMux {
+func newMux(configDecoder runtime.Decoder, validate validator, driverName string) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, validate))
+	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, validate, driverName))
 	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) {
 		_, err := w.Write([]byte("ok"))
 		if err != nil {
@@ -161,9 +171,9 @@ func newMux(configDecoder runtime.Decoder, validate validator) *http.ServeMux {
 	return mux
 }
 
-func serveResourceClaim(configDecoder runtime.Decoder, validate validator) func(http.ResponseWriter, *http.Request) {
+func serveResourceClaim(configDecoder runtime.Decoder, validate validator, driverName string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		serve(w, r, admitResourceClaimParameters(configDecoder, validate))
+		serve(w, r, admitResourceClaimParameters(configDecoder, validate, driverName))
 	}
 }
 
@@ -238,7 +248,7 @@ func readAdmissionReview(data []byte) (*admissionv1.AdmissionReview, error) {
 
 // admitResourceClaimParameters accepts both ResourceClaims and ResourceClaimTemplates and validates their
 // opaque device configuration parameters for this driver.
-func admitResourceClaimParameters(configDecoder runtime.Decoder, validate validator) func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+func admitResourceClaimParameters(configDecoder runtime.Decoder, validate validator, driverName string) func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 	return func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
 		klog.V(2).Info("admitting resource claim parameters")
 
@@ -292,7 +302,7 @@ func admitResourceClaimParameters(configDecoder runtime.Decoder, validate valida
 
 		var errs []error
 		for configIndex, config := range deviceConfigs {
-			if config.Opaque == nil || config.Opaque.Driver != consts.DriverName {
+			if config.Opaque == nil || config.Opaque.Driver != driverName {
 				continue
 			}
 

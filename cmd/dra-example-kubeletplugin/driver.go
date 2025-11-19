@@ -27,8 +27,6 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
-
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 type driver struct {
@@ -56,7 +54,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		driver,
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
-		kubeletplugin.DriverName(consts.DriverName),
+		kubeletplugin.DriverName(config.flags.driverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
 	)

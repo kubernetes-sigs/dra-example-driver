@@ -29,7 +29,6 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
@@ -44,6 +43,7 @@ type OpaqueDeviceConfig struct {
 
 type DeviceState struct {
 	sync.Mutex
+	driverName        string
 	cdi               *CDIHandler
 	driverResources   resourceslice.DriverResources
 	allocatable       AllocatableDevices
@@ -58,7 +58,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	cdi, err := NewCDIHandler(config.flags.cdiRoot, consts.DriverName, config.cdiClass)
+	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.cdiClass)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}
@@ -91,6 +91,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	}
 
 	state := &DeviceState{
+		driverName:        config.flags.driverName,
 		cdi:               cdi,
 		driverResources:   driverResources,
 		allocatable:       allocatable,
@@ -190,7 +191,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
 		s.configDecoder,
-		consts.DriverName,
+		s.driverName,
 		claim.Status.Allocation.Devices.Config,
 	)
 	if err != nil {
@@ -206,8 +207,12 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	// each device allocation result based on their order of precedence.
 	configResultsMap := make(map[runtime.Object][]*resourceapi.DeviceRequestAllocationResult)
 	for _, result := range claim.Status.Allocation.Devices.Results {
+		// The claim may include allocations meant for other drivers.
+		if result.Driver != s.driverName {
+			continue
+		}
 		if _, exists := s.allocatable[result.Device]; !exists {
-			return nil, fmt.Errorf("requested GPU is not allocatable: %v", result.Device)
+			return nil, fmt.Errorf("requested device is not allocatable: %v", result.Device)
 		}
 		for _, c := range slices.Backward(configs) {
 			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {

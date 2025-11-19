@@ -27,7 +27,6 @@ import (
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 const cdiCommonDeviceName = "common"
@@ -65,7 +64,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
 						fmt.Sprintf("KUBERNETES_NODE_NAME=%s", os.Getenv("NODE_NAME")),
-						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", consts.DriverName),
+						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", cdi.driverName),
 					},
 				},
 			},

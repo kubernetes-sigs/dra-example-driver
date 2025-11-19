@@ -44,6 +44,7 @@ spec:
           - --tls-private-key-file=/cert/tls.key
           - --port={{ .Values.webhook.containerPort }}
           - --device-profile={{ .Values.deviceProfile }}
+          - --driver-name={{ include "dra-example-driver.driverName" . }}
         ports:
           - name: webhook
             containerPort: {{ .Values.webhook.containerPort }}

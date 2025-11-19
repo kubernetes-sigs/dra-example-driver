@@ -31,15 +31,11 @@ import (
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 const ProfileName = "gpu"
 
-const (
-	CDIVendor = "k8s." + consts.DriverName
-	CDIClass  = "gpu"
-)
+const CDIClass = "gpu"
 
 var ConfigSchemeBuilder = runtime.NewSchemeBuilder(
 	configapi.AddToScheme,
