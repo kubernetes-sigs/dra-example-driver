@@ -9,6 +9,11 @@ selectorLabelsOverride: {}
 
 allowDefaultNamespace: false
 
+# deviceProfile describes the overall shape of the devices managed by the
+# driver. Available profiles are:
+#   - "gpu": Node-local devices configurable through opaque config
+deviceProfile: "gpu"
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver
@@ -25,26 +30,9 @@ serviceAccount:
   # If not set and create is true, a name is generated using the fullname template
   name: ""
 
-controller:
-  priorityClassName: "system-node-critical"
-  podAnnotations: {}
-  podSecurityContext: {}
-  nodeSelector:
-    node-role.kubernetes.io/control-plane: ""
-  tolerations:
-  - key: node-role.kubernetes.io/master
-    operator: Exists
-    effect: NoSchedule
-  - key: node-role.kubernetes.io/control-plane
-    operator: Exists
-    effect: NoSchedule
-  affinity: {}
-  containers:
-    controller:
-      securityContext: {}
-      resources: {}
-
 kubeletPlugin:
+  # numDevices describes how many GPUs to advertise on each node when the "gpu"
+  # deviceProfile is used. Not relevant for other profiles.
   numDevices: 8
   priorityClassName: "system-node-critical"
   updateStrategy:

@@ -43,6 +43,7 @@ spec:
           - --tls-cert-file=/cert/tls.crt
           - --tls-private-key-file=/cert/tls.key
           - --port={{ .Values.webhook.containerPort }}
+          - --device-profile={{ .Values.deviceProfile }}
         ports:
           - name: webhook
             containerPort: {{ .Values.webhook.containerPort }}
