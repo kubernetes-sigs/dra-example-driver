@@ -13,7 +13,7 @@ jobs:
     - name: update vendor
       run: go mod vendor
     - name: Lint
-      uses: golangci/golangci-lint-action@v3
+      uses: golangci/golangci-lint-action@v9
       with:
         version: latest
         args: -v --timeout 5m
