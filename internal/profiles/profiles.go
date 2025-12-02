@@ -17,6 +17,11 @@
 package profiles
 
 import (
+	"errors"
+
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/dynamic-resource-allocation/resourceslice"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 )
@@ -36,4 +41,44 @@ func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
 		devices = append(devices, &pd.Device)
 	}
 	return devices
+}
+
+// Profile describes a kind of device that can be managed by the driver.
+type Profile interface {
+	ConfigHandler
+	EnumerateDevices() (resourceslice.DriverResources, error)
+}
+
+// ConfigHandler handles opaque configuration set for requests in ResourceClaims.
+type ConfigHandler interface {
+	// SchemeBuilder produces a [runtime.Scheme] for the profile's configuration types.
+	SchemeBuilder() runtime.SchemeBuilder
+	// Validate returns nil for valid configuration, or an error explaining why the configuration is invalid.
+	Validate(config runtime.Object) error
+	// ApplyConfig applies a configuration to a set of device allocation
+	// results. When `config` is nil, the profile's default configuration should
+	// be applied.
+	ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error)
+}
+
+// NoopConfigHandler implements a [ConfigHandler] that does not allow
+// configuration.
+type NoopConfigHandler struct{}
+
+// ApplyConfig implements [ConfigHandler].
+func (n NoopConfigHandler) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error) {
+	if config != nil {
+		return nil, errors.New("configuration not allowed")
+	}
+	return nil, nil
+}
+
+// SchemeBuilder implements [ConfigHandler].
+func (n NoopConfigHandler) SchemeBuilder() runtime.SchemeBuilder {
+	return runtime.NewSchemeBuilder()
+}
+
+// Validate implements [ConfigHandler].
+func (n NoopConfigHandler) Validate(config runtime.Object) error {
+	return errors.New("configuration not allowed")
 }

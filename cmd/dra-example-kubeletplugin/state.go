@@ -34,8 +34,6 @@ import (
 type AllocatableDevices map[string]resourceapi.Device
 type PreparedClaims map[string]profiles.PreparedDevices
 
-type ApplyConfigFunc func(cconfig runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error)
-
 type OpaqueDeviceConfig struct {
 	Requests []string
 	Config   runtime.Object
@@ -49,16 +47,16 @@ type DeviceState struct {
 	allocatable       AllocatableDevices
 	checkpointManager checkpointmanager.CheckpointManager
 	configDecoder     runtime.Decoder
-	applyConfigFunc   ApplyConfigFunc
+	configHandler     profiles.ConfigHandler
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
-	driverResources, err := config.enumerateDevicesFunc()
+	driverResources, err := config.profile.EnumerateDevices()
 	if err != nil {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.cdiClass)
+	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.flags.profile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}
@@ -73,11 +71,18 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("unable to create checkpoint manager: %v", err)
 	}
 
+	configScheme := runtime.NewScheme()
+	configHandler := config.profile
+	sb := configHandler.SchemeBuilder()
+	if err := sb.AddToScheme(configScheme); err != nil {
+		return nil, fmt.Errorf("create config scheme: %w", err)
+	}
+
 	// Set up a json serializer to decode our types.
 	decoder := json.NewSerializerWithOptions(
 		json.DefaultMetaFactory,
-		config.configScheme,
-		config.configScheme,
+		configScheme,
+		configScheme,
 		json.SerializerOptions{
 			Pretty: true, Strict: true,
 		},
@@ -97,7 +102,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		allocatable:       allocatable,
 		checkpointManager: checkpointManager,
 		configDecoder:     decoder,
-		applyConfigFunc:   config.applyConfigFunc,
+		configHandler:     configHandler,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -228,7 +233,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	perDeviceCDIContainerEdits := make(profiles.PerDeviceCDIContainerEdits)
 	for config, results := range configResultsMap {
 		// Apply the config to the list of results associated with it.
-		containerEdits, err := s.applyConfigFunc(config, results)
+		containerEdits, err := s.configHandler.ApplyConfig(config, results)
 		if err != nil {
 			return nil, fmt.Errorf("error applying config: %w", err)
 		}

@@ -35,58 +35,62 @@ import (
 
 const ProfileName = "gpu"
 
-const CDIClass = "gpu"
+type Profile struct {
+	nodeName string
+	numGPUs  int
+}
 
-var ConfigSchemeBuilder = runtime.NewSchemeBuilder(
-	configapi.AddToScheme,
-)
+func NewProfile(nodeName string, numGPUs int) Profile {
+	return Profile{
+		nodeName: nodeName,
+		numGPUs:  numGPUs,
+	}
+}
 
-func EnumerateAllPossibleDevices(nodeName string, numGPUs int) func() (resourceslice.DriverResources, error) {
-	return func() (resourceslice.DriverResources, error) {
-		seed := nodeName
-		uuids := generateUUIDs(seed, numGPUs)
+func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
+	seed := p.nodeName
+	uuids := generateUUIDs(seed, p.numGPUs)
 
-		var devices []resourceapi.Device
-		for i, uuid := range uuids {
-			device := resourceapi.Device{
-				Name: fmt.Sprintf("gpu-%d", i),
-				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-					"index": {
-						IntValue: ptr.To(int64(i)),
-					},
-					"uuid": {
-						StringValue: ptr.To(uuid),
-					},
-					"model": {
-						StringValue: ptr.To("LATEST-GPU-MODEL"),
-					},
-					"driverVersion": {
-						VersionValue: ptr.To("1.0.0"),
-					},
+	var devices []resourceapi.Device
+	for i, uuid := range uuids {
+		device := resourceapi.Device{
+			Name: fmt.Sprintf("gpu-%d", i),
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"index": {
+					IntValue: ptr.To(int64(i)),
 				},
-				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-					"memory": {
-						Value: resource.MustParse("80Gi"),
-					},
+				"uuid": {
+					StringValue: ptr.To(uuid),
 				},
-			}
-			devices = append(devices, device)
-		}
-
-		resources := resourceslice.DriverResources{
-			Pools: map[string]resourceslice.Pool{
-				nodeName: {
-					Slices: []resourceslice.Slice{
-						{
-							Devices: devices,
-						},
-					},
+				"model": {
+					StringValue: ptr.To("LATEST-GPU-MODEL"),
+				},
+				"driverVersion": {
+					VersionValue: ptr.To("1.0.0"),
+				},
+			},
+			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+				"memory": {
+					Value: resource.MustParse("80Gi"),
 				},
 			},
 		}
-
-		return resources, nil
+		devices = append(devices, device)
 	}
+
+	resources := resourceslice.DriverResources{
+		Pools: map[string]resourceslice.Pool{
+			p.nodeName: {
+				Slices: []resourceslice.Slice{
+					{
+						Devices: devices,
+					},
+				},
+			},
+		},
+	}
+
+	return resources, nil
 }
 
 func generateUUIDs(seed string, count int) []string {
@@ -111,7 +115,15 @@ func hash(s string) int64 {
 	return h
 }
 
-func ValidateConfig(config runtime.Object) error {
+// SchemeBuilder implements [profiles.ConfigHandler].
+func (p Profile) SchemeBuilder() runtime.SchemeBuilder {
+	return runtime.NewSchemeBuilder(
+		configapi.AddToScheme,
+	)
+}
+
+// Validate implements [profiles.ConfigHandler].
+func (p Profile) Validate(config runtime.Object) error {
 	gpuConfig, ok := config.(*configapi.GpuConfig)
 	if !ok {
 		return fmt.Errorf("expected v1alpha1.GpuConfig but got: %T", config)
@@ -119,13 +131,8 @@ func ValidateConfig(config runtime.Object) error {
 	return gpuConfig.Validate()
 }
 
-// ApplyConfig applies a configuration to a set of device allocation results.
-//
-// In this example driver there is no actual configuration applied. We simply
-// define a set of environment variables to be injected into the containers
-// that include a given device. A real driver would likely need to do some sort
-// of hardware configuration as well, based on the config passed in.
-func ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
+// ApplyConfig implements [profiles.ConfigHandler].
+func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
 	if config == nil {
 		config = configapi.DefaultGpuConfig()
 	}
@@ -135,6 +142,10 @@ func ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllo
 	return nil, fmt.Errorf("runtime object is not a recognized configuration")
 }
 
+// In this example driver there is no actual configuration applied. We simply
+// define a set of environment variables to be injected into the containers
+// that include a given device. A real driver would likely need to do some sort
+// of hardware configuration as well, based on the config passed in.
 func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
 	perDeviceEdits := make(profiles.PerDeviceCDIContainerEdits)
 

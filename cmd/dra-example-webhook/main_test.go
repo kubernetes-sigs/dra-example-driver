@@ -42,10 +42,10 @@ import (
 const driverName = "gpu.example.com"
 
 func TestReadyEndpoint(t *testing.T) {
-	s := httptest.NewServer(newMux(nil, nil, ""))
+	s := httptest.NewServer(http.HandlerFunc(readyHandler))
 	t.Cleanup(s.Close)
 
-	res, err := http.Get(s.URL + "/readyz")
+	res, err := http.Get(s.URL)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 }
@@ -170,10 +170,11 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 		},
 	}
 
-	sb := gpu.ConfigSchemeBuilder
-	assert.NoError(t, sb.AddToScheme(configScheme))
+	configHandler := gpu.Profile{}
+	mux, err := newMux(configHandler, driverName)
+	assert.NoError(t, err)
 
-	s := httptest.NewServer(newMux(newConfigDecoder(), gpu.ValidateConfig, driverName))
+	s := httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 
 	for name, test := range tests {

@@ -33,6 +33,7 @@ import (
 	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/klog/v2"
 
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -47,12 +48,10 @@ type Flags struct {
 	driverName string
 }
 
-var configScheme = runtime.NewScheme()
-
 type validator func(runtime.Object) error
 
-var validProfiles = []string{
-	gpu.ProfileName,
+var validProfiles = map[string]profiles.ConfigHandler{
+	gpu.ProfileName: gpu.Profile{},
 }
 
 func main() {
@@ -114,28 +113,26 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
-			var (
-				sb       runtime.SchemeBuilder
-				validate validator
-			)
-			switch flags.profile {
-			case gpu.ProfileName:
-				sb = gpu.ConfigSchemeBuilder
-				validate = gpu.ValidateConfig
-			default:
-				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfiles)
+			configHandler, ok := validProfiles[flags.profile]
+			if !ok {
+				var valid []string
+				for profileName := range validProfiles {
+					valid = append(valid, profileName)
+				}
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, valid)
 			}
 
 			if flags.driverName == "" {
 				flags.driverName = flags.profile + ".example.com"
 			}
 
-			if err := sb.AddToScheme(configScheme); err != nil {
-				return fmt.Errorf("create config scheme: %w", err)
+			mux, err := newMux(configHandler, flags.driverName)
+			if err != nil {
+				return fmt.Errorf("create HTTP mux: %w", err)
 			}
 
 			server := &http.Server{
-				Handler: newMux(newConfigDecoder(), validate, flags.driverName),
+				Handler: mux,
 				Addr:    fmt.Sprintf(":%d", flags.port),
 			}
 			klog.Info("starting webhook server on", server.Addr)
@@ -146,9 +143,13 @@ func newApp() *cli.App {
 	return app
 }
 
-func newConfigDecoder() runtime.Decoder {
-	// Set up a json serializer to decode our types.
-	return kjson.NewSerializerWithOptions(
+func newMux(configHandler profiles.ConfigHandler, driverName string) (*http.ServeMux, error) {
+	configScheme := runtime.NewScheme()
+	sb := configHandler.SchemeBuilder()
+	if err := sb.AddToScheme(configScheme); err != nil {
+		return nil, fmt.Errorf("create config scheme: %w", err)
+	}
+	configDecoder := kjson.NewSerializerWithOptions(
 		kjson.DefaultMetaFactory,
 		configScheme,
 		configScheme,
@@ -156,19 +157,19 @@ func newConfigDecoder() runtime.Decoder {
 			Pretty: true, Strict: true,
 		},
 	)
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, configHandler.Validate, driverName))
+	mux.HandleFunc("/readyz", readyHandler)
+	return mux, nil
 }
 
-func newMux(configDecoder runtime.Decoder, validate validator, driverName string) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, validate, driverName))
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) {
-		_, err := w.Write([]byte("ok"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-	return mux
+func readyHandler(w http.ResponseWriter, req *http.Request) {
+	_, err := w.Write([]byte("ok"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func serveResourceClaim(configDecoder runtime.Decoder, validate validator, driverName string) func(http.ResponseWriter, *http.Request) {
