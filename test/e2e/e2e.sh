@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+!/usr/bin/env bash
 
 # Copyright The Kubernetes Authors.
 #
@@ -86,6 +86,49 @@ function gpu-partition-count-from-logs {
   echo "$logs" | sed -nE "s/^declare -x GPU_DEVICE_${id}_PARTITION_COUNT=\"(.+)\"$/\1/p"
 }
 
+function verify-resourceclaim-device-status() {
+  local ns="$1"
+  echo "=== Verifying ResourceClaim device data in namespace ${ns} ==="
+
+  local claim=""
+  for i in {1..30}; do
+    claim="$(kubectl get resourceclaim -n "${ns}" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+    if [[ -n "${claim}" ]]; then
+      break
+    fi
+    sleep 1
+  done
+
+  if [[ -z "${claim}" ]]; then
+    echo "ERROR: no ResourceClaim found in namespace ${ns}"
+    exit 1
+  fi
+
+  echo "Found ResourceClaim ${ns}/${claim}, checking status.devices[0].data ..."
+
+  local uuid
+  uuid="$(kubectl get resourceclaim "${claim}" -n "${ns}" \
+    -o jsonpath='{.status.devices[0].data.uuid.string}')"
+
+  local driver_version
+  driver_version="$(kubectl get resourceclaim "${claim}" -n "${ns}" \
+    -o jsonpath='{.status.devices[0].data.driverVersion.version}')"
+
+  if [[ -z "${uuid}" ]]; then
+    echo "ERROR: ResourceClaim ${ns}/${claim} is missing .status.devices[0].data.uuid.string"
+    kubectl get resourceclaim "${claim}" -n "${ns}" -o yaml
+    exit 1
+  fi
+
+  if [[ -z "${driver_version}" ]]; then
+    echo "ERROR: ResourceClaim ${ns}/${claim} is missing .status.devices[0].data.driverVersion.version"
+    kubectl get resourceclaim "${claim}" -n "${ns}" -o yaml
+    exit 1
+  fi
+
+  echo "OK: ResourceClaim ${ns}/${claim} has device data (uuid=${uuid}, driverVersion=${driver_version})"
+}
+
 declare -a observed_gpus
 function gpu-already-seen {
   local gpu="$1"
@@ -102,6 +145,9 @@ if [ $gpu_test_1 != 2 ]; then
     echo "gpu_test_1 $gpu_test_1 failed to match against 2 expected pods"
     exit 1
 fi
+
+# Verify that at least one ResourceClaim in gpu-test1 has device data
+verify-resourceclaim-device-status "gpu-test1"
 
 gpu_test1_pod0_ctr0_logs=$(kubectl logs -n gpu-test1 pod0 -c ctr0)
 gpu_test1_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test1_pod0_ctr0_logs")
