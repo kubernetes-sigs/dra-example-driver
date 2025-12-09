@@ -225,7 +225,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 		}
 	}
 
-	klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
+	klog.Infof("Adding device attributes to claim %s/%s", claim.Namespace, claim.Name)
 	if err := s.applyDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
 		klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
 	}
