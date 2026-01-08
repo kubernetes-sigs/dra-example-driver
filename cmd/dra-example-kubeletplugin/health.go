@@ -63,9 +63,12 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 
 	regSockPath := (&url.URL{
 		Scheme: "unix",
-		// TODO: this needs to adapt when seamless upgrades
-		// are enabled and the filename includes a uid.
-		Path: path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock"),
+		Path: func() string {
+			if config.flags.seamlessUpgrades && config.flags.podUID != "" {
+				return path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-"+config.flags.podUID+"-reg.sock")
+			}
+			return path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock")
+		}(),
 	}).String()
 	log.Info("connecting to registration socket", "path", regSockPath)
 	regConn, err := grpc.NewClient(
@@ -78,7 +81,12 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 
 	draSockPath := (&url.URL{
 		Scheme: "unix",
-		Path:   path.Join(config.DriverPluginPath(), "dra.sock"),
+		Path: func() string {
+			if config.flags.seamlessUpgrades && config.flags.podUID != "" {
+				return path.Join(config.DriverPluginPath(), "dra-"+config.flags.podUID+".sock")
+			}
+			return path.Join(config.DriverPluginPath(), "dra.sock")
+		}(),
 	}).String()
 	log.Info("connecting to DRA socket", "path", draSockPath)
 	draConn, err := grpc.NewClient(
