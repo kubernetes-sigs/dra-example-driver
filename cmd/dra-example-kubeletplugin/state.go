@@ -257,7 +257,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 					RequestNames: []string{result.Request},
 					PoolName:     result.Pool,
 					DeviceName:   result.Device,
-					CDIDeviceIDs: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
+					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
 				},
 				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
 			}
