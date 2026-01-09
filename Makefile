@@ -142,7 +142,7 @@ teardown-e2e:
 ifeq ($(CONTAINER_TOOL),podman)
 CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD):Z
 else
-CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD) --user $$(id -u):$$(id -g)
+CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD):z --user $$(id -u):$$(id -g)
 endif
 
 $(DOCKER_TARGETS): docker-%: .build-image
