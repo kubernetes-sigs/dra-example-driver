@@ -31,7 +31,8 @@ import (
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -49,16 +50,34 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
+	profile                       string
+	driverName                    string
 }
 
 type Config struct {
 	flags         *Flags
 	coreclient    coreclientset.Interface
 	cancelMainCtx func(error)
+
+	profile profiles.Profile
 }
 
+var validProfiles = map[string]func(flags Flags) profiles.Profile{
+	gpu.ProfileName: func(flags Flags) profiles.Profile {
+		return gpu.NewProfile(flags.nodeName, flags.numDevices)
+	},
+}
+
+var validProfileNames = func() []string {
+	var valid []string
+	for profileName := range validProfiles {
+		valid = append(valid, profileName)
+	}
+	return valid
+}()
+
 func (c Config) DriverPluginPath() string {
-	return filepath.Join(c.flags.kubeletPluginsDirectoryPath, consts.DriverName)
+	return filepath.Join(c.flags.kubeletPluginsDirectoryPath, c.flags.driverName)
 }
 
 func main() {
@@ -89,7 +108,7 @@ func newApp() *cli.App {
 		},
 		&cli.IntFlag{
 			Name:        "num-devices",
-			Usage:       "The number of devices to be generated.",
+			Usage:       "The number of devices to be generated. Only relevant for the " + gpu.ProfileName + " profile.",
 			Value:       8,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
@@ -115,6 +134,19 @@ func newApp() *cli.App {
 			Destination: &flags.healthcheckPort,
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
 		},
+		&cli.StringFlag{
+			Name:        "device-profile",
+			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfileNames),
+			Value:       gpu.ProfileName,
+			Destination: &flags.profile,
+			EnvVars:     []string{"DEVICE_PROFILE"},
+		},
+		&cli.StringFlag{
+			Name:        "driver-name",
+			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Destination: &flags.driverName,
+			EnvVars:     []string{"DRIVER_NAME"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
@@ -135,12 +167,22 @@ func newApp() *cli.App {
 			ctx := c.Context
 			clientSets, err := flags.kubeClientConfig.NewClientSets()
 			if err != nil {
-				return fmt.Errorf("create client: %v", err)
+				return fmt.Errorf("create client: %w", err)
+			}
+
+			if flags.driverName == "" {
+				flags.driverName = flags.profile + ".example.com"
+			}
+
+			newProfile, ok := validProfiles[flags.profile]
+			if !ok {
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfileNames)
 			}
 
 			config := &Config{
 				flags:      flags,
 				coreclient: clientSets.Core,
+				profile:    newProfile(*flags),
 			}
 
 			return RunPlugin(ctx, config)

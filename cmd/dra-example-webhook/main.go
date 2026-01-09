@@ -30,19 +30,28 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	kjson "k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/klog/v2"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
 type Flags struct {
 	loggingConfig *flags.LoggingConfig
 
-	certFile string
-	keyFile  string
-	port     int
+	certFile   string
+	keyFile    string
+	port       int
+	profile    string
+	driverName string
+}
+
+type validator func(runtime.Object) error
+
+var validProfiles = map[string]profiles.ConfigHandler{
+	gpu.ProfileName: gpu.Profile{},
 }
 
 func main() {
@@ -75,6 +84,19 @@ func newApp() *cli.App {
 			Value:       443,
 			Destination: &flags.port,
 		},
+		&cli.StringFlag{
+			Name:        "device-profile",
+			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfiles),
+			Value:       gpu.ProfileName,
+			Destination: &flags.profile,
+			EnvVars:     []string{"DEVICE_PROFILE"},
+		},
+		&cli.StringFlag{
+			Name:        "driver-name",
+			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Destination: &flags.driverName,
+			EnvVars:     []string{"DRIVER_NAME"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
 
@@ -91,8 +113,26 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
+			configHandler, ok := validProfiles[flags.profile]
+			if !ok {
+				var valid []string
+				for profileName := range validProfiles {
+					valid = append(valid, profileName)
+				}
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, valid)
+			}
+
+			if flags.driverName == "" {
+				flags.driverName = flags.profile + ".example.com"
+			}
+
+			mux, err := newMux(configHandler, flags.driverName)
+			if err != nil {
+				return fmt.Errorf("create HTTP mux: %w", err)
+			}
+
 			server := &http.Server{
-				Handler: newMux(),
+				Handler: mux,
 				Addr:    fmt.Sprintf(":%d", flags.port),
 			}
 			klog.Info("starting webhook server on", server.Addr)
@@ -103,21 +143,39 @@ func newApp() *cli.App {
 	return app
 }
 
-func newMux() *http.ServeMux {
+func newMux(configHandler profiles.ConfigHandler, driverName string) (*http.ServeMux, error) {
+	configScheme := runtime.NewScheme()
+	sb := configHandler.SchemeBuilder()
+	if err := sb.AddToScheme(configScheme); err != nil {
+		return nil, fmt.Errorf("create config scheme: %w", err)
+	}
+	configDecoder := kjson.NewSerializerWithOptions(
+		kjson.DefaultMetaFactory,
+		configScheme,
+		configScheme,
+		kjson.SerializerOptions{
+			Pretty: true, Strict: true,
+		},
+	)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim)
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, req *http.Request) {
-		_, err := w.Write([]byte("ok"))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	})
-	return mux
+	mux.HandleFunc("/validate-resource-claim-parameters", serveResourceClaim(configDecoder, configHandler.Validate, driverName))
+	mux.HandleFunc("/readyz", readyHandler)
+	return mux, nil
 }
 
-func serveResourceClaim(w http.ResponseWriter, r *http.Request) {
-	serve(w, r, admitResourceClaimParameters)
+func readyHandler(w http.ResponseWriter, req *http.Request) {
+	_, err := w.Write([]byte("ok"))
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func serveResourceClaim(configDecoder runtime.Decoder, validate validator, driverName string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		serve(w, r, admitResourceClaimParameters(configDecoder, validate, driverName))
+	}
 }
 
 // serve handles the http portion of a request prior to handing to an admit
@@ -191,96 +249,93 @@ func readAdmissionReview(data []byte) (*admissionv1.AdmissionReview, error) {
 
 // admitResourceClaimParameters accepts both ResourceClaims and ResourceClaimTemplates and validates their
 // opaque device configuration parameters for this driver.
-func admitResourceClaimParameters(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
-	klog.V(2).Info("admitting resource claim parameters")
+func admitResourceClaimParameters(configDecoder runtime.Decoder, validate validator, driverName string) func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+	return func(ar admissionv1.AdmissionReview) *admissionv1.AdmissionResponse {
+		klog.V(2).Info("admitting resource claim parameters")
 
-	var deviceConfigs []resourceapi.DeviceClaimConfiguration
-	var specPath string
+		var deviceConfigs []resourceapi.DeviceClaimConfiguration
+		var specPath string
 
-	switch ar.Request.Resource {
-	case resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2:
-		claim, err := extractResourceClaim(ar)
-		if err != nil {
-			klog.Error(err)
+		switch ar.Request.Resource {
+		case resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2:
+			claim, err := extractResourceClaim(ar)
+			if err != nil {
+				klog.Error(err)
+				return &admissionv1.AdmissionResponse{
+					Result: &metav1.Status{
+						Message: err.Error(),
+						Reason:  metav1.StatusReasonBadRequest,
+					},
+				}
+			}
+			deviceConfigs = claim.Spec.Devices.Config
+			specPath = "spec"
+		case resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2:
+			claimTemplate, err := extractResourceClaimTemplate(ar)
+			if err != nil {
+				klog.Error(err)
+				return &admissionv1.AdmissionResponse{
+					Result: &metav1.Status{
+						Message: err.Error(),
+						Reason:  metav1.StatusReasonBadRequest,
+					},
+				}
+			}
+			deviceConfigs = claimTemplate.Spec.Spec.Devices.Config
+			specPath = "spec.spec"
+		default:
+			msg := fmt.Sprintf(
+				"expected resource to be one of %v, got %s",
+				[]metav1.GroupVersionResource{
+					resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2,
+					resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2,
+				},
+				ar.Request.Resource,
+			)
+			klog.Error(msg)
 			return &admissionv1.AdmissionResponse{
 				Result: &metav1.Status{
-					Message: err.Error(),
+					Message: msg,
 					Reason:  metav1.StatusReasonBadRequest,
 				},
 			}
 		}
-		deviceConfigs = claim.Spec.Devices.Config
-		specPath = "spec"
-	case resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2:
-		claimTemplate, err := extractResourceClaimTemplate(ar)
-		if err != nil {
-			klog.Error(err)
+
+		var errs []error
+		for configIndex, config := range deviceConfigs {
+			if config.Opaque == nil || config.Opaque.Driver != driverName {
+				continue
+			}
+
+			fieldPath := fmt.Sprintf("%s.devices.config[%d].opaque.parameters", specPath, configIndex)
+			decodedConfig, err := runtime.Decode(configDecoder, config.DeviceConfiguration.Opaque.Parameters.Raw)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("error decoding object at %s: %w", fieldPath, err))
+				continue
+			}
+			err = validate(decodedConfig)
+			if err != nil {
+				errs = append(errs, fmt.Errorf("object at %s is invalid: %w", fieldPath, err))
+			}
+		}
+
+		if len(errs) > 0 {
+			var errMsgs []string
+			for _, err := range errs {
+				errMsgs = append(errMsgs, err.Error())
+			}
+			msg := fmt.Sprintf("%d configs failed to validate: %s", len(errs), strings.Join(errMsgs, "; "))
+			klog.Error(msg)
 			return &admissionv1.AdmissionResponse{
 				Result: &metav1.Status{
-					Message: err.Error(),
-					Reason:  metav1.StatusReasonBadRequest,
+					Message: msg,
+					Reason:  metav1.StatusReason(metav1.StatusReasonInvalid),
 				},
 			}
 		}
-		deviceConfigs = claimTemplate.Spec.Spec.Devices.Config
-		specPath = "spec.spec"
-	default:
-		msg := fmt.Sprintf(
-			"expected resource to be one of %v, got %s",
-			[]metav1.GroupVersionResource{
-				resourceClaimResourceV1, resourceClaimResourceV1Beta1, resourceClaimResourceV1Beta2,
-				resourceClaimTemplateResourceV1, resourceClaimTemplateResourceV1Beta1, resourceClaimTemplateResourceV1Beta2,
-			},
-			ar.Request.Resource,
-		)
-		klog.Error(msg)
+
 		return &admissionv1.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: msg,
-				Reason:  metav1.StatusReasonBadRequest,
-			},
+			Allowed: true,
 		}
-	}
-
-	var errs []error
-	for configIndex, config := range deviceConfigs {
-		if config.Opaque == nil || config.Opaque.Driver != consts.DriverName {
-			continue
-		}
-
-		fieldPath := fmt.Sprintf("%s.devices.config[%d].opaque.parameters", specPath, configIndex)
-		decodedConfig, err := runtime.Decode(configapi.Decoder, config.DeviceConfiguration.Opaque.Parameters.Raw)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("error decoding object at %s: %w", fieldPath, err))
-			continue
-		}
-		gpuConfig, ok := decodedConfig.(*configapi.GpuConfig)
-		if !ok {
-			errs = append(errs, fmt.Errorf("expected v1alpha1.GpuConfig at %s but got: %T", fieldPath, decodedConfig))
-			continue
-		}
-		err = gpuConfig.Validate()
-		if err != nil {
-			errs = append(errs, fmt.Errorf("object at %s is invalid: %w", fieldPath, err))
-		}
-	}
-
-	if len(errs) > 0 {
-		var errMsgs []string
-		for _, err := range errs {
-			errMsgs = append(errMsgs, err.Error())
-		}
-		msg := fmt.Sprintf("%d configs failed to validate: %s", len(errs), strings.Join(errMsgs, "; "))
-		klog.Error(msg)
-		return &admissionv1.AdmissionResponse{
-			Result: &metav1.Status{
-				Message: msg,
-				Reason:  metav1.StatusReason(metav1.StatusReasonInvalid),
-			},
-		}
-	}
-
-	return &admissionv1.AdmissionResponse{
-		Allowed: true,
 	}
 }

@@ -20,20 +20,9 @@ import (
 	"fmt"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 )
 
-const (
-	GroupName = "gpu.resource.example.com"
-	Version   = "v1alpha1"
-
-	GpuConfigKind = "GpuConfig"
-)
-
-// Decoder implements a decoder for objects in this API group.
-var Decoder runtime.Decoder
+const GpuConfigKind = "GpuConfig"
 
 // +genclient
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
@@ -81,30 +70,4 @@ func (c *GpuConfig) Normalize() error {
 		}
 	}
 	return nil
-}
-
-func init() {
-	// Create a new scheme and add our types to it. If at some point in the
-	// future a new version of the configuration API becomes necessary, then
-	// conversion functions can be generated and registered to continue
-	// supporting older versions.
-	scheme := runtime.NewScheme()
-	schemeGroupVersion := schema.GroupVersion{
-		Group:   GroupName,
-		Version: Version,
-	}
-	scheme.AddKnownTypes(schemeGroupVersion,
-		&GpuConfig{},
-	)
-	metav1.AddToGroupVersion(scheme, schemeGroupVersion)
-
-	// Set up a json serializer to decode our types.
-	Decoder = json.NewSerializerWithOptions(
-		json.DefaultMetaFactory,
-		scheme,
-		scheme,
-		json.SerializerOptions{
-			Pretty: true, Strict: true,
-		},
-	)
 }

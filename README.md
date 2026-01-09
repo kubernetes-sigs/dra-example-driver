@@ -375,6 +375,20 @@ Finally, you can run the following to cleanup your environment and delete the
 ./demo/delete-cluster.sh
 ```
 
+## Device Profiles
+
+The example driver can manage several different kinds of devices to demonstrate
+a variety of DRA features. The functionality for each kind of device is
+organized into a "profile." Only one profile is active at a time for a given
+instance of the example driver, though the example driver may be installed
+multiple times in the same cluster with different active profiles. See the Helm
+chart's `deviceProfile` value in values.yaml for available profiles.
+
+For driver developers, this pattern is specific to the example driver and not
+intended to be a recommendation for all DRA drivers. Other drivers will likely
+be simpler by implementing their logic more directly than through an
+abstraction like the example driver's profiles.
+
 ## Anatomy of a DRA resource driver
 
 TBD

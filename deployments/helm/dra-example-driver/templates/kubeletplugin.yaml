@@ -59,6 +59,10 @@ spec:
           periodSeconds: 10
         {{- end }}
         env:
+        - name: DRIVER_NAME
+          value: {{ include "dra-example-driver.driverName" . | quote }}
+        - name: DEVICE_PROFILE
+          value: {{ .Values.deviceProfile | quote }}
         - name: CDI_ROOT
           value: /var/run/cdi
         - name: KUBELET_REGISTRAR_DIRECTORY_PATH

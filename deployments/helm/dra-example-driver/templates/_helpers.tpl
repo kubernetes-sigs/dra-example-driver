@@ -121,3 +121,10 @@ resource.k8s.io/v1beta1
 {{- else -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The driver name.
+*/}}
+{{- define "dra-example-driver.driverName" -}}
+{{ default (print .Values.deviceProfile ".example.com") .Values.driverName }}
+{{- end -}}

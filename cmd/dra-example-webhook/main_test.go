@@ -36,14 +36,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 )
 
+const driverName = "gpu.example.com"
+
 func TestReadyEndpoint(t *testing.T) {
-	s := httptest.NewServer(newMux())
+	s := httptest.NewServer(http.HandlerFunc(readyHandler))
 	t.Cleanup(s.Close)
 
-	res, err := http.Get(s.URL + "/readyz")
+	res, err := http.Get(s.URL)
 	assert.NoError(t, err)
 	assert.Equal(t, http.StatusOK, res.StatusCode)
 }
@@ -168,7 +170,11 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 		},
 	}
 
-	s := httptest.NewServer(newMux())
+	configHandler := gpu.Profile{}
+	mux, err := newMux(configHandler, driverName)
+	assert.NoError(t, err)
+
+	s := httptest.NewServer(mux)
 	t.Cleanup(s.Close)
 
 	for name, test := range tests {
@@ -249,7 +255,7 @@ func resourceClaimSpecWithGpuConfigs(gpuConfigs ...*configapi.GpuConfig) resourc
 		deviceConfig := resourceapi.DeviceClaimConfiguration{
 			DeviceConfiguration: resourceapi.DeviceConfiguration{
 				Opaque: &resourceapi.OpaqueDeviceConfiguration{
-					Driver: consts.DriverName,
+					Driver: driverName,
 					Parameters: runtime.RawExtension{
 						Object: gpuConfig,
 					},

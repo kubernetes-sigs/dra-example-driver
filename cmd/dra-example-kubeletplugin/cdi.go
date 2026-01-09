@@ -19,35 +19,37 @@ package main
 import (
 	"fmt"
 	"os"
-
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
+	"regexp"
+	"strings"
 
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
+
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
 
-const (
-	cdiVendor = "k8s." + consts.DriverName
-	cdiClass  = "gpu"
-	cdiKind   = cdiVendor + "/" + cdiClass
+const cdiCommonDeviceName = "common"
 
-	cdiCommonDeviceName = "common"
-)
+var nonWord = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
 type CDIHandler struct {
-	cache *cdiapi.Cache
+	cache      *cdiapi.Cache
+	driverName string
+	class      string
 }
 
-func NewCDIHandler(config *Config) (*CDIHandler, error) {
+func NewCDIHandler(root string, driverName, class string) (*CDIHandler, error) {
 	cache, err := cdiapi.NewCache(
-		cdiapi.WithSpecDirs(config.flags.cdiRoot),
+		cdiapi.WithSpecDirs(root),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create a new CDI cache: %w", err)
 	}
 	handler := &CDIHandler{
-		cache: cache,
+		cache:      cache,
+		driverName: driverName,
+		class:      class,
 	}
 
 	return handler, nil
@@ -55,14 +57,14 @@ func NewCDIHandler(config *Config) (*CDIHandler, error) {
 
 func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	spec := &cdispec.Spec{
-		Kind: cdiKind,
+		Kind: cdi.kind(),
 		Devices: []cdispec.Device{
 			{
 				Name: cdiCommonDeviceName,
 				ContainerEdits: cdispec.ContainerEdits{
 					Env: []string{
 						fmt.Sprintf("KUBERNETES_NODE_NAME=%s", os.Getenv("NODE_NAME")),
-						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", consts.DriverName),
+						fmt.Sprintf("DRA_RESOURCE_DRIVER_NAME=%s", cdi.driverName),
 					},
 				},
 			},
@@ -83,19 +85,20 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.cache.WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevices) error {
-	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.PreparedDevices) error {
+	specName := cdiapi.GenerateTransientSpecName(cdi.vendor(), cdi.class, claimUID)
 
 	spec := &cdispec.Spec{
-		Kind:    cdiKind,
+		Kind:    cdi.kind(),
 		Devices: []cdispec.Device{},
 	}
 
 	for _, device := range devices {
+		deviceEnvKey := strings.ToUpper(nonWord.ReplaceAllString(device.DeviceName, "_"))
 		claimEdits := cdiapi.ContainerEdits{
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
-					fmt.Sprintf("GPU_DEVICE_%s_RESOURCE_CLAIM=%s", device.DeviceName[4:], claimUID),
+					fmt.Sprintf("%s_DEVICE_%s_RESOURCE_CLAIM=%s", strings.ToUpper(cdi.class), deviceEnvKey, claimUID),
 				},
 			},
 		}
@@ -119,19 +122,27 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 }
 
 func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
-	specName := cdiapi.GenerateTransientSpecName(cdiVendor, cdiClass, claimUID)
+	specName := cdiapi.GenerateTransientSpecName(cdi.vendor(), cdi.class, claimUID)
 	return cdi.cache.RemoveSpec(specName)
 }
 
 func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices []string) []string {
 	cdiDevices := []string{
-		cdiparser.QualifiedName(cdiVendor, cdiClass, cdiCommonDeviceName),
+		cdiparser.QualifiedName(cdi.vendor(), cdi.class, cdiCommonDeviceName),
 	}
 
 	for _, device := range devices {
-		cdiDevice := cdiparser.QualifiedName(cdiVendor, cdiClass, fmt.Sprintf("%s-%s", claimUID, device))
+		cdiDevice := cdiparser.QualifiedName(cdi.vendor(), cdi.class, fmt.Sprintf("%s-%s", claimUID, device))
 		cdiDevices = append(cdiDevices, cdiDevice)
 	}
 
 	return cdiDevices
+}
+
+func (cdi *CDIHandler) kind() string {
+	return cdi.vendor() + "/" + cdi.class
+}
+
+func (cdi *CDIHandler) vendor() string {
+	return "k8s." + cdi.driverName
 }

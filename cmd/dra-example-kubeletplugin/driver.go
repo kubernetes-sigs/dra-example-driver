@@ -20,17 +20,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
-	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/klog/v2"
-
-	"sigs.k8s.io/dra-example-driver/pkg/consts"
 )
 
 type driver struct {
@@ -58,7 +54,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		driver,
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
-		kubeletplugin.DriverName(consts.DriverName),
+		kubeletplugin.DriverName(config.flags.driverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
 	)
@@ -67,28 +63,12 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.helper = helper
 
-	devices := make([]resourceapi.Device, 0, len(state.allocatable))
-	for device := range maps.Values(state.allocatable) {
-		devices = append(devices, device)
-	}
-	resources := resourceslice.DriverResources{
-		Pools: map[string]resourceslice.Pool{
-			config.flags.nodeName: {
-				Slices: []resourceslice.Slice{
-					{
-						Devices: devices,
-					},
-				},
-			},
-		},
-	}
-
 	driver.healthcheck, err = startHealthcheck(ctx, config)
 	if err != nil {
 		return nil, fmt.Errorf("start healthcheck: %w", err)
 	}
 
-	if err := helper.PublishResources(ctx, resources); err != nil {
+	if err := helper.PublishResources(ctx, state.driverResources); err != nil {
 		return nil, err
 	}
 
