@@ -308,7 +308,7 @@ func admitResourceClaimParameters(configDecoder runtime.Decoder, validate valida
 			}
 
 			fieldPath := fmt.Sprintf("%s.devices.config[%d].opaque.parameters", specPath, configIndex)
-			decodedConfig, err := runtime.Decode(configDecoder, config.DeviceConfiguration.Opaque.Parameters.Raw)
+			decodedConfig, err := runtime.Decode(configDecoder, config.Opaque.Parameters.Raw)
 			if err != nil {
 				errs = append(errs, fmt.Errorf("error decoding object at %s: %w", fieldPath, err))
 				continue

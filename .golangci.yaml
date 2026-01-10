@@ -1,4 +1,7 @@
 # please keep this alphabetized
+version: "2"
+run:
+  tests: true
 linters:
   enable:
     - asciicheck
@@ -6,15 +9,30 @@ linters:
     - forcetypeassert
     - gocritic
     - godot
+    - misspell
+    - staticcheck
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+      - common-false-positives
+      - legacy
+      - std-error-handling
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
+formatters:
+  enable:
     - gofmt
     - goimports
-    - misspell
-    - stylecheck
-
-run:
-  tests: true
-  timeout: 1m
-
-linters-settings:
-  goimports:
-    local-prefixes: "sigs.k8s.io/dra-example-driver"
+  settings:
+    goimports:
+      local-prefixes:
+        - sigs.k8s.io/dra-example-driver
+  exclusions:
+    generated: lax
+    paths:
+      - third_party$
+      - builtin$
+      - examples$
