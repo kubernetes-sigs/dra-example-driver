@@ -52,6 +52,7 @@ type Flags struct {
 	healthcheckPort               int
 	profile                       string
 	driverName                    string
+	deviceAttribute               bool
 }
 
 type Config struct {
@@ -146,6 +147,12 @@ func newApp() *cli.App {
 			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
+		},
+		&cli.BoolFlag{
+			Name:        "device-attribute",
+			Usage:       "Enable adding allocated device attributes (e.g., model, uuid, driverVersion) into ResourceClaim.status.devices[].data. Disabled by default.",
+			Destination: &flags.deviceAttribute,
+			EnvVars:     []string{"DEVICE_ATTRIBUTE"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

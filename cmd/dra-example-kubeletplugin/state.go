@@ -236,8 +236,10 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			return nil, fmt.Errorf("requested device is not allocatable: %v", result.Device)
 		}
 
-		deviceStatus := s.buildDeviceStatus(result)
-		devicesStatus = append(devicesStatus, deviceStatus)
+		if s.config.flags.deviceAttribute {
+			deviceStatus := s.buildDeviceStatus(result)
+			devicesStatus = append(devicesStatus, deviceStatus)
+		}
 
 		for _, c := range slices.Backward(configs) {
 			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {
@@ -252,9 +254,11 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	// of device allocation results.
 	perDeviceCDIContainerEdits := make(profiles.PerDeviceCDIContainerEdits)
 	for config, results := range configResultsMap {
-		klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
-		if err := s.applyDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
-			klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
+		if s.config.flags.deviceAttribute {
+			klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
+			if err := s.applyDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
+				klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
+			}
 		}
 
 		// Apply the config to the list of results associated with it.
