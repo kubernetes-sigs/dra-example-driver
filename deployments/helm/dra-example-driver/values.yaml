@@ -18,6 +18,10 @@ deviceProfile: "gpu"
 # value is derived from the deviceProfile.
 driverName: ""
 
+# add allocated device attributes (e.g. model, uuid, driverVersion)
+# into ResourceClaim.status.devices[].data via server-side apply.
+deviceAttribute: false
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver
