@@ -18,7 +18,7 @@ package main
 
 import (
 	"context"
-	"encoding/json"
+	encode "encoding/json"
 	"fmt"
 	"slices"
 	"sync"
@@ -199,7 +199,7 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
-func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles.PreparedDevices, error) {
+func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) (profiles.PreparedDevices, error) {
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
@@ -389,7 +389,7 @@ func (s *DeviceState) buildDeviceStatus(res resourceapi.DeviceRequestAllocationR
 		}
 	}
 
-	jsonBytes, err := json.Marshal(deviceInfo)
+	jsonBytes, err := encode.Marshal(deviceInfo)
 	if err != nil {
 		klog.Errorf("Failed to marshal device data: %v", err)
 		jsonBytes = []byte("{}")
@@ -416,7 +416,7 @@ func (s *DeviceState) applyDeviceStatus(ctx context.Context, ns, name string, de
 	claim := resourceapply.ResourceClaim(name, ns).
 		WithStatus(resourceapply.ResourceClaimStatus().WithDevices(devices...))
 
-	opts := metav1.ApplyOptions{FieldManager: consts.DriverName, Force: true}
+	opts := metav1.ApplyOptions{FieldManager: s.config.flags.driverName, Force: true}
 
 	_, err := s.config.coreclient.ResourceV1().ResourceClaims(ns).ApplyStatus(ctx, claim, opts)
 	return err
