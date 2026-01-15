@@ -375,6 +375,21 @@ Finally, you can run the following to cleanup your environment and delete the
 ./demo/delete-cluster.sh
 ```
 
+### Experimental minikube support (no local build)
+In order to run this demo using minikube (without local driver build support) you
+can start it via this following command:
+
+```bash
+./demo/scripts/create-minikube-cluster.sh
+```
+
+Then install the driver like shown in [demo](#Demo) section.
+
+To delete the cluster you can run:
+```bash
+./demo/scripts/delete-minikube-cluster.sh
+```
+
 ## Anatomy of a DRA resource driver
 
 TBD
