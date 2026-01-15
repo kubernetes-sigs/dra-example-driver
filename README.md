@@ -375,12 +375,16 @@ Finally, you can run the following to cleanup your environment and delete the
 ./demo/delete-cluster.sh
 ```
 
-### Experimental minikube support (no local build)
-In order to run this demo using minikube (without local driver build support) you
-can start it via this following command:
-
+### Experimental minikube support
+In order to run this demo using minikube you can start it via the following
+command:
 ```bash
 ./demo/scripts/create-minikube-cluster.sh
+```
+
+After building the cluster, the local version of the driver can be loaded:
+```bash
+./demo/scripts/load-driver-image-into-minikube.sh
 ```
 
 Then install the driver like shown in [demo](#Demo) section.
