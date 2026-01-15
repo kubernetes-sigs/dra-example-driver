@@ -27,7 +27,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
-	resourceapply "k8s.io/client-go/applyconfigurations/resource/v1"
+	"k8s.io/client-go/util/retry"
+	draclient "k8s.io/dynamic-resource-allocation/client"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	"k8s.io/klog/v2"
@@ -222,7 +223,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	configs = slices.Insert(configs, 0, &OpaqueDeviceConfig{})
 
 	// build device status
-	var devicesStatus []*resourceapply.AllocatedDeviceStatusApplyConfiguration
+	var devicesStatus []resourceapi.AllocatedDeviceStatus
 
 	// Look through the configs and figure out which one will be applied to
 	// each device allocation result based on their order of precedence.
@@ -256,7 +257,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	for config, results := range configResultsMap {
 		if s.config.flags.deviceAttribute {
 			klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
-			if err := s.applyDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
+			if err := s.updateDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
 				klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
 			}
 		}
@@ -377,7 +378,7 @@ func GetOpaqueDeviceConfigs(
 	return resultConfigs, nil
 }
 
-func (s *DeviceState) buildDeviceStatus(res resourceapi.DeviceRequestAllocationResult) *resourceapply.AllocatedDeviceStatusApplyConfiguration {
+func (s *DeviceState) buildDeviceStatus(res resourceapi.DeviceRequestAllocationResult) resourceapi.AllocatedDeviceStatus {
 	dn := res.Device
 	deviceInfo := make(map[string]resourceapi.DeviceAttribute)
 
@@ -398,30 +399,39 @@ func (s *DeviceState) buildDeviceStatus(res resourceapi.DeviceRequestAllocationR
 		klog.Errorf("Failed to marshal device data: %v", err)
 		jsonBytes = []byte("{}")
 	}
-	data := runtime.RawExtension{
-		Raw: jsonBytes,
-	}
 
-	return resourceapply.AllocatedDeviceStatus().
-		WithDevice(dn).
-		WithDriver(res.Driver).
-		WithPool(res.Pool).
-		// WithData records per-allocation metadata used for monitoring and debugging:
+	return resourceapi.AllocatedDeviceStatus{
+		Device: dn,
+		Driver: res.Driver,
+		Pool:   res.Pool,
+		// Data records per-allocation metadata used for monitoring and debugging:
 		//   - Pod→GPU mapping: makes it easier to see which GPU a given pod is using,
 		//     which is not readily available elsewhere.
 		//   - Device attributes (e.g. UUID, model, driverVersion): remain available
 		//     even if the device is later removed from a ResourceSlice (for example,
 		//     because it becomes unhealthy), so past allocations can still be
 		//     correlated with later health or scheduling issues.
-		WithData(data)
+		Data: &runtime.RawExtension{Raw: jsonBytes},
+	}
 }
 
-func (s *DeviceState) applyDeviceStatus(ctx context.Context, ns, name string, devices ...*resourceapply.AllocatedDeviceStatusApplyConfiguration) error {
-	claim := resourceapply.ResourceClaim(name, ns).
-		WithStatus(resourceapply.ResourceClaimStatus().WithDevices(devices...))
+func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, devices ...resourceapi.AllocatedDeviceStatus) error {
+	// Converting wrapper to use latest API types,
+	// converts to/from server-supported version.
+	c := draclient.New(s.config.coreclient)
+	rc := c.ResourceClaims(ns)
 
-	opts := metav1.ApplyOptions{FieldManager: s.config.flags.driverName, Force: true}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		claim, err := rc.Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
 
-	_, err := s.config.coreclient.ResourceV1().ResourceClaims(ns).ApplyStatus(ctx, claim, opts)
-	return err
+		// copy the object and update only status.devices
+		claim = claim.DeepCopy()
+		claim.Status.Devices = devices
+
+		_, err = rc.UpdateStatus(ctx, claim, metav1.UpdateOptions{})
+		return err
+	})
 }
