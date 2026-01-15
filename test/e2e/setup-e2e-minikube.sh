@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 The Kubernetes Authors.
+# Copyright 2026 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -21,6 +21,6 @@ set -e
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 bash demo/build-driver.sh
-bash demo/create-cluster.sh
+bash demo/create-cluster-minikube.sh
 
 ${CURRENT_DIR}/helm-driver-install.sh

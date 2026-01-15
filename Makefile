@@ -120,6 +120,9 @@ generate-deepcopy: vendor
 setup-e2e:
 	test/e2e/setup-e2e.sh
 
+setup-e2e-minikube:
+	test/e2e/setup-e2e-minikube.sh
+
 test-e2e:
 	test/e2e/e2e.sh
 

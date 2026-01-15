@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 The Kubernetes Authors.
+# Copyright 2026 The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,10 +17,20 @@
 # stop at first failure to save time
 set -e
 
-# A reference to the current directory where this script is located
-CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+helm upgrade -i \
+  --repo https://charts.jetstack.io \
+  --version v1.16.3 \
+  --create-namespace \
+  --namespace cert-manager \
+  --wait \
+  --set crds.enabled=true \
+  cert-manager \
+  cert-manager
 
-bash demo/build-driver.sh
-bash demo/create-cluster.sh
-
-${CURRENT_DIR}/helm-driver-install.sh
+helm upgrade -i \
+  --create-namespace \
+  --namespace dra-example-driver \
+  --set webhook.enabled=true \
+  --set kubeletPlugin.numDevices=9 \
+  dra-example-driver \
+  deployments/helm/dra-example-driver
