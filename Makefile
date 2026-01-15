@@ -129,6 +129,9 @@ test-e2e:
 teardown-e2e:
 	test/e2e/teardown-e2e.sh
 
+teardown-e2e-minikube:
+	test/e2e/teardown-e2e-minikube.sh
+
 # Generate an image for containerized builds
 # Note: This image is local only
 .PHONY: .build-image
