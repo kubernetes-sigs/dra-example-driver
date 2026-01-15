@@ -31,6 +31,6 @@ source "${CURRENT_DIR}/common.sh"
 IMAGE_ARCHIVE=driver_image.tar
 ${CONTAINER_TOOL} save -o "${IMAGE_ARCHIVE}" "${DRIVER_IMAGE}" && \
 ${KIND} load image-archive \
-	--name "${KIND_CLUSTER_NAME}" \
+	--name "${CLUSTER_NAME}" \
 	"${IMAGE_ARCHIVE}"
 rm "${IMAGE_ARCHIVE}"

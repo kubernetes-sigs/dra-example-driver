@@ -32,5 +32,5 @@ ${SCRIPTS_DIR}/delete-kind-cluster.sh
 
 set +x
 printf '\033[0;32m'
-echo "Cluster deletion complete: ${KIND_CLUSTER_NAME}"
+echo "Cluster deletion complete: ${CLUSTER_NAME}"
 printf '\033[0m'

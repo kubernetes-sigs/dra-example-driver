@@ -28,4 +28,4 @@ set -o pipefail
 source "${CURRENT_DIR}/common.sh"
 
 ${KIND} delete cluster \
-	--name "${KIND_CLUSTER_NAME}"
+	--name "${CLUSTER_NAME}"

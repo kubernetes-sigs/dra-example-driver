@@ -44,7 +44,7 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${BUILD_KIND_IMAGE:="false"}
 
 # The name of the kind cluster to create
-: ${KIND_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
+: ${CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
 
 # The path to kind's cluster configuration file
 : ${KIND_CLUSTER_CONFIG_PATH:="${SCRIPTS_DIR}/kind-cluster-config.yaml"}
@@ -71,4 +71,4 @@ fi
 
 : ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
 
-: ${MINIKUBE:="minikube --profile=${DRIVER_NAME}-cluster"}
+: ${MINIKUBE:="minikube --profile=${CLUSTER_NAME}"}

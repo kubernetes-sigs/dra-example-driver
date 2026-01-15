@@ -41,5 +41,5 @@ fi
 
 set +x
 printf '\033[0;32m'
-echo "Cluster creation complete: ${KIND_CLUSTER_NAME}"
+echo "Cluster creation complete: ${CLUSTER_NAME}"
 printf '\033[0m'
