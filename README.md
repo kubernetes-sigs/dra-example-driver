@@ -53,6 +53,11 @@ And create a `kind` cluster to run it in:
 ./demo/create-cluster.sh
 ```
 
+Or if you want you can create a `minikube` cluster to run it in:
+```bash
+./demo/create-cluster-minikube.sh
+```
+
 Once the cluster has been created successfully, double check everything is
 coming up as expected:
 ```console
@@ -374,24 +379,9 @@ Finally, you can run the following to cleanup your environment and delete the
 ```bash
 ./demo/delete-cluster.sh
 ```
-
-### Experimental minikube support
-In order to run this demo using minikube you can start it via the following
-command:
+In case you are running with `minikube`:
 ```bash
-./demo/scripts/create-minikube-cluster.sh
-```
-
-After building the cluster, the local version of the driver can be loaded:
-```bash
-./demo/scripts/load-driver-image-into-minikube.sh
-```
-
-Then install the driver like shown in [demo](#Demo) section.
-
-To delete the cluster you can run:
-```bash
-./demo/scripts/delete-minikube-cluster.sh
+./demo/delete-cluster-minikube.sh
 ```
 
 ## Anatomy of a DRA resource driver
