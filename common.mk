@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GOLANG_VERSION ?= 1.24.2
+GOLANG_VERSION ?= 1.25.5
 
 DRIVER_NAME := dra-example-driver
 MODULE := sigs.k8s.io/$(DRIVER_NAME)
