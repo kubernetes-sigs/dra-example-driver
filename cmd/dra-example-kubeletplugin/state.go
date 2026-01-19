@@ -29,6 +29,7 @@ import (
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
@@ -254,7 +255,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	for _, results := range configResultsMap {
 		for _, result := range results {
 			shareId := (*string)(result.ShareID)
-			deviceId := s.cdi.getCDIDeviceID(result.Device, shareId)
+			deviceId := helpers.GetCDIDeviceID(result.Device, shareId)
 			device := &profiles.PreparedDevice{
 				Device: drapbv1.Device{
 					RequestNames: []string{result.Request},
@@ -263,7 +264,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{deviceId}),
 					ShareId:      shareId,
 				},
-				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+				ContainerEdits: perDeviceCDIContainerEdits[deviceId],
 				AdminAccess:    hasAdminAccess,
 			}
 			preparedDevices = append(preparedDevices, device)
