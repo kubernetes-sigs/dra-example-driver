@@ -103,9 +103,9 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 			},
 		}
 		claimEdits.Append(device.ContainerEdits)
-
+		deviceId := cdi.getCDIDeviceID(device.DeviceName, device.ShareId)
 		cdiDevice := cdispec.Device{
-			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
+			Name:           fmt.Sprintf("%s-%s", claimUID, deviceId),
 			ContainerEdits: *claimEdits.ContainerEdits,
 		}
 
@@ -145,4 +145,11 @@ func (cdi *CDIHandler) kind() string {
 
 func (cdi *CDIHandler) vendor() string {
 	return "k8s." + cdi.driverName
+}
+
+func (cdi *CDIHandler) getCDIDeviceID(device string, shareId *string) string {
+	if shareId != nil {
+		return fmt.Sprintf("%s-%s", device, *shareId)
+	}
+	return device
 }
