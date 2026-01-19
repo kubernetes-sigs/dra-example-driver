@@ -28,10 +28,14 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
+)
+
+var (
+	testShareId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 )
 
 func TestPreparedDevicesGetDevices(t *testing.T) {
@@ -53,6 +57,16 @@ func TestPreparedDevicesGetDevices(t *testing.T) {
 				{DeviceName: "dev1"},
 				{DeviceName: "dev2"},
 				{DeviceName: "dev3"},
+			},
+		},
+		"preparedDevice with shareId": {
+			preparedDevices: PreparedDevices{
+				{Device: drapbv1.Device{DeviceName: "dev1", ShareId: &testShareId}},
+				{Device: drapbv1.Device{DeviceName: "dev2", ShareId: &testShareId}},
+			},
+			expected: []*drapbv1.Device{
+				{DeviceName: "dev1", ShareId: &testShareId},
+				{DeviceName: "dev2", ShareId: &testShareId},
 			},
 		},
 	}
