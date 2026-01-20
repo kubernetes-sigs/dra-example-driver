@@ -126,6 +126,9 @@ setup-e2e-minikube:
 test-e2e:
 	test/e2e/e2e.sh
 
+test-e2e-minikube:
+	test/e2e/e2e-minikube.sh
+
 teardown-e2e:
 	test/e2e/teardown-e2e.sh
 
