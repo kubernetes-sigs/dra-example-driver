@@ -389,6 +389,11 @@ intended to be a recommendation for all DRA drivers. Other drivers will likely
 be simpler by implementing their logic more directly than through an
 abstraction like the example driver's profiles.
 
+Name|Description|Parameters|Non-GA feature requirements
+---|---|---|---
+gpu|GPUs where sharing strategy is configurable via opaque configuration.|numDevices|-
+net|Network devices with consumable ingress and egress bandwidth, where burst rates are configurable via opaque configuration.|numDevices|DRAConsumableCapacity
+
 ## Anatomy of a DRA resource driver
 
 TBD

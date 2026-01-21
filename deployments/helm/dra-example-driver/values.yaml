@@ -12,6 +12,8 @@ allowDefaultNamespace: false
 # deviceProfile describes the overall shape of the devices managed by the
 # driver. Available profiles are:
 #   - "gpu": Node-local devices configurable through opaque config
+#   - "net": Network devices with consumable ingress and egress bandwidth, 
+#            where burst rates are configurable via opaque configuration.
 deviceProfile: "gpu"
 
 # driverName uniquely identifies the driver within the cluster. When empty, its
@@ -35,7 +37,7 @@ serviceAccount:
   name: ""
 
 kubeletPlugin:
-  # numDevices describes how many GPUs to advertise on each node when the "gpu"
+  # numDevices describes how many devices to advertise on each node when the "gpu" or "net"
   # deviceProfile is used. Not relevant for other profiles.
   numDevices: 8
   priorityClassName: "system-node-critical"
