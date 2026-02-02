@@ -106,17 +106,18 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 			},
 		}
 
-		// If this device has admin access, inject host hardware information
+		// If this device has admin access, inject OS-agnostic host hardware information
 		if device.AdminAccess {
 			hostEnvVars := []string{
-				fmt.Sprintf("HOST_CPU_INFO=%s", cdi.hostHardwareInfo.CPUInfo),
-				fmt.Sprintf("HOST_MEMORY_INFO=%s", cdi.hostHardwareInfo.MemInfo),
-				fmt.Sprintf("HOST_KERNEL_INFO=%s", cdi.hostHardwareInfo.KernelInfo),
-				fmt.Sprintf("HOST_SYSTEM_INFO=%s", cdi.hostHardwareInfo.SystemInfo),
-				fmt.Sprintf("HOST_NETWORK_INFO=%s", cdi.hostHardwareInfo.NetworkInfo),
-				fmt.Sprintf("HOST_STORAGE_INFO=%s", cdi.hostHardwareInfo.StorageInfo),
+				fmt.Sprintf("HOST_HOSTNAME=%s", cdi.hostHardwareInfo.Hostname),
+				fmt.Sprintf("HOST_NODE_NAME=%s", cdi.hostHardwareInfo.NodeName),
+				fmt.Sprintf("HOST_OS=%s", cdi.hostHardwareInfo.OS),
+				fmt.Sprintf("HOST_ARCH=%s", cdi.hostHardwareInfo.Architecture),
+				fmt.Sprintf("HOST_NUM_CPU=%d", cdi.hostHardwareInfo.NumCPU),
+				fmt.Sprintf("HOST_GO_VERSION=%s", cdi.hostHardwareInfo.GoVersion),
+				fmt.Sprintf("HOST_NETWORK_INTERFACES=%s", cdi.hostHardwareInfo.NetworkInterfaces),
 			}
-			claimEdits.ContainerEdits.Env = append(claimEdits.ContainerEdits.Env, hostEnvVars...)
+			claimEdits.Env = append(claimEdits.Env, hostEnvVars...)
 		}
 
 		claimEdits.Append(device.ContainerEdits)

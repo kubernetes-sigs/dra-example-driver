@@ -349,37 +349,36 @@ these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 
 ### Demo DRA Admin Access Feature
-This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. In this example, only workloads with admin access resource claims can view sensitive host hardware information through environment variables.
+This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable and exposing OS-agnostic host hardware information.
 
-When admin access is granted, the following host information is made available through environment variables:
+When admin access is granted, the following environment variables are set in the container:
 
 - `DRA_ADMIN_ACCESS=true` - Indicates admin access is enabled
-- `HOST_CPU_INFO` - CPU model and core count information from /proc/cpuinfo
-- `HOST_MEMORY_INFO` - Memory capacity and availability from /proc/meminfo  
-- `HOST_KERNEL_INFO` - Kernel version information from /proc/version
-- `HOST_SYSTEM_INFO` - Operating system and architecture (GOOS, GOARCH)
-- `HOST_NETWORK_INFO` - Available network interfaces from /proc/net/dev
-- `HOST_STORAGE_INFO` - Root filesystem and mount information from /proc/mounts
+- `HOST_HOSTNAME` - System hostname
+- `HOST_NODE_NAME` - Kubernetes node name (from NODE_NAME env var)
+- `HOST_OS` - Operating system (linux, windows, darwin, etc.)
+- `HOST_ARCH` - CPU architecture (amd64, arm64, etc.)
+- `HOST_NUM_CPU` - Number of logical CPUs
+- `HOST_GO_VERSION` - Go runtime version
+- `HOST_NETWORK_INTERFACES` - Active network interface names (comma-separated, excludes loopback and down interfaces)
 
-#### CDI Integration
-
-When admin access is detected, the CDI (Container Device Interface) handler injects the host hardware environment variables into the container specification.
+These host information values are collected using Go's standard library (`runtime`, `os`, and `net` packages), making them completely cross-platform and working identically on Linux, Windows, and macOS without any OS-specific code.
 
 #### Usage Example
 
 See `demo/gpu-test7.yaml` for a complete example. Key points:
 
-1. **Namespace**: Must have admin access label in order to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true`. From kubernetes v1.34+, this label will be `resource.kubernetes.io/admin-access`.
+1. **Namespace**: Must have the `resource.kubernetes.io/admin-access` label set to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true` for Kubernetes v1.34+.
 ```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: gpu-test7
   labels:
-    resource.k8s.io/admin-access: "true"
+    resource.kubernetes.io/admin-access: "true"
 ```
 
-2. **Resource Claim Template**: Request must have `adminAccess: true`. [optional] `allocationMode: All` should be included if the workload needs to get information for all hardware devices. 
+2. **Resource Claim Template**: Request must have `adminAccess: true`. The `allocationMode: All` is used to demonstrate accessing all available devices with admin privileges.
 ```yaml
 spec:
   spec:
@@ -392,12 +391,19 @@ spec:
           adminAccess: true
 ```
 
-3. **Container**: Will receive host hardware information via environment variables
+3. **Container**: Will receive the admin access indicator and host hardware information via environment variables
 ```bash
 echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-echo "Host CPU Info: $HOST_CPU_INFO"
-echo "Host Memory Info: $HOST_MEMORY_INFO"
-# ... additional host info variables
+echo "Host OS: $HOST_OS"
+echo "Host Architecture: $HOST_ARCH"
+echo "Host CPUs: $HOST_NUM_CPU"
+echo "Network Interfaces: $HOST_NETWORK_INTERFACES"
+# Output examples:
+# DRA Admin Access: true
+# Host OS: linux
+# Host Architecture: amd64
+# Host CPUs: 4
+# Network Interfaces: eth0,eth1
 ```
 
 #### Testing
@@ -406,7 +412,8 @@ To run this demo:
 ```bash
 ./demo/test-admin-access.sh
 ```
-Note: These workloads can access devices already in use by other workloads. Only these workloads with admin access resource claims can view sensitive host hardware information through environment variables.
+
+This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In a production environment, drivers could use this admin access indication to provide additional privileged capabilities or information to authorized workloads.
 
 ### Clean Up
 

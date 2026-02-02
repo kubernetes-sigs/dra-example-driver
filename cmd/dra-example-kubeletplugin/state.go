@@ -57,7 +57,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	// Get host hardware information for admin access.
+	// Get OS-agnostic host hardware information for admin access.
 	hostHardwareInfo, err := GetHostHardwareInfo()
 	if err != nil {
 		return nil, fmt.Errorf("unable to get host hardware info: %v", err)

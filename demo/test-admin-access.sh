@@ -2,7 +2,7 @@
 
 # DRA Admin Access Feature Test Script
 # This script demonstrates the DRA Admin Access feature by deploying
-# the demo and checking the results
+# the demo and verifying the DRA_ADMIN_ACCESS environment variable is set
 
 set -e
 
@@ -40,16 +40,42 @@ echo "=== ResourceClaims Status ==="
 kubectl get resourceclaims -n gpu-test7
 
 echo
-echo "=== Pod0 Logs (showing host hardware information) ==="
+echo "=== Pod0 Logs (showing admin access demo) ==="
 kubectl logs pod0 -n gpu-test7 || echo "⚠️  Pod0 logs not ready yet"
 
 echo
-echo "=== Pod1 Logs (showing host hardware information) ==="
+echo "=== Pod1 Logs (showing admin access demo) ==="
 kubectl logs pod1 -n gpu-test7 || echo "⚠️  Pod1 logs not ready yet"
 
 echo
-echo "=== Environment Variables in Pod0 ==="
-kubectl exec pod0 -n gpu-test7 -- env | grep -E "(HOST_|DRA_|GPU_)" | sort || echo "⚠️  Pod0 not ready for exec"
+echo "=== Checking DRA_ADMIN_ACCESS Environment Variable ==="
+DRA_ADMIN_ACCESS_POD0=$(kubectl exec pod0 -n gpu-test7 -- printenv DRA_ADMIN_ACCESS 2>/dev/null || echo "not found")
+DRA_ADMIN_ACCESS_POD1=$(kubectl exec pod1 -n gpu-test7 -- printenv DRA_ADMIN_ACCESS 2>/dev/null || echo "not found")
+
+if [[ "$DRA_ADMIN_ACCESS_POD0" == "true" ]]; then
+  echo "✅ Pod0: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD0"
+else
+  echo "❌ Pod0: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD0 (expected: true)"
+fi
+
+if [[ "$DRA_ADMIN_ACCESS_POD1" == "true" ]]; then
+  echo "✅ Pod1: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD1"
+else
+  echo "❌ Pod1: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD1 (expected: true)"
+fi
+
+echo
+echo "=== Checking Host Hardware Info Environment Variables (Pod0) ==="
+kubectl exec pod0 -n gpu-test7 -- printenv | grep -E "^HOST_" | sort || echo "⚠️  No HOST_* variables found"
+
+echo
+echo "=== Verifying Network Interfaces Environment Variable ==="
+HOST_NETWORK_INTERFACES=$(kubectl exec pod0 -n gpu-test7 -- printenv HOST_NETWORK_INTERFACES 2>/dev/null || echo "not found")
+if [[ "$HOST_NETWORK_INTERFACES" != "not found" ]] && [[ "$HOST_NETWORK_INTERFACES" != "none" ]]; then
+  echo "✅ Pod0: HOST_NETWORK_INTERFACES=$HOST_NETWORK_INTERFACES"
+else
+  echo "⚠️  Pod0: HOST_NETWORK_INTERFACES=$HOST_NETWORK_INTERFACES"
+fi
 
 echo
 echo "=== Test Complete ==="
