@@ -1,6 +1,19 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
-# DRA Admin Access Feature Test Script
+# Copyright The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 # This script demonstrates the DRA Admin Access feature by deploying
 # the demo and verifying the DRA_ADMIN_ACCESS environment variable is set
 
@@ -27,9 +40,8 @@ echo "✅ Kubernetes cluster is accessible"
 echo "📦 Applying gpu-test7.yaml demo..."
 kubectl apply -f demo/gpu-test7.yaml
 
-echo "⏳ Waiting for pods to be ready..."
+echo "⏳ Waiting for pod to be ready..."
 kubectl wait --for=condition=Ready pod/pod0 -n gpu-test7 --timeout=120s || true
-kubectl wait --for=condition=Ready pod/pod1 -n gpu-test7 --timeout=120s || true
 
 echo
 echo "=== Pod Status ==="
@@ -44,37 +56,13 @@ echo "=== Pod0 Logs (showing admin access demo) ==="
 kubectl logs pod0 -n gpu-test7 || echo "⚠️  Pod0 logs not ready yet"
 
 echo
-echo "=== Pod1 Logs (showing admin access demo) ==="
-kubectl logs pod1 -n gpu-test7 || echo "⚠️  Pod1 logs not ready yet"
-
-echo
 echo "=== Checking DRA_ADMIN_ACCESS Environment Variable ==="
 DRA_ADMIN_ACCESS_POD0=$(kubectl exec pod0 -n gpu-test7 -- printenv DRA_ADMIN_ACCESS 2>/dev/null || echo "not found")
-DRA_ADMIN_ACCESS_POD1=$(kubectl exec pod1 -n gpu-test7 -- printenv DRA_ADMIN_ACCESS 2>/dev/null || echo "not found")
 
 if [[ "$DRA_ADMIN_ACCESS_POD0" == "true" ]]; then
   echo "✅ Pod0: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD0"
 else
   echo "❌ Pod0: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD0 (expected: true)"
-fi
-
-if [[ "$DRA_ADMIN_ACCESS_POD1" == "true" ]]; then
-  echo "✅ Pod1: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD1"
-else
-  echo "❌ Pod1: DRA_ADMIN_ACCESS=$DRA_ADMIN_ACCESS_POD1 (expected: true)"
-fi
-
-echo
-echo "=== Checking Host Hardware Info Environment Variables (Pod0) ==="
-kubectl exec pod0 -n gpu-test7 -- printenv | grep -E "^HOST_" | sort || echo "⚠️  No HOST_* variables found"
-
-echo
-echo "=== Verifying Network Interfaces Environment Variable ==="
-HOST_NETWORK_INTERFACES=$(kubectl exec pod0 -n gpu-test7 -- printenv HOST_NETWORK_INTERFACES 2>/dev/null || echo "not found")
-if [[ "$HOST_NETWORK_INTERFACES" != "not found" ]] && [[ "$HOST_NETWORK_INTERFACES" != "none" ]]; then
-  echo "✅ Pod0: HOST_NETWORK_INTERFACES=$HOST_NETWORK_INTERFACES"
-else
-  echo "⚠️  Pod0: HOST_NETWORK_INTERFACES=$HOST_NETWORK_INTERFACES"
 fi
 
 echo

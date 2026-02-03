@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -48,7 +48,6 @@ type DeviceState struct {
 	checkpointManager checkpointmanager.CheckpointManager
 	configDecoder     runtime.Decoder
 	configHandler     profiles.ConfigHandler
-	hostHardwareInfo  *HostHardwareInfo
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -57,13 +56,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	// Get OS-agnostic host hardware information for admin access.
-	hostHardwareInfo, err := GetHostHardwareInfo()
-	if err != nil {
-		return nil, fmt.Errorf("unable to get host hardware info: %v", err)
-	}
-
-	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.flags.profile, hostHardwareInfo)
+	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.flags.profile)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}
@@ -110,7 +103,6 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointManager: checkpointManager,
 		configDecoder:     decoder,
 		configHandler:     configHandler,
-		hostHardwareInfo:  hostHardwareInfo,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -140,11 +132,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 
 	checkpoint := newCheckpoint()
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
-		// Create a new checkpoint if the old one is corrupted or in a different format
-		checkpoint = newCheckpoint()
-		if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
-			return nil, fmt.Errorf("unable to create new checkpoint: %v", err)
-		}
+		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
 	preparedClaims := checkpoint.V1.PreparedClaims
 

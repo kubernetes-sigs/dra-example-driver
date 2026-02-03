@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,13 +34,12 @@ const cdiCommonDeviceName = "common"
 var nonWord = regexp.MustCompile(`[^a-zA-Z0-9]+`)
 
 type CDIHandler struct {
-	cache            *cdiapi.Cache
-	driverName       string
-	class            string
-	hostHardwareInfo *HostHardwareInfo
+	cache      *cdiapi.Cache
+	driverName string
+	class      string
 }
 
-func NewCDIHandler(root string, driverName, class string, hostHardwareInfo *HostHardwareInfo) (*CDIHandler, error) {
+func NewCDIHandler(root string, driverName, class string) (*CDIHandler, error) {
 	cache, err := cdiapi.NewCache(
 		cdiapi.WithSpecDirs(root),
 	)
@@ -48,10 +47,9 @@ func NewCDIHandler(root string, driverName, class string, hostHardwareInfo *Host
 		return nil, fmt.Errorf("unable to create a new CDI cache: %w", err)
 	}
 	handler := &CDIHandler{
-		cache:            cache,
-		driverName:       driverName,
-		class:            class,
-		hostHardwareInfo: hostHardwareInfo,
+		cache:      cache,
+		driverName: driverName,
+		class:      class,
 	}
 
 	return handler, nil
@@ -106,19 +104,7 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 			},
 		}
 
-		// If this device has admin access, inject OS-agnostic host hardware information
-		if device.AdminAccess {
-			hostEnvVars := []string{
-				fmt.Sprintf("HOST_HOSTNAME=%s", cdi.hostHardwareInfo.Hostname),
-				fmt.Sprintf("HOST_NODE_NAME=%s", cdi.hostHardwareInfo.NodeName),
-				fmt.Sprintf("HOST_OS=%s", cdi.hostHardwareInfo.OS),
-				fmt.Sprintf("HOST_ARCH=%s", cdi.hostHardwareInfo.Architecture),
-				fmt.Sprintf("HOST_NUM_CPU=%d", cdi.hostHardwareInfo.NumCPU),
-				fmt.Sprintf("HOST_GO_VERSION=%s", cdi.hostHardwareInfo.GoVersion),
-				fmt.Sprintf("HOST_NETWORK_INTERFACES=%s", cdi.hostHardwareInfo.NetworkInterfaces),
-			}
-			claimEdits.Env = append(claimEdits.Env, hostEnvVars...)
-		}
+		// If this device has admin access, then here is where to inject host hardware information
 
 		claimEdits.Append(device.ContainerEdits)
 

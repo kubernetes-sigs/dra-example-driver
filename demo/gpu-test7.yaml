@@ -1,6 +1,5 @@
 # One Namespace with admin access label
-# Two pods, one container each
-# Each container requesting 1 distinct GPU with admin access
+# One pod with one container requesting all GPUs with admin access
 # This demo shows the DRA admin access feature with DRA_ADMIN_ACCESS environment variable
 
 ---
@@ -42,54 +41,6 @@ spec:
       export
       echo "=== DRA Admin Access Demo ==="
       echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-      echo ""
-      echo "Host Hardware Information (OS-agnostic):"
-      echo "  Hostname: $HOST_HOSTNAME"
-      echo "  Node Name: $HOST_NODE_NAME"
-      echo "  OS: $HOST_OS"
-      echo "  Architecture: $HOST_ARCH"
-      echo "  Number of CPUs: $HOST_NUM_CPU"
-      echo "  Go Version: $HOST_GO_VERSION"
-      echo "  Network Interfaces: $HOST_NETWORK_INTERFACES"
-      echo ""
-      echo "GPU Environment Variables:"
-      env | grep GPU_ | sort
-      echo ""
-      echo "=== Sleeping to allow inspection ==="
-      trap 'exit 0' TERM
-      sleep 9999 & wait
-    resources:
-      claims:
-      - name: admin-gpus
-  resourceClaims:
-  - name: admin-gpus
-    resourceClaimTemplateName: multiple-gpus-admin
-
----
-apiVersion: v1
-kind: Pod
-metadata:
-  namespace: gpu-test7
-  name: pod1
-spec:
-  containers:
-  - name: ctr0
-    image: ubuntu:22.04
-    command: ["bash", "-c"]
-    args:
-    - |
-      export
-      echo "=== DRA Admin Access Demo ==="
-      echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-      echo ""
-      echo "Host Hardware Information (OS-agnostic):"
-      echo "  Hostname: $HOST_HOSTNAME"
-      echo "  Node Name: $HOST_NODE_NAME"
-      echo "  OS: $HOST_OS"
-      echo "  Architecture: $HOST_ARCH"
-      echo "  Number of CPUs: $HOST_NUM_CPU"
-      echo "  Go Version: $HOST_GO_VERSION"
-      echo "  Network Interfaces: $HOST_NETWORK_INTERFACES"
       echo ""
       echo "GPU Environment Variables:"
       env | grep GPU_ | sort

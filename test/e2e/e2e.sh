@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2024 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -52,10 +52,10 @@ timeout --foreground 15s bash -c verify-webhook
 kubectl create -f demo/gpu-test1.yaml
 kubectl create -f demo/gpu-test2.yaml
 kubectl create -f demo/gpu-test3.yaml
+kubectl create -f demo/gpu-test7.yaml
 kubectl create -f demo/gpu-test4.yaml
 kubectl create -f demo/gpu-test5.yaml
 kubectl create -f demo/gpu-test6.yaml
-kubectl create -f demo/gpu-test7.yaml
 
 function gpus-from-logs {
   local logs="$1"
@@ -435,10 +435,9 @@ fi
 
 
 kubectl wait --for=condition=Ready -n gpu-test7 pod/pod0 --timeout=120s
-kubectl wait --for=condition=Ready -n gpu-test7 pod/pod1 --timeout=120s
 gpu_test_7=$(kubectl get pods -n gpu-test7 | grep -c 'Running')
-if [ $gpu_test_7 != 2 ]; then
-    echo "gpu_test_7 $gpu_test_7 failed to match against 2 expected pods"
+if [ $gpu_test_7 != 1 ]; then
+    echo "gpu_test_7 $gpu_test_7 failed to match against 1 expected pod"
     exit 1
 fi
 
@@ -449,29 +448,6 @@ if [[ "$gpu_test7_pod0_ctr0_admin_access" != "true" ]]; then
   exit 1
 fi
 echo "Pod gpu-test7/pod0, container ctr0 has admin access: $gpu_test7_pod0_ctr0_admin_access"
-
-gpu_test7_pod1_ctr0_logs=$(kubectl logs -n gpu-test7 pod1 -c ctr0)
-gpu_test7_pod1_ctr0_admin_access=$(echo "$gpu_test7_pod1_ctr0_logs" | sed -nE "s/^declare -x DRA_ADMIN_ACCESS=\"(.+)\"$/\1/p")
-if [[ "$gpu_test7_pod1_ctr0_admin_access" != "true" ]]; then
-  echo "Expected Pod gpu-test7/pod1, container ctr0 to have DRA_ADMIN_ACCESS=true, got $gpu_test7_pod1_ctr0_admin_access"
-  exit 1
-fi
-echo "Pod gpu-test7/pod1, container ctr0 has admin access: $gpu_test7_pod1_ctr0_admin_access"
-
-# Verify host hardware info environment variables are set
-gpu_test7_pod0_ctr0_host_os=$(echo "$gpu_test7_pod0_ctr0_logs" | sed -nE "s/^declare -x HOST_OS=\"(.+)\"$/\1/p")
-if [[ -z "$gpu_test7_pod0_ctr0_host_os" ]]; then
-  echo "Expected Pod gpu-test7/pod0, container ctr0 to have HOST_OS set"
-  exit 1
-fi
-echo "Pod gpu-test7/pod0, container ctr0 has HOST_OS: $gpu_test7_pod0_ctr0_host_os"
-
-gpu_test7_pod0_ctr0_host_num_cpu=$(echo "$gpu_test7_pod0_ctr0_logs" | sed -nE "s/^declare -x HOST_NUM_CPU=\"(.+)\"$/\1/p")
-if [[ -z "$gpu_test7_pod0_ctr0_host_num_cpu" ]]; then
-  echo "Expected Pod gpu-test7/pod0, container ctr0 to have HOST_NUM_CPU set"
-  exit 1
-fi
-echo "Pod gpu-test7/pod0, container ctr0 has HOST_NUM_CPU: $gpu_test7_pod0_ctr0_host_num_cpu"
 
 
 # test that deletion is fast (less than the default grace period of 30s)
@@ -484,7 +460,7 @@ kubectl delete -f demo/gpu-test5.yaml --timeout=25s
 kubectl delete -f demo/gpu-test6.yaml --timeout=25s
 kubectl delete -f demo/gpu-test7.yaml --timeout=25s
 
-# # Webhook should reject invalid v1 resources
+# Webhook should reject invalid v1 resources
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
@@ -513,34 +489,6 @@ spec:
 EOF
 then
   echo "Webhook did not reject v1 ResourceClaim invalid GpuConfig with the expected message"
-  exit 1
-fi
-
-# # Webhook should reject invalid v1beta1 resources
-if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
-apiVersion: resource.k8s.io/v1beta1
-kind: ResourceClaim
-metadata:
-  name: webhook-test-v1beta1
-spec:
-  devices:
-    requests:
-    - name: ts-gpu
-      deviceClassName: gpu.example.com
-    config:
-    - requests: ["ts-gpu"]
-      opaque:
-        driver: gpu.example.com
-        parameters:
-          apiVersion: gpu.resource.example.com/v1alpha1
-          kind: GpuConfig
-          sharing:
-            strategy: TimeSlicing
-            timeSlicingConfig:
-              interval: InvalidInterval
-EOF
-then
-  echo "Webhook did not reject v1beta1 ResourceClaim invalid GpuConfig with the expected message"
   exit 1
 fi
 

@@ -349,20 +349,7 @@ these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 
 ### Demo DRA Admin Access Feature
-This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable and exposing OS-agnostic host hardware information.
-
-When admin access is granted, the following environment variables are set in the container:
-
-- `DRA_ADMIN_ACCESS=true` - Indicates admin access is enabled
-- `HOST_HOSTNAME` - System hostname
-- `HOST_NODE_NAME` - Kubernetes node name (from NODE_NAME env var)
-- `HOST_OS` - Operating system (linux, windows, darwin, etc.)
-- `HOST_ARCH` - CPU architecture (amd64, arm64, etc.)
-- `HOST_NUM_CPU` - Number of logical CPUs
-- `HOST_GO_VERSION` - Go runtime version
-- `HOST_NETWORK_INTERFACES` - Active network interface names (comma-separated, excludes loopback and down interfaces)
-
-These host information values are collected using Go's standard library (`runtime`, `os`, and `net` packages), making them completely cross-platform and working identically on Linux, Windows, and macOS without any OS-specific code.
+This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable and potentially exposing host hardware information.
 
 #### Usage Example
 
@@ -391,19 +378,11 @@ spec:
           adminAccess: true
 ```
 
-3. **Container**: Will receive the admin access indicator and host hardware information via environment variables
+3. **Container**: Will receive the admin access indicator via environment variables
 ```bash
 echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-echo "Host OS: $HOST_OS"
-echo "Host Architecture: $HOST_ARCH"
-echo "Host CPUs: $HOST_NUM_CPU"
-echo "Network Interfaces: $HOST_NETWORK_INTERFACES"
 # Output examples:
 # DRA Admin Access: true
-# Host OS: linux
-# Host Architecture: amd64
-# Host CPUs: 4
-# Network Interfaces: eth0,eth1
 ```
 
 #### Testing
@@ -436,7 +415,6 @@ gpu-test3   pod1   1/1     Terminating   0          31m
 gpu-test4   pod0   1/1     Terminating   0          31m
 gpu-test5   pod0   4/4     Terminating   0          31m
 gpu-test7   pod0   1/1     Terminating   0          31m
-gpu-test7   pod1   1/1     Terminating   0          31m
 ...
 ```
 

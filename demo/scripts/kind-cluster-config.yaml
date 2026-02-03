@@ -16,13 +16,13 @@ nodes:
     kind: ClusterConfiguration
     apiServer:
       extraArgs:
-        runtime-config: "resource.k8s.io/v1beta1=true,resource.k8s.io/v1beta2=true"
+        v: "1"
     scheduler:
-        extraArgs:
-          v: "1"
+      extraArgs:
+        v: "1"
     controllerManager:
-        extraArgs:
-          v: "1"
+      extraArgs:
+        v: "1"
   - |
     kind: InitConfiguration
     nodeRegistration:

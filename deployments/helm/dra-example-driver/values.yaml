@@ -37,7 +37,7 @@ serviceAccount:
 kubeletPlugin:
   # numDevices describes how many GPUs to advertise on each node when the "gpu"
   # deviceProfile is used. Not relevant for other profiles.
-  numDevices: 8
+  numDevices: 9
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate
