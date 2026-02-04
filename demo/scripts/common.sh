@@ -70,3 +70,5 @@ if [[ -z "${CONTAINER_TOOL}" ]]; then
 fi
 
 : ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
+
+: ${MINIKUBE:="minikube --profile=${DRIVER_NAME}-cluster"}
