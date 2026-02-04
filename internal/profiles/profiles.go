@@ -31,6 +31,7 @@ type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
 type PreparedDevice struct {
 	drapbv1.Device
 	ContainerEdits *cdiapi.ContainerEdits
+	AdminAccess    bool
 }
 
 type PreparedDevices []*PreparedDevice

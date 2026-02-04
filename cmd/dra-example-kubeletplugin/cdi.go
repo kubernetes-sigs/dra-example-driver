@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -99,9 +99,13 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
 					fmt.Sprintf("%s_DEVICE_%s_RESOURCE_CLAIM=%s", strings.ToUpper(cdi.class), deviceEnvKey, claimUID),
+					fmt.Sprintf("DRA_ADMIN_ACCESS=%t", device.AdminAccess),
 				},
 			},
 		}
+
+		// If this device has admin access, then here is where to inject host hardware information
+
 		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{

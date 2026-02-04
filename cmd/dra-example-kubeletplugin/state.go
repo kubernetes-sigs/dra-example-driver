@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -139,7 +139,6 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if preparedClaims[claimUID] != nil {
 		return preparedClaims[claimUID].GetDevices(), nil
 	}
-
 	preparedDevices, err := s.prepareDevices(claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
@@ -163,7 +162,10 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 
 	checkpoint := newCheckpoint()
 	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
-		return fmt.Errorf("unable to sync from checkpoint: %v", err)
+		checkpoint = newCheckpoint()
+		if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+			return fmt.Errorf("unable to create new checkpoint: %v", err)
+		}
 	}
 	preparedClaims := checkpoint.V1.PreparedClaims
 
@@ -192,6 +194,8 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
+	// Check if any device request has admin access
+	hasAdminAccess := s.checkAdminAccess(claim)
 
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
@@ -257,6 +261,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
 				},
 				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+				AdminAccess:    hasAdminAccess,
 			}
 			preparedDevices = append(preparedDevices, device)
 		}
@@ -267,6 +272,18 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 
 func (s *DeviceState) unprepareDevices(claimUID string, devices profiles.PreparedDevices) error {
 	return nil
+}
+
+// checkAdminAccess determines if a resource claim requires admin access.
+func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
+	if claim != nil && claim.Status.Allocation != nil {
+		for _, result := range claim.Status.Allocation.Devices.Results {
+			if result.AdminAccess != nil && *result.AdminAccess {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetOpaqueDeviceConfigs returns an ordered list of the configs contained in possibleConfigs for this driver.

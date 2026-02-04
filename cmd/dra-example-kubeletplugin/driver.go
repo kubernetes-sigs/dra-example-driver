@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 The Kubernetes Authors.
+ * Copyright The Kubernetes Authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -95,8 +95,10 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 }
 
 func (d *driver) prepareResourceClaim(_ context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
+	klog.Infof("Preparing claim: UID=%s, Namespace=%s, Name=%s", claim.UID, claim.Namespace, claim.Name)
 	preparedPBs, err := d.state.Prepare(claim)
 	if err != nil {
+		klog.Errorf("Error preparing devices for claim %v: %v", claim.UID, err)
 		return kubeletplugin.PrepareResult{
 			Err: fmt.Errorf("error preparing devices for claim %v: %w", claim.UID, err),
 		}
