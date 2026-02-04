@@ -276,16 +276,14 @@ func (s *DeviceState) unprepareDevices(claimUID string, devices profiles.Prepare
 
 // checkAdminAccess determines if a resource claim requires admin access.
 func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
-	hasAdminAccess := false
 	if claim != nil && claim.Status.Allocation != nil {
 		for _, result := range claim.Status.Allocation.Devices.Results {
 			if result.AdminAccess != nil && *result.AdminAccess {
-				hasAdminAccess = true
-				break
+				return true
 			}
 		}
 	}
-	return hasAdminAccess
+	return false
 }
 
 // GetOpaqueDeviceConfigs returns an ordered list of the configs contained in possibleConfigs for this driver.

@@ -349,7 +349,7 @@ these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 
 ### Demo DRA Admin Access Feature
-This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable and potentially exposing host hardware information.
+This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable. A driver managing real devices could use this to expose host hardware information.
 
 #### Usage Example
 
@@ -378,7 +378,7 @@ spec:
           adminAccess: true
 ```
 
-3. **Container**: Will receive the admin access indicator via environment variables
+3. **Container**: Will receive elevated privileges from the driver, represented here as environment variables
 ```bash
 echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
 # Output examples:

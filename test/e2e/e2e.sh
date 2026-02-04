@@ -52,7 +52,8 @@ timeout --foreground 15s bash -c verify-webhook
 kubectl create -f demo/gpu-test1.yaml
 kubectl create -f demo/gpu-test2.yaml
 kubectl create -f demo/gpu-test3.yaml
-kubectl create -f demo/gpu-test7.yaml
+# deploying this earlier to ensure the pod can access in-use devices and does not block future allocations of the same devices
+kubectl create -f demo/gpu-test7.yaml 
 kubectl create -f demo/gpu-test4.yaml
 kubectl create -f demo/gpu-test5.yaml
 kubectl create -f demo/gpu-test6.yaml
@@ -492,6 +493,35 @@ then
   exit 1
 fi
 
+# Webhook should reject invalid v1beta1 resources
+if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: webhook-test-v1beta1
+spec:
+  devices:
+    requests:
+    - name: ts-gpu
+      deviceClassName: gpu.example.com
+    config:
+    - requests: ["ts-gpu"]
+      opaque:
+        driver: gpu.example.com
+        parameters:
+          apiVersion: gpu.resource.example.com/v1alpha1
+          kind: GpuConfig
+          sharing:
+            strategy: TimeSlicing
+            timeSlicingConfig:
+              interval: InvalidInterval
+EOF
+then
+  echo "Webhook did not reject v1beta1 ResourceClaim invalid GpuConfig with the expected message"
+  exit 1
+fi
+
+# Webhook should reject invalid v1 ResourceClaimTemplates
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
