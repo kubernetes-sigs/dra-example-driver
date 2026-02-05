@@ -17,7 +17,10 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"slices"
 	"sync"
 
@@ -26,7 +29,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
-	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
@@ -40,13 +42,13 @@ type OpaqueDeviceConfig struct {
 
 type DeviceState struct {
 	sync.Mutex
-	driverName        string
-	cdi               *CDIHandler
-	driverResources   resourceslice.DriverResources
-	allocatable       AllocatableDevices
-	checkpointManager checkpointmanager.CheckpointManager
-	configDecoder     runtime.Decoder
-	configHandler     profiles.ConfigHandler
+	driverName      string
+	cdi             *CDIHandler
+	driverResources resourceslice.DriverResources
+	allocatable     AllocatableDevices
+	configDecoder   runtime.Decoder
+	configHandler   profiles.ConfigHandler
+	checkpointPath  string
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -63,11 +65,6 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	err = cdi.CreateCommonSpecFile()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for common edits: %v", err)
-	}
-
-	checkpointManager, err := checkpointmanager.NewCheckpointManager(config.DriverPluginPath())
-	if err != nil {
-		return nil, fmt.Errorf("unable to create checkpoint manager: %v", err)
 	}
 
 	configScheme := runtime.NewScheme()
@@ -95,28 +92,24 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	}
 
 	state := &DeviceState{
-		driverName:        config.flags.driverName,
-		cdi:               cdi,
-		driverResources:   driverResources,
-		allocatable:       allocatable,
-		checkpointManager: checkpointManager,
-		configDecoder:     decoder,
-		configHandler:     configHandler,
+		driverName:      config.flags.driverName,
+		cdi:             cdi,
+		driverResources: driverResources,
+		allocatable:     allocatable,
+		configDecoder:   decoder,
+		configHandler:   configHandler,
+		checkpointPath:  filepath.Join(config.DriverPluginPath(), DriverPluginCheckpointFile),
 	}
 
-	checkpoints, err := state.checkpointManager.ListCheckpoints()
-	if err != nil {
-		return nil, fmt.Errorf("unable to list checkpoints: %v", err)
+	_, err = readCheckpoint(state.checkpointPath)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
+	}
+	if err == nil {
+		return state, nil
 	}
 
-	for _, c := range checkpoints {
-		if c == DriverPluginCheckpointFile {
-			return state, nil
-		}
-	}
-
-	checkpoint := newCheckpoint()
-	if err := state.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+	if err := writeCheckpoint(state.checkpointPath, newCheckpoint()); err != nil {
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
@@ -129,8 +122,8 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 
 	claimUID := string(claim.UID)
 
-	checkpoint := newCheckpoint()
-	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+	checkpoint, err := readCheckpoint(s.checkpointPath)
+	if err != nil {
 		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
 
@@ -138,7 +131,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if preparedDevices != nil {
 		return preparedDevices.GetDevices(), nil
 	}
-	preparedDevices, err := s.prepareDevices(claim)
+	preparedDevices, err = s.prepareDevices(claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
@@ -148,7 +141,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	}
 
 	checkpoint.AddPreparedDevices(claimUID, preparedDevices)
-	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+	if err := writeCheckpoint(s.checkpointPath, checkpoint); err != nil {
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
@@ -159,10 +152,10 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	s.Lock()
 	defer s.Unlock()
 
-	checkpoint := newCheckpoint()
-	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+	checkpoint, err := readCheckpoint(s.checkpointPath)
+	if err != nil {
 		checkpoint = newCheckpoint()
-		if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		if err := writeCheckpoint(s.checkpointPath, checkpoint); err != nil {
 			return fmt.Errorf("unable to create new checkpoint: %v", err)
 		}
 	}
@@ -176,13 +169,13 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		return fmt.Errorf("unprepare failed: %v", err)
 	}
 
-	err := s.cdi.DeleteClaimSpecFile(claimUID)
+	err = s.cdi.DeleteClaimSpecFile(claimUID)
 	if err != nil {
 		return fmt.Errorf("unable to delete CDI spec file for claim: %v", err)
 	}
 
 	checkpoint.RemovePreparedDevices(claimUID)
-	if err := s.checkpointManager.CreateCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+	if err := writeCheckpoint(s.checkpointPath, checkpoint); err != nil {
 		return fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
