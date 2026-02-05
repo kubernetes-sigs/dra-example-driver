@@ -18,7 +18,9 @@ package gpu
 
 import (
 	"fmt"
+	"maps"
 	"math/rand"
+	"strings"
 
 	"github.com/google/uuid"
 	resourceapi "k8s.io/api/resource/v1"
@@ -36,14 +38,16 @@ import (
 const ProfileName = "gpu"
 
 type Profile struct {
-	nodeName string
-	numGPUs  int
+	nodeName         string
+	numGPUs          int
+	partitionsPerGPU int
 }
 
-func NewProfile(nodeName string, numGPUs int) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int) Profile {
 	return Profile{
-		nodeName: nodeName,
-		numGPUs:  numGPUs,
+		nodeName:         nodeName,
+		numGPUs:          numGPUs,
+		partitionsPerGPU: partitionsPerGPU,
 	}
 }
 
@@ -51,41 +55,129 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 	seed := p.nodeName
 	uuids := generateUUIDs(seed, p.numGPUs)
 
+	memoryPerGPU := resource.MustParse("80Gi")
+	computePerGPU := resource.MustParse("100")
+
 	var devices []resourceapi.Device
+	var sharedCounters []resourceapi.CounterSet
+
+	var partitionMemory, partitionCompute resource.Quantity
+	if p.partitionsPerGPU > 0 {
+		partitionMemory = *resource.NewQuantity(memoryPerGPU.Value()/int64(p.partitionsPerGPU), resource.BinarySI)
+		partitionCompute = *resource.NewQuantity(computePerGPU.Value()/int64(p.partitionsPerGPU), resource.DecimalSI)
+	}
+
 	for i, uuid := range uuids {
-		device := resourceapi.Device{
-			Name: fmt.Sprintf("gpu-%d", i),
-			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				"index": {
-					IntValue: ptr.To(int64(i)),
-				},
-				"uuid": {
-					StringValue: ptr.To(uuid),
-				},
-				"model": {
-					StringValue: ptr.To("LATEST-GPU-MODEL"),
-				},
-				"driverVersion": {
-					VersionValue: ptr.To("1.0.0"),
-				},
+		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+			"index": {
+				IntValue: ptr.To(int64(i)),
 			},
-			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-				"memory": {
-					Value: resource.MustParse("80Gi"),
-				},
+			"uuid": {
+				StringValue: ptr.To(uuid),
+			},
+			"model": {
+				StringValue: ptr.To("LATEST-GPU-MODEL"),
+			},
+			"driverVersion": {
+				VersionValue: ptr.To("1.0.0"),
 			},
 		}
-		devices = append(devices, device)
+
+		if p.partitionsPerGPU > 0 {
+			counterSetName := fmt.Sprintf("gpu-%d-counters", i)
+			sharedCounters = append(sharedCounters, resourceapi.CounterSet{
+				Name: counterSetName,
+				Counters: map[string]resourceapi.Counter{
+					"memory": {
+						Value: memoryPerGPU,
+					},
+					"compute": {
+						Value: computePerGPU,
+					},
+				},
+			})
+
+			for j := 0; j < p.partitionsPerGPU; j++ {
+				partitionAttrs := maps.Clone(attrs)
+				partitionAttrs["partition"] = resourceapi.DeviceAttribute{IntValue: ptr.To(int64(j))}
+				partitionAttrs["partitionable"] = resourceapi.DeviceAttribute{BoolValue: ptr.To(true)}
+
+				devices = append(devices, resourceapi.Device{
+					Name:       fmt.Sprintf("gpu-%d-partition-%d", i, j),
+					Attributes: partitionAttrs,
+					Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+						"memory": {
+							Value: partitionMemory,
+						},
+					},
+					ConsumesCounters: []resourceapi.DeviceCounterConsumption{
+						{
+							CounterSet: counterSetName,
+							Counters: map[string]resourceapi.Counter{
+								"memory": {
+									Value: partitionMemory,
+								},
+								"compute": {
+									Value: partitionCompute,
+								},
+							},
+						},
+					},
+				})
+			}
+
+			// Full GPU device that consumes all resources from the counter set
+			fullAttrs := maps.Clone(attrs)
+			fullAttrs["partitionable"] = resourceapi.DeviceAttribute{BoolValue: ptr.To(true)}
+			fullAttrs["full"] = resourceapi.DeviceAttribute{BoolValue: ptr.To(true)}
+
+			devices = append(devices, resourceapi.Device{
+				Name:       fmt.Sprintf("gpu-%d-full", i),
+				Attributes: fullAttrs,
+				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+					"memory": {
+						Value: memoryPerGPU,
+					},
+				},
+				ConsumesCounters: []resourceapi.DeviceCounterConsumption{
+					{
+						CounterSet: counterSetName,
+						Counters: map[string]resourceapi.Counter{
+							"memory": {
+								Value: memoryPerGPU,
+							},
+							"compute": {
+								Value: computePerGPU,
+							},
+						},
+					},
+				},
+			})
+		} else {
+			devices = append(devices, resourceapi.Device{
+				Name:       fmt.Sprintf("gpu-%d", i),
+				Attributes: attrs,
+				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+					"memory": {
+						Value: memoryPerGPU,
+					},
+				},
+			})
+		}
+	}
+
+	slices := []resourceslice.Slice{{Devices: devices}}
+	if len(sharedCounters) > 0 {
+		slices = []resourceslice.Slice{
+			{SharedCounters: sharedCounters},
+			{Devices: devices},
+		}
 	}
 
 	resources := resourceslice.DriverResources{
 		Pools: map[string]resourceslice.Pool{
 			p.nodeName: {
-				Slices: []resourceslice.Slice{
-					{
-						Devices: devices,
-					},
-				},
+				Slices: slices,
 			},
 		},
 	}
@@ -142,6 +234,10 @@ func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.Devic
 	return nil, fmt.Errorf("runtime object is not a recognized configuration")
 }
 
+func envVarSafeID(id string) string {
+	return strings.ToUpper(strings.ReplaceAll(id, "-", "_"))
+}
+
 // In this example driver there is no actual configuration applied. We simply
 // define a set of environment variables to be injected into the containers
 // that include a given device. A real driver would likely need to do some sort
@@ -160,12 +256,14 @@ func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRe
 	}
 
 	for _, result := range results {
+		// Device names are prefixed with "gpu-" (e.g. "gpu-0", "gpu-0-partition-1", "gpu-0-full").
+		envID := envVarSafeID(result.Device[4:])
 		envs := []string{
-			fmt.Sprintf("GPU_DEVICE_%s=%s", result.Device[4:], result.Device),
+			fmt.Sprintf("GPU_DEVICE_%s=%s", envID, result.Device),
 		}
 
 		if config.Sharing != nil {
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_SHARING_STRATEGY=%s", result.Device[4:], config.Sharing.Strategy))
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_SHARING_STRATEGY=%s", envID, config.Sharing.Strategy))
 		}
 
 		switch {
@@ -174,13 +272,13 @@ func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRe
 			if err != nil {
 				return nil, fmt.Errorf("unable to get time slicing config for device %v: %w", result.Device, err)
 			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_TIMESLICE_INTERVAL=%v", result.Device[4:], tsconfig.Interval))
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_TIMESLICE_INTERVAL=%v", envID, tsconfig.Interval))
 		case config.Sharing.IsSpacePartitioning():
 			spconfig, err := config.Sharing.GetSpacePartitioningConfig()
 			if err != nil {
 				return nil, fmt.Errorf("unable to get space partitioning config for device %v: %w", result.Device, err)
 			}
-			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_PARTITION_COUNT=%v", result.Device[4:], spconfig.PartitionCount))
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_PARTITION_COUNT=%v", envID, spconfig.PartitionCount))
 		}
 
 		edits := &cdispec.ContainerEdits{
