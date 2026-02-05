@@ -14,21 +14,19 @@
  * limitations under the License.
  */
 
-package main
+package profiles
 
 import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
-	"sigs.k8s.io/dra-example-driver/internal/profiles"
-
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 )
 
 func TestPreparedDevicesGetDevices(t *testing.T) {
 	tests := map[string]struct {
-		preparedDevices profiles.PreparedDevices
+		preparedDevices PreparedDevices
 		expected        []*drapbv1.Device
 	}{
 		"nil PreparedDevices": {
@@ -36,7 +34,7 @@ func TestPreparedDevicesGetDevices(t *testing.T) {
 			expected:        nil,
 		},
 		"several PreparedDevices": {
-			preparedDevices: profiles.PreparedDevices{
+			preparedDevices: PreparedDevices{
 				{Device: drapbv1.Device{DeviceName: "dev1"}},
 				{Device: drapbv1.Device{DeviceName: "dev2"}},
 				{Device: drapbv1.Device{DeviceName: "dev3"}},
