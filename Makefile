@@ -30,7 +30,7 @@ CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
 
 CHECK_TARGETS := assert-fmt vet lint ineffassign misspell
-MAKE_TARGETS := binaries build check vendor fmt test examples cmds coverage generate $(CHECK_TARGETS)
+MAKE_TARGETS := binaries build check fmt test examples cmds coverage generate $(CHECK_TARGETS)
 
 TARGETS := $(MAKE_TARGETS) $(CMD_TARGETS)
 
@@ -57,10 +57,6 @@ $(EXAMPLE_TARGETS): example-%:
 
 all: check test build binary
 check: $(CHECK_TARGETS)
-
-# Update the vendor folder
-vendor:
-	go mod vendor
 
 # Apply go fmt to the codebase
 fmt:
@@ -108,7 +104,7 @@ coverage: test
 
 generate: generate-deepcopy
 
-generate-deepcopy: vendor
+generate-deepcopy:
 	for api in $(APIS); do \
 		rm -f $(CURDIR)/api/$(VENDOR)/resource/$${api}/zz_generated.deepcopy.go; \
 		controller-gen \
