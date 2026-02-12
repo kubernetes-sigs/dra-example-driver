@@ -58,10 +58,6 @@ $(EXAMPLE_TARGETS): example-%:
 all: check test build binary
 check: $(CHECK_TARGETS)
 
-# Update the vendor folder
-vendor:
-	go mod vendor
-
 # Apply go fmt to the codebase
 fmt:
 	go list -f '{{.Dir}}' $(MODULE)/... \
@@ -108,7 +104,7 @@ coverage: test
 
 generate: generate-deepcopy
 
-generate-deepcopy: vendor
+generate-deepcopy:
 	for api in $(APIS); do \
 		rm -f $(CURDIR)/api/$(VENDOR)/resource/$${api}/zz_generated.deepcopy.go; \
 		controller-gen \
