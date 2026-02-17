@@ -20,7 +20,7 @@ driverName: ""
 
 # add allocated device attributes (e.g. model, uuid, driverVersion)
 # into ResourceClaim.status.devices[].data via server-side apply.
-deviceAttribute: false
+gpuDeviceStatus: false
 
 imagePullSecrets: []
 image:

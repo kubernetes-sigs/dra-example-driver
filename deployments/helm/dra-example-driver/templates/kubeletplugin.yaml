@@ -80,8 +80,8 @@ spec:
         # Simulated number of devices the example driver will pretend to have.
         - name: NUM_DEVICES
           value: {{ .Values.kubeletPlugin.numDevices | quote }}
-        - name: DEVICE_ATTRIBUTE
-          value: {{ .Values.deviceAttribute | quote }}
+        - name: GPU_DEVICE_STATUS
+          value: {{ .Values.gpuDeviceStatus | quote }}
         {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}

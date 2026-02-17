@@ -56,6 +56,7 @@ type DeviceState struct {
 	configDecoder     runtime.Decoder
 	configHandler     profiles.ConfigHandler
 	config            *Config
+	gpuDeviceStatus   bool
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -112,6 +113,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		configDecoder:     decoder,
 		configHandler:     configHandler,
 		config:            config,
+		gpuDeviceStatus:   config.flags.gpuDeviceStatus,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -237,7 +239,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			return nil, fmt.Errorf("requested device is not allocatable: %v", result.Device)
 		}
 
-		if s.config.flags.deviceAttribute {
+		if s.gpuDeviceStatus {
 			deviceStatus := s.buildDeviceStatus(result)
 			devicesStatus = append(devicesStatus, deviceStatus)
 		}
@@ -255,7 +257,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	// of device allocation results.
 	perDeviceCDIContainerEdits := make(profiles.PerDeviceCDIContainerEdits)
 	for config, results := range configResultsMap {
-		if s.config.flags.deviceAttribute {
+		if s.gpuDeviceStatus {
 			klog.Infof("Adding device attribute to claim %s/%s", claim.Namespace, claim.Name)
 			if err := s.updateDeviceStatus(ctx, claim.Namespace, claim.Name, devicesStatus...); err != nil {
 				klog.Warningf("Failed to update device attributes for claim %s/%s: %v", claim.Namespace, claim.Name, err)
