@@ -94,9 +94,8 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 	return result, nil
 }
 
-func (d *driver) prepareResourceClaim(_ context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	klog.Infof("Preparing claim: UID=%s, Namespace=%s, Name=%s", claim.UID, claim.Namespace, claim.Name)
-	preparedPBs, err := d.state.Prepare(claim)
+func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
+	preparedPBs, err := d.state.Prepare(ctx, claim)
 	if err != nil {
 		klog.Errorf("Error preparing devices for claim %v: %v", claim.UID, err)
 		return kubeletplugin.PrepareResult{

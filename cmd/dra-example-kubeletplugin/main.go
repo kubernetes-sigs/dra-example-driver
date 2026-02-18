@@ -52,6 +52,7 @@ type Flags struct {
 	healthcheckPort               int
 	profile                       string
 	driverName                    string
+	gpuDeviceStatus               bool
 }
 
 type Config struct {
@@ -146,6 +147,12 @@ func newApp() *cli.App {
 			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
+		},
+		&cli.BoolFlag{
+			Name:        "gpu-device-status",
+			Usage:       "Enable adding allocated device attributes (e.g., model, uuid, driverVersion) into ResourceClaim.status.devices[].data. Disabled by default.",
+			Destination: &flags.gpuDeviceStatus,
+			EnvVars:     []string{"GPU_DEVICE_STATUS"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
