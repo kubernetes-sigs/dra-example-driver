@@ -84,7 +84,8 @@ func (d *driver) Shutdown(logger klog.Logger) error {
 }
 
 func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceapi.ResourceClaim) (map[types.UID]kubeletplugin.PrepareResult, error) {
-	klog.Infof("PrepareResourceClaims is called: number of claims: %d", len(claims))
+	logger := klog.FromContext(ctx)
+	logger.Info("PrepareResourceClaims is called", "numClaims", len(claims))
 	result := make(map[types.UID]kubeletplugin.PrepareResult)
 
 	for _, claim := range claims {
@@ -94,11 +95,12 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 	return result, nil
 }
 
-func (d *driver) prepareResourceClaim(_ context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
-	klog.Infof("Preparing claim: UID=%s, Namespace=%s, Name=%s", claim.UID, claim.Namespace, claim.Name)
+func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
+	logger := klog.FromContext(ctx)
+	logger.Info("Preparing claim", "uid", claim.UID, "namespace", claim.Namespace, "name", claim.Name)
 	preparedPBs, err := d.state.Prepare(claim)
 	if err != nil {
-		klog.Errorf("Error preparing devices for claim %v: %v", claim.UID, err)
+		logger.Error(err, "Error preparing devices for claim", "uid", claim.UID)
 		return kubeletplugin.PrepareResult{
 			Err: fmt.Errorf("error preparing devices for claim %v: %w", claim.UID, err),
 		}
@@ -113,12 +115,13 @@ func (d *driver) prepareResourceClaim(_ context.Context, claim *resourceapi.Reso
 		})
 	}
 
-	klog.Infof("Returning newly prepared devices for claim '%v': %v", claim.UID, prepared)
+	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)
 	return kubeletplugin.PrepareResult{Devices: prepared}
 }
 
 func (d *driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
-	klog.Infof("UnprepareResourceClaims is called: number of claims: %d", len(claims))
+	logger := klog.FromContext(ctx)
+	logger.Info("UnprepareResourceClaims is called", "numClaims", len(claims))
 	result := make(map[types.UID]error)
 
 	for _, claim := range claims {

@@ -19,8 +19,6 @@ jobs:
         go-version: ${{ matrix.version }}
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Update vendor modules
-      run: go mod vendor
     - name: Build
       run: make PREFIX=artifacts cmds
     - name: List binaries
