@@ -121,7 +121,8 @@ setup-e2e:
 	test/e2e/setup-e2e.sh
 
 test-e2e:
-	test/e2e/e2e.sh
+	(GOBIN=$(PWD) go install github.com/onsi/ginkgo/v2/ginkgo@latest)
+	./ginkgo --tags=e2e ./test/e2e/...
 
 teardown-e2e:
 	test/e2e/teardown-e2e.sh

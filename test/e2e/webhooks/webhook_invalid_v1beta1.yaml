@@ -1,0 +1,20 @@
+apiVersion: resource.k8s.io/v1beta1
+kind: ResourceClaim
+metadata:
+  name: webhook-test-v1beta1
+spec:
+  devices:
+    requests:
+    - name: ts-gpu
+      deviceClassName: gpu.example.com
+    config:
+    - requests: ["ts-gpu"]
+      opaque:
+        driver: gpu.example.com
+        parameters:
+          apiVersion: gpu.resource.example.com/v1alpha1
+          kind: GpuConfig
+          sharing:
+            strategy: TimeSlicing
+            timeSlicingConfig:
+              interval: InvalidInterval
