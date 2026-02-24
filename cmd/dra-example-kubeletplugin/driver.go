@@ -27,6 +27,7 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 )
 
 type driver struct {
@@ -107,12 +108,16 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 	}
 	var prepared []kubeletplugin.Device
 	for _, preparedPB := range preparedPBs {
-		prepared = append(prepared, kubeletplugin.Device{
+		device := kubeletplugin.Device{
 			Requests:     preparedPB.GetRequestNames(),
 			PoolName:     preparedPB.GetPoolName(),
 			DeviceName:   preparedPB.GetDeviceName(),
 			CDIDeviceIDs: preparedPB.GetCdiDeviceIds(),
-		})
+		}
+		if shareIdStr := preparedPB.GetShareId(); shareIdStr != "" {
+			device.ShareID = ptr.To(types.UID(shareIdStr))
+		}
+		prepared = append(prepared, device)
 	}
 
 	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)
