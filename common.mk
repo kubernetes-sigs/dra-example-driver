@@ -21,7 +21,7 @@ VERSION  ?=
 vVERSION := v$(VERSION:v%=%)
 
 VENDOR := example.com
-APIS := gpu/v1alpha1
+APIS := gpu/v1alpha1 net/v1alpha1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters
 PLURAL_EXCEPTIONS += GpuClaimParameters:GpuClaimParameters
