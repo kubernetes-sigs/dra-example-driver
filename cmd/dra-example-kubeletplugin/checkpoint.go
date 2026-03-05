@@ -17,49 +17,31 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
+	"k8s.io/utils/ptr"
+
+	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 )
 
-type PreparedClaims map[string]profiles.PreparedDevices
-
-type Checkpoint struct {
-	V1 *CheckpointV1 `json:"v1,omitempty"`
-}
-
-type CheckpointV1 struct {
-	PreparedClaims PreparedClaims `json:"preparedClaims,omitempty"`
-}
-
-func newCheckpoint() *Checkpoint {
-	pc := &Checkpoint{
-		V1: &CheckpointV1{},
-	}
-	return pc
-}
-
-func readCheckpoint(path string) (*Checkpoint, error) {
+func readCheckpoint(serializer *json.Serializer, path string) (*checkpointapi.Checkpoint, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	checkpoint := new(Checkpoint)
-	err = json.Unmarshal(data, checkpoint)
+	checkpoint := new(checkpointapi.Checkpoint)
+	_, _, err = serializer.Decode(data, ptr.To(checkpointapi.SchemeGroupVersion.WithKind("Checkpoint")), checkpoint)
 	if err != nil {
 		return nil, fmt.Errorf("unmarshal json from %s: %w", path, err)
 	}
 	return checkpoint, nil
 }
 
-func writeCheckpoint(path string, checkpoint *Checkpoint) (err error) {
-	data, err := json.Marshal(checkpoint)
-	if err != nil {
-		return fmt.Errorf("marshal json: %w", err)
-	}
+func writeCheckpoint(serializer *json.Serializer, path string, checkpoint *checkpointapi.Checkpoint) (err error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "tmp-checkpoint-*")
 	if err != nil {
@@ -70,8 +52,9 @@ func writeCheckpoint(path string, checkpoint *Checkpoint) (err error) {
 			err = fmt.Errorf("close temp file: %w", err1)
 		}
 	}()
-	if _, err := tmp.Write(data); err != nil {
-		return fmt.Errorf("write to temp file %s: %w", tmp.Name(), err)
+	err = serializer.Encode(checkpoint, tmp)
+	if err != nil {
+		return fmt.Errorf("serialize json: %w", err)
 	}
 	if err := tmp.Sync(); err != nil {
 		return fmt.Errorf("sync temp file: %w", err)
@@ -82,32 +65,15 @@ func writeCheckpoint(path string, checkpoint *Checkpoint) (err error) {
 	return nil
 }
 
-func (cp *Checkpoint) GetPreparedDevices(claimUID string) profiles.PreparedDevices {
-	if cp.V1 == nil {
-		return nil
+func getPreparedDevices(preparedClaim checkpointapi.PreparedClaim) []*drapbv1.Device {
+	var devices []*drapbv1.Device
+	for _, preparedDevice := range preparedClaim.PreparedDevices {
+		devices = append(devices, &drapbv1.Device{
+			RequestNames: preparedDevice.Device.RequestNames,
+			PoolName:     preparedDevice.Device.PoolName,
+			DeviceName:   preparedDevice.Device.DeviceName,
+			CdiDeviceIds: preparedDevice.Device.CdiDeviceIds,
+		})
 	}
-	if devices, ok := cp.V1.PreparedClaims[claimUID]; ok {
-		return devices
-	}
-	return nil
-}
-
-func (cp *Checkpoint) AddPreparedDevices(claimUID string, pds profiles.PreparedDevices) {
-	if cp.V1 == nil {
-		return
-	}
-
-	if cp.V1.PreparedClaims == nil {
-		cp.V1.PreparedClaims = make(PreparedClaims)
-	}
-
-	cp.V1.PreparedClaims[claimUID] = pds
-}
-
-func (cp *Checkpoint) RemovePreparedDevices(claimUID string) {
-	if cp.V1 == nil {
-		return
-	}
-
-	delete(cp.V1.PreparedClaims, claimUID)
+	return devices
 }
