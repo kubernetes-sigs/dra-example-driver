@@ -26,7 +26,7 @@ import (
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
-	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 )
 
 const cdiCommonDeviceName = "common"
@@ -85,7 +85,7 @@ func (cdi *CDIHandler) CreateCommonSpecFile() error {
 	return cdi.cache.WriteSpec(spec, specName)
 }
 
-func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.PreparedDevices) error {
+func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices []checkpointapi.PreparedDevice) error {
 	specName := cdiapi.GenerateTransientSpecName(cdi.vendor(), cdi.class, claimUID)
 
 	spec := &cdispec.Spec{
