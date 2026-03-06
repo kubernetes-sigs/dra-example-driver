@@ -1,0 +1,47 @@
+# One pod, one container
+# Uses a CEL expression selector instead of matching on a DeviceClass
+# Selects a GPU with at least 80Gi of memory
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-test8
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: gpu-test8
+  name: single-gpu-cel
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.capacity['gpu.example.com'].memory == quantity('80Gi')"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-test8
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu-cel
