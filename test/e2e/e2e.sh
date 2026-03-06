@@ -57,6 +57,7 @@ kubectl create -f demo/gpu-test7.yaml
 kubectl create -f demo/gpu-test4.yaml
 kubectl create -f demo/gpu-test5.yaml
 kubectl create -f demo/gpu-test6.yaml
+kubectl create -f demo/gpu-test8.yaml
 
 function gpus-from-logs {
   local logs="$1"
@@ -450,6 +451,29 @@ if [[ "$gpu_test7_pod0_ctr0_admin_access" != "true" ]]; then
 fi
 echo "Pod gpu-test7/pod0, container ctr0 has admin access: $gpu_test7_pod0_ctr0_admin_access"
 
+kubectl wait --for=condition=Ready -n gpu-test8 pod/pod0 --timeout=120s
+gpu_test_8=$(kubectl get pods -n gpu-test8 | grep -c 'Running')
+if [ $gpu_test_8 != 1 ]; then
+    echo "gpu_test_8 $gpu_test_8 failed to match against 1 expected pod"
+    exit 1
+fi
+
+gpu_test8_pod0_ctr0_logs=$(kubectl logs -n gpu-test8 pod0 -c ctr0)
+gpu_test8_pod0_ctr0_gpus=$(gpus-from-logs "$gpu_test8_pod0_ctr0_logs")
+gpu_test8_pod0_ctr0_gpus_count=$(echo "$gpu_test8_pod0_ctr0_gpus" | wc -w | tr -d ' ')
+if [[ $gpu_test8_pod0_ctr0_gpus_count != 1 ]]; then
+  echo "Expected Pod gpu-test8/pod0, container ctr0 to have 1 GPU, but got $gpu_test8_pod0_ctr0_gpus_count: $gpu_test8_pod0_ctr0_gpus"
+  exit 1
+fi
+gpu_test8_pod0_ctr0_gpu="$gpu_test8_pod0_ctr0_gpus"
+if gpu-already-seen "$gpu_test8_pod0_ctr0_gpu"; then
+  echo "Pod gpu-test8/pod0, container ctr0 should have a new GPU but claimed $gpu_test8_pod0_ctr0_gpu which is already claimed"
+  exit 1
+fi
+echo "Pod gpu-test8/pod0, container ctr0 claimed $gpu_test8_pod0_ctr0_gpu"
+observed_gpus+=("$gpu_test8_pod0_ctr0_gpu")
+
+
 
 # test that deletion is fast (less than the default grace period of 30s)
 # see https://github.com/kubernetes/kubernetes/issues/127188 for details
@@ -460,6 +484,7 @@ kubectl delete -f demo/gpu-test4.yaml --timeout=25s
 kubectl delete -f demo/gpu-test5.yaml --timeout=25s
 kubectl delete -f demo/gpu-test6.yaml --timeout=25s
 kubectl delete -f demo/gpu-test7.yaml --timeout=25s
+kubectl delete -f demo/gpu-test8.yaml --timeout=25s
 
 # Webhook should reject invalid v1 resources
 if ! kubectl create --dry-run=server -f- <<'EOF' 2>&1 | grep -qF 'unknown time-slice interval'
