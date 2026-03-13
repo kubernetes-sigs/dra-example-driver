@@ -36,8 +36,10 @@ import (
 const ProfileName = "gpu"
 
 type Profile struct {
-	nodeName string
-	numGPUs  int
+	nodeName             string
+	numGPUs              int
+	partitionableDevices bool
+	partitionsPerGPU     int
 }
 
 func NewProfile(nodeName string, numGPUs int) Profile {
@@ -47,10 +49,28 @@ func NewProfile(nodeName string, numGPUs int) Profile {
 	}
 }
 
+// NewPartitionableProfile creates a profile with partitionable devices support.
+// Each GPU will have a shared counter set for memory and compute resources,
+// and will expose multiple partition devices that consume from those counters.
+func NewPartitionableProfile(nodeName string, numGPUs int, partitionsPerGPU int) Profile {
+	return Profile{
+		nodeName:             nodeName,
+		numGPUs:              numGPUs,
+		partitionableDevices: true,
+		partitionsPerGPU:     partitionsPerGPU,
+	}
+}
+
 func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 	seed := p.nodeName
 	uuids := generateUUIDs(seed, p.numGPUs)
 
+	// If partitionable devices are enabled, create devices with shared counters
+	if p.partitionableDevices {
+		return p.enumeratePartitionableDevices(uuids)
+	}
+
+	// Standard non-partitionable devices
 	var devices []resourceapi.Device
 	for i, uuid := range uuids {
 		device := resourceapi.Device{
@@ -84,6 +104,153 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 				Slices: []resourceslice.Slice{
 					{
 						Devices: devices,
+					},
+				},
+			},
+		},
+	}
+
+	return resources, nil
+}
+
+// enumeratePartitionableDevices creates devices with shared counters for partitionable devices.
+// Each physical GPU is represented as a CounterSet with memory and compute counters.
+// Multiple partition devices are created that consume from these counters.
+func (p Profile) enumeratePartitionableDevices(uuids []string) (resourceslice.DriverResources, error) {
+	var devices []resourceapi.Device
+	var sharedCounters []resourceapi.CounterSet
+
+	// Memory per GPU in bytes (80Gi)
+	memoryPerGPU := resource.MustParse("80Gi")
+	// Compute units per GPU (abstract units representing GPU compute capacity)
+	computePerGPU := resource.MustParse("100")
+
+	for i, uuid := range uuids {
+		// Create a CounterSet for each physical GPU
+		// This represents the shared resources (memory, compute) of the GPU
+		counterSetName := fmt.Sprintf("gpu-%d-counters", i)
+		counterSet := resourceapi.CounterSet{
+			Name: counterSetName,
+			Counters: map[string]resourceapi.Counter{
+				"memory": {
+					Value: memoryPerGPU,
+				},
+				"compute": {
+					Value: computePerGPU,
+				},
+			},
+		}
+		sharedCounters = append(sharedCounters, counterSet)
+
+		// Calculate resources per partition
+		partitions := p.partitionsPerGPU
+		if partitions <= 0 {
+			partitions = 4 // Default to 4 partitions per GPU
+		}
+		memoryPerPartition := memoryPerGPU.Value() / int64(partitions)
+		computePerPartition := computePerGPU.Value() / int64(partitions)
+
+		// Create partition devices that consume from the counter set
+		for j := 0; j < partitions; j++ {
+			device := resourceapi.Device{
+				Name: fmt.Sprintf("gpu-%d-partition-%d", i, j),
+				Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+					"index": {
+						IntValue: ptr.To(int64(i)),
+					},
+					"partition": {
+						IntValue: ptr.To(int64(j)),
+					},
+					"uuid": {
+						StringValue: ptr.To(uuid),
+					},
+					"model": {
+						StringValue: ptr.To("LATEST-GPU-MODEL"),
+					},
+					"driverVersion": {
+						VersionValue: ptr.To("1.0.0"),
+					},
+					"partitionable": {
+						BoolValue: ptr.To(true),
+					},
+				},
+				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+					"memory": {
+						Value: *resource.NewQuantity(memoryPerPartition, resource.BinarySI),
+					},
+				},
+				// This device consumes from the shared counter set
+				ConsumesCounters: []resourceapi.DeviceCounterConsumption{
+					{
+						CounterSet: counterSetName,
+						Counters: map[string]resourceapi.Counter{
+							"memory": {
+								Value: *resource.NewQuantity(memoryPerPartition, resource.BinarySI),
+							},
+							"compute": {
+								Value: *resource.NewQuantity(computePerPartition, resource.DecimalSI),
+							},
+						},
+					},
+				},
+			}
+			devices = append(devices, device)
+		}
+
+		// Also create a "full GPU" device that consumes all resources
+		// This allows allocating the entire GPU if needed
+		fullDevice := resourceapi.Device{
+			Name: fmt.Sprintf("gpu-%d-full", i),
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"index": {
+					IntValue: ptr.To(int64(i)),
+				},
+				"uuid": {
+					StringValue: ptr.To(uuid),
+				},
+				"model": {
+					StringValue: ptr.To("LATEST-GPU-MODEL"),
+				},
+				"driverVersion": {
+					VersionValue: ptr.To("1.0.0"),
+				},
+				"partitionable": {
+					BoolValue: ptr.To(true),
+				},
+				"full": {
+					BoolValue: ptr.To(true),
+				},
+			},
+			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
+				"memory": {
+					Value: memoryPerGPU,
+				},
+			},
+			// Full GPU consumes all counters
+			ConsumesCounters: []resourceapi.DeviceCounterConsumption{
+				{
+					CounterSet: counterSetName,
+					Counters: map[string]resourceapi.Counter{
+						"memory": {
+							Value: memoryPerGPU,
+						},
+						"compute": {
+							Value: computePerGPU,
+						},
+					},
+				},
+			},
+		}
+		devices = append(devices, fullDevice)
+	}
+
+	resources := resourceslice.DriverResources{
+		Pools: map[string]resourceslice.Pool{
+			p.nodeName: {
+				Slices: []resourceslice.Slice{
+					{
+						Devices:        devices,
+						SharedCounters: sharedCounters,
 					},
 				},
 			},

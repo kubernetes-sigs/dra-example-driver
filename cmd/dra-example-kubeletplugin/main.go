@@ -52,6 +52,8 @@ type Flags struct {
 	healthcheckPort               int
 	profile                       string
 	driverName                    string
+	partitionableDevices          bool
+	partitionsPerGPU              int
 }
 
 type Config struct {
@@ -64,6 +66,9 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
+		if flags.partitionableDevices {
+			return gpu.NewPartitionableProfile(flags.nodeName, flags.numDevices, flags.partitionsPerGPU)
+		}
 		return gpu.NewProfile(flags.nodeName, flags.numDevices)
 	},
 }
@@ -146,6 +151,20 @@ func newApp() *cli.App {
 			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
+		},
+		&cli.BoolFlag{
+			Name:        "partitionable-devices",
+			Usage:       "Enable partitionable devices support (DRAPartitionableDevices feature). When enabled, GPUs are exposed with shared counters allowing flexible partitioning.",
+			Value:       false,
+			Destination: &flags.partitionableDevices,
+			EnvVars:     []string{"PARTITIONABLE_DEVICES"},
+		},
+		&cli.IntFlag{
+			Name:        "partitions-per-gpu",
+			Usage:       "Number of partitions per GPU when partitionable devices are enabled.",
+			Value:       4,
+			Destination: &flags.partitionsPerGPU,
+			EnvVars:     []string{"PARTITIONS_PER_GPU"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
