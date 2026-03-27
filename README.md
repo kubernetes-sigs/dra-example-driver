@@ -424,6 +424,21 @@ Finally, you can run the following to cleanup your environment and delete the
 ./demo/delete-cluster.sh
 ```
 
+### Experimental minikube support
+In order to run this demo using minikube you can start it via this following
+command:
+
+```bash
+./demo/scripts/create-minikube-cluster.sh
+```
+
+Then install the driver like shown in [demo](#Demo) section.
+
+To delete the cluster you can run:
+```bash
+./demo/scripts/delete-minikube-cluster.sh
+```
+
 ## Device Profiles
 
 The example driver can manage several different kinds of devices to demonstrate
