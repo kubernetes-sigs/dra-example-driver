@@ -22,27 +22,10 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
 type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
-
-type PreparedDevice struct {
-	drapbv1.Device
-	ContainerEdits *cdiapi.ContainerEdits
-	AdminAccess    bool
-}
-
-type PreparedDevices []*PreparedDevice
-
-func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
-	var devices []*drapbv1.Device
-	for _, pd := range pds {
-		devices = append(devices, &pd.Device)
-	}
-	return devices
-}
 
 // Profile describes a kind of device that can be managed by the driver.
 type Profile interface {
