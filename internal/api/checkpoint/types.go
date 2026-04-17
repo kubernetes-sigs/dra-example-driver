@@ -27,7 +27,9 @@ import (
 //
 // The example driver can deterministically reconstruct the entire CDI config
 // for any given claim from the ResourceClaim, so it doesn't need to persist any
-// other data. Other drivers may need to include more data in their checkpoints.
+// other data. Other drivers may need to include more data in their checkpoints
+// if first-time setup produces non-deterministic data or side-effects that need
+// to be undone when the claim is unprepared.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Checkpoint struct {

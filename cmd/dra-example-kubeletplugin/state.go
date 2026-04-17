@@ -154,26 +154,24 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if err != nil {
 		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
-
-	preparedDevices, err := s.restoreCheckpoint(checkpoint, claim)
+	restoredDevices, err := s.restoreCheckpoint(checkpoint, claim)
 	if err != nil {
 		return nil, fmt.Errorf("unable to restore from checkpoint: %v", err)
 	}
-	if preparedDevices != nil {
-		return preparedDevices.GetDevices(), nil
+	if restoredDevices != nil {
+		return restoredDevices.GetDevices(), nil
 	}
-	preparedDevices, err = s.prepareDevices(claim)
+
+	preparedDevices, err := s.prepareDevices(claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
+	s.addClaimToCheckpoint(checkpoint, claim, preparedDevices)
 
 	if err = s.cdi.CreateClaimSpecFile(string(claim.UID), preparedDevices); err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
 	}
 
-	if !slices.ContainsFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == claim.UID }) {
-		checkpoint.PreparedClaims = append(checkpoint.PreparedClaims, checkpointapi.PreparedClaim{UID: claim.UID})
-	}
 	if err := writeCheckpoint(s.checkpointPath, s.checkpointEncoder, checkpoint); err != nil {
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
@@ -181,7 +179,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	return preparedDevices.GetDevices(), nil
 }
 
-func (s *DeviceState) Unprepare(claimUID string) error {
+func (s *DeviceState) Unprepare(claimUID types.UID) error {
 	s.Lock()
 	defer s.Unlock()
 
@@ -192,16 +190,16 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 		}
 	}
 
-	if err := s.unprepareDevices(claimUID); err != nil {
+	if err := s.unprepareDevices(claimUID, checkpoint); err != nil {
 		return fmt.Errorf("unprepare failed: %v", err)
 	}
+	s.removeClaimFromCheckpoint(checkpoint, claimUID)
 
-	err = s.cdi.DeleteClaimSpecFile(claimUID)
+	err = s.cdi.DeleteClaimSpecFile(string(claimUID))
 	if err != nil {
 		return fmt.Errorf("unable to delete CDI spec file for claim: %v", err)
 	}
 
-	checkpoint.PreparedClaims = slices.DeleteFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == types.UID(claimUID) })
 	if err := writeCheckpoint(s.checkpointPath, s.checkpointEncoder, checkpoint); err != nil {
 		return fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
@@ -209,7 +207,25 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
+// prepareDevices performs one-time setup for the devices allocated to a
+// ResourceClaim before being consumed by a Pod.
 func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
+	return s.computeDeviceConfig(claim)
+}
+
+// unprepareDevices undoes any side-effects produced by
+// [DeviceState.prepareDevices].
+func (s *DeviceState) unprepareDevices(claimUID types.UID, checkpoint *checkpointapi.Checkpoint) error {
+	return nil
+}
+
+// computeDeviceConfig computes the CDI config for devices allocated to the claim
+// designated for this driver. It is called each time the kubelet tells the
+// driver to prepare a claim which may occur more than once, and therefore
+// should be deterministic and produce no side-effects. Non-deterministic data or
+// side-effects should be produced by [DeviceState.prepareDevices] directly and
+// recorded in the checkpoint by [DeviceState.addClaimToCheckpoint].
+func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
@@ -289,15 +305,28 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (Prepared
 	return preparedDevices, nil
 }
 
-func (s *DeviceState) unprepareDevices(claimUID string) error {
-	return nil
+// addClaimToCheckpoint updates the checkpoint with results of preparing the
+// devices for the claim. If any parts of the [PreparedDevices] are
+// non-deterministic or expensive to recompute, then those should also be added
+// to the checkpoint here.
+func (*DeviceState) addClaimToCheckpoint(checkpoint *checkpointapi.Checkpoint, claim *resourceapi.ResourceClaim, _ PreparedDevices) {
+	checkpoint.PreparedClaims = append(checkpoint.PreparedClaims, checkpointapi.PreparedClaim{UID: claim.UID})
+}
+
+// removeClaimFromCheckpoint updates the checkpoint to remove all data
+// associated with the claim.
+func (*DeviceState) removeClaimFromCheckpoint(checkpoint *checkpointapi.Checkpoint, claimUID types.UID) {
+	checkpoint.PreparedClaims = slices.DeleteFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == claimUID })
 }
 
 // restoreCheckpoint returns the device definitions for devices already prepared
 // for the given claim. If the claim has not yet been prepared, it returns nil.
 func (s *DeviceState) restoreCheckpoint(checkpoint *checkpointapi.Checkpoint, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
 	if slices.ContainsFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == claim.UID }) {
-		return s.prepareDevices(claim)
+		// If [DeviceState.addClaimToCheckpoint] associated any other data with
+		// the claim in the checkpoint, then that should be added to the
+		// returned [PreparedDevices] here.
+		return s.computeDeviceConfig(claim)
 	}
 	return nil, nil
 }
