@@ -52,6 +52,7 @@ type Flags struct {
 	healthcheckPort               int
 	profile                       string
 	driverName                    string
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -146,6 +147,13 @@ func newApp() *cli.App {
 			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

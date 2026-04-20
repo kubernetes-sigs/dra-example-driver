@@ -84,6 +84,10 @@ spec:
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
         {{- end }}
+        {{- if .Values.kubeletPlugin.enableDeviceMetadata }}
+        - name: ENABLE_DEVICE_METADATA
+          value: {{ .Values.kubeletPlugin.enableDeviceMetadata | quote }}
+        {{- end }}
         volumeMounts:
         - name: plugins-registry
           mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
