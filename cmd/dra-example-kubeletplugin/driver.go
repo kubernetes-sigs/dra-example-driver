@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	coreclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/dynamic-resource-allocation/api/metadata/v1alpha1"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 )
@@ -57,6 +58,8 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		kubeletplugin.DriverName(config.flags.driverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
+		kubeletplugin.EnableDeviceMetadata(config.flags.enableDeviceMetadata),
+		kubeletplugin.MetadataVersions(v1alpha1.SchemeGroupVersion),
 	)
 	if err != nil {
 		return nil, err
@@ -107,12 +110,20 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 	}
 	var prepared []kubeletplugin.Device
 	for _, preparedPB := range preparedPBs {
-		prepared = append(prepared, kubeletplugin.Device{
+		dev := kubeletplugin.Device{
 			Requests:     preparedPB.GetRequestNames(),
 			PoolName:     preparedPB.GetPoolName(),
 			DeviceName:   preparedPB.GetDeviceName(),
 			CDIDeviceIDs: preparedPB.GetCdiDeviceIds(),
-		})
+		}
+		if allocDev, ok := d.state.allocatable[preparedPB.GetDeviceName()]; ok && len(allocDev.Attributes) > 0 {
+			attrs := make(map[string]resourceapi.DeviceAttribute, len(allocDev.Attributes))
+			for k, v := range allocDev.Attributes {
+				attrs[string(k)] = v
+			}
+			dev.Metadata = &kubeletplugin.DeviceMetadata{Attributes: attrs}
+		}
+		prepared = append(prepared, dev)
 	}
 
 	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)

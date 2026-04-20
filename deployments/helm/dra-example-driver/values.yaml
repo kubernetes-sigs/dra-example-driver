@@ -48,6 +48,7 @@ kubeletPlugin:
   affinity: {}
   kubeletRegistrarDirectoryPath: /var/lib/kubelet/plugins_registry
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
+  enableDeviceMetadata: false
   containers:
     init:
       securityContext: {}
