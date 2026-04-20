@@ -20,13 +20,11 @@ package e2e
 
 import (
 	"fmt"
-	"os/exec"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"github.com/onsi/gomega/gbytes"
-	"github.com/onsi/gomega/gexec"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 var _ = Describe("Test GPU allocation", func() {
@@ -34,11 +32,10 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test1"
 		pods := []string{"pod0", "pod1"}
 		containerName := "ctr0"
-		expectedPodCount := 2
 		expectedGPUCount := 1
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have exactly 1 unclaimed GPU per container", func() {
 			for _, podName := range pods {
@@ -50,11 +47,10 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test2"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
-		expectedPodCount := 1
 		expectedGPUCount := 2
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have exactly 2 unclaimed GPUs", func() {
 			verifyGPUAllocation(namespace, pods[0], containerName, expectedGPUCount)
@@ -64,13 +60,12 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test3"
 		pods := []string{"pod0"}
 		containerNames := []string{"ctr0", "ctr1"}
-		expectedPodCount := 1
 		expectedGPUCount := 1
-		expectedSharingStrategy := "TimeSlicing"
-		expectedTimeSliceInterval := "Default"
+		expectedSharingStrategy := string(gpuv1alpha1.TimeSlicingStrategy)
+		expectedTimeSliceInterval := string(gpuv1alpha1.DefaultTimeSlice)
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have 1 GPU shared in time with default timeslice interval for each container", func() {
 			var gpus []string
@@ -91,7 +86,7 @@ var _ = Describe("Test GPU allocation", func() {
 						verifySharedGPU(g, gpuCtr1, gpuCtr0, namespace, pods[0], containerName)
 					}
 					verifyGPUProperties(g, logs, namespace, pods[0], containerName, gpus, expectedSharingStrategy, "TIMESLICE_INTERVAL", expectedTimeSliceInterval)
-				}, timeout, interval).Should(Succeed())
+				}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 			}
 		})
 	})
@@ -99,13 +94,12 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test4"
 		pods := []string{"pod0", "pod1"}
 		containers := []string{"ctr0"}
-		expectedPodCount := 2
 		expectedGPUCount := 1
-		expectedSharingStrategy := "TimeSlicing"
-		expectedTimeSliceInterval := "Default"
+		expectedSharingStrategy := string(gpuv1alpha1.TimeSlicingStrategy)
+		expectedTimeSliceInterval := string(gpuv1alpha1.DefaultTimeSlice)
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have 1 GPU shared in time with default timeslice interval for each pod", func() {
 			var gpus []string
@@ -126,7 +120,7 @@ var _ = Describe("Test GPU allocation", func() {
 						verifySharedGPU(g, gpuPod1Ctr0, gpuPod0Ctr0, namespace, podName, containers[0])
 					}
 					verifyGPUProperties(g, logs, namespace, podName, containers[0], gpus, expectedSharingStrategy, "TIMESLICE_INTERVAL", expectedTimeSliceInterval)
-				}, timeout, interval).Should(Succeed())
+				}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 			}
 		})
 	})
@@ -135,15 +129,14 @@ var _ = Describe("Test GPU allocation", func() {
 		pods := []string{"pod0"}
 		tsContainers := []string{"ts-ctr0", "ts-ctr1"}
 		spContainers := []string{"sp-ctr0", "sp-ctr1"}
-		expectedPodCount := 1
 		expectedGPUCount := 1
-		expectedTSSharingStrategy := "TimeSlicing"
-		expectedSPSharingStrategy := "SpacePartitioning"
+		expectedTSSharingStrategy := string(gpuv1alpha1.TimeSlicingStrategy)
+		expectedSPSharingStrategy := string(gpuv1alpha1.SpacePartitioningStrategy)
 		expectedPartitionCount := "10"
-		expectedTimeSliceInterval := "Long"
+		expectedTimeSliceInterval := string(gpuv1alpha1.LongTimeSlice)
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have exactly 1 GPU shared in time with long timeslice interval for each container", func() {
 			var gpus []string
@@ -164,7 +157,7 @@ var _ = Describe("Test GPU allocation", func() {
 						verifySharedGPU(g, gpuTsCtr1, gpuTsCtr0, namespace, pods[0], containerName)
 					}
 					verifyGPUProperties(g, logs, namespace, pods[0], containerName, gpus, expectedTSSharingStrategy, "TIMESLICE_INTERVAL", expectedTimeSliceInterval)
-				}, timeout, interval).Should(Succeed())
+				}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 			}
 		})
 		It("should have exactly 1 GPU shared in space for each container", func() {
@@ -186,7 +179,7 @@ var _ = Describe("Test GPU allocation", func() {
 						verifySharedGPU(g, gpuSpCtr1, gpuSpCtr0, namespace, pods[0], containerName)
 					}
 					verifyGPUProperties(g, logs, namespace, pods[0], containerName, gpus, expectedSPSharingStrategy, "PARTITION_COUNT", expectedPartitionCount)
-				}, timeout, interval).Should(Succeed())
+				}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 			}
 		})
 	})
@@ -194,13 +187,12 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test6"
 		pods := []string{"pod0"}
 		containerNames := []string{"init0", "ctr0"}
-		expectedPodCount := 1
 		expectedGPUCount := 1
-		expectedSharingStrategy := "TimeSlicing"
-		expectedTimeSliceInterval := "Default"
+		expectedSharingStrategy := string(gpuv1alpha1.TimeSlicingStrategy)
+		expectedTimeSliceInterval := string(gpuv1alpha1.DefaultTimeSlice)
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have exactly 1 unclaimed GPU shared in time with default timeslice interval", func() {
 			var gpus []string
@@ -221,7 +213,7 @@ var _ = Describe("Test GPU allocation", func() {
 						verifySharedGPU(g, gpuCtr0, gpuInit0, namespace, pods[0], containerName)
 					}
 					verifyGPUProperties(g, logs, namespace, pods[0], containerName, gpus, expectedSharingStrategy, "TIMESLICE_INTERVAL", expectedTimeSliceInterval)
-				}, timeout, interval).Should(Succeed())
+				}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 			}
 		})
 	})
@@ -229,10 +221,9 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test7"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
-		expectedPodCount := 1
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have DRA_ADMIN_ACCESS set to true", func() {
 			verifyDRAAdminAccess(namespace, pods[0], containerName, "true")
@@ -242,11 +233,10 @@ var _ = Describe("Test GPU allocation", func() {
 		namespace := "gpu-test8"
 		pods := []string{"pod0"}
 		containerNames := []string{"ctr0"}
-		expectedPodCount := 1
 		expectedGPUCount := 1
 
 		It("should have all the pods ready and running", func() {
-			checkPodsReadyAndRunning(namespace, pods, expectedPodCount)
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
 		})
 		It("should have exactly 1 unclaimed GPU selected using cel expression", func() {
 			verifyGPUAllocation(namespace, pods[0], containerNames[0], expectedGPUCount)
@@ -266,15 +256,12 @@ var _ = Describe("Test GPU allocation", func() {
 			It("should reject invalid "+testCase.name, func(ctx SpecContext) {
 				manifestPath := filepath.Join(currentDir, "testdata", "webhooks", testCase.fileName)
 
-				cmd := exec.CommandContext(ctx, "kubectl", "create", "--dry-run=server", "-f", manifestPath)
-				webhookResponse, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
-				Expect(err).NotTo(HaveOccurred())
-				Eventually(webhookResponse).Should(gexec.Exit())
-
-				Expect(webhookResponse.ExitCode()).NotTo(Equal(0),
+				err := createManifestWithDryRun(ctx, dynamicClient, manifestPath)
+				fmt.Fprintf(GinkgoWriter, "Error from create: %v\n", err)
+				Expect(err).To(HaveOccurred(),
 					"Expected webhook to reject %s, but it was accepted", testCase.fileName)
-				Expect(webhookResponse.Err).To(gbytes.Say("unknown time-slice interval"),
-					"Webhook did not reject %s invalid GpuConfig with the expected message", testCase.name)
+				Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"),
+					"Webhook did not reject %s invalid GpuConfig with the expected message. Got error: %v", testCase.name, err)
 			})
 		}
 	})
