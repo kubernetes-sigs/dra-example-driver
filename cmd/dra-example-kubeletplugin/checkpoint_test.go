@@ -17,7 +17,6 @@
 package main
 
 import (
-	"io/fs"
 	"path/filepath"
 	"testing"
 
@@ -56,8 +55,8 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 			}
 
 			checkpoint, err := readCheckpoint(path, decoder)
-			assert.Nil(t, checkpoint)
-			assert.ErrorIs(t, err, fs.ErrNotExist)
+			assert.NoError(t, err)
+			assert.Equal(t, new(checkpointapi.Checkpoint), checkpoint)
 
 			checkpoint = test.checkpoint
 			err = writeCheckpoint(path, encoder, checkpoint)

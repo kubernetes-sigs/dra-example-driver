@@ -17,9 +17,7 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"path/filepath"
 	"slices"
 	"sync"
@@ -129,18 +127,6 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointPath:    filepath.Join(config.DriverPluginPath(), DriverPluginCheckpointFile),
 		checkpointDecoder: checkpointDecoder,
 		checkpointEncoder: checkpointEncoder,
-	}
-
-	_, err = readCheckpoint(state.checkpointPath, state.checkpointDecoder)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("failed to read checkpoint: %w", err)
-	}
-	if err == nil {
-		return state, nil
-	}
-
-	if err := writeCheckpoint(state.checkpointPath, state.checkpointEncoder, new(checkpointapi.Checkpoint)); err != nil {
-		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
 	return state, nil

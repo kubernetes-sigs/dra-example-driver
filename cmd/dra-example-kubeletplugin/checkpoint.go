@@ -17,7 +17,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -27,19 +29,27 @@ import (
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 )
 
+// readCheckpoint returns the Checkpoint at the given path in the format
+// expected by the given decoder. If the path doesn't exist, returns an empty
+// Checkpoint and no error.
 func readCheckpoint(path string, decoder runtime.Decoder) (*checkpointapi.Checkpoint, error) {
 	data, err := os.ReadFile(path)
-	if err != nil {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
 	checkpoint := new(checkpointapi.Checkpoint)
-	_, _, err = decoder.Decode(data, ptr.To(checkpointapi.SchemeGroupVersion.WithKind("Checkpoint")), checkpoint)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal JSON from %s: %w", path, err)
+	if data != nil {
+		_, _, err = decoder.Decode(data, ptr.To(checkpointapi.SchemeGroupVersion.WithKind("Checkpoint")), checkpoint)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal JSON from %s: %w", path, err)
+		}
 	}
 	return checkpoint, nil
 }
 
+// writeCheckpoint writes checkpoint to the file at path in
+// the format prescribed by encoder. The file is overwritten if it already
+// exists and is created if it does not already exist.
 func writeCheckpoint(path string, encoder runtime.Encoder, checkpoint *checkpointapi.Checkpoint) (err error) {
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, "tmp-checkpoint-*")
