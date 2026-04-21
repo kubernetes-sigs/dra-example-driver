@@ -23,19 +23,19 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
-	"sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
+	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 	"sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1alpha1"
 )
 
-// Install registers the internal and v1alpha1 metadata types with the given scheme.
+// Install registers the internal and v1alpha1 checkpoint types with the given scheme.
 func Install(scheme *runtime.Scheme) {
-	utilruntime.Must(checkpoint.AddToScheme(scheme))
+	utilruntime.Must(checkpointapi.AddToScheme(scheme))
 	utilruntime.Must(v1alpha1.AddToScheme(scheme))
 }
 
-// NewScheme returns a new runtime.Scheme with all metadata versions registered.
-// The returned scheme can decode any supported metadata version into the
-// internal metadata.DeviceMetadata type.
+// NewScheme returns a new runtime.Scheme with all checkpoint versions registered.
+// The returned scheme can decode any supported checkpoint version into the
+// internal [checkpointapi.Checkpoint] type.
 func NewScheme() *runtime.Scheme {
 	scheme := runtime.NewScheme()
 	Install(scheme)

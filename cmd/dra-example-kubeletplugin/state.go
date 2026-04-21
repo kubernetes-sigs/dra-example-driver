@@ -32,6 +32,7 @@ import (
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
+	checkpointinstall "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/install"
 	checkpointv1alpha1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
@@ -330,14 +331,7 @@ func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
 }
 
 func checkpointSerializer() (runtime.Decoder, runtime.Encoder, error) {
-	checkpointScheme := runtime.NewScheme()
-	sb := runtime.NewSchemeBuilder(
-		checkpointapi.AddToScheme,
-		checkpointv1alpha1.AddToScheme,
-	)
-	if err := sb.AddToScheme(checkpointScheme); err != nil {
-		return nil, nil, fmt.Errorf("create checkpoint scheme: %w", err)
-	}
+	checkpointScheme := checkpointinstall.NewScheme()
 	checkpointJSON := json.NewSerializerWithOptions(
 		json.DefaultMetaFactory,
 		checkpointScheme,
