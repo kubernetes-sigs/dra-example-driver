@@ -137,6 +137,7 @@ teardown-e2e:
 .build-image: docker/Dockerfile.devel
 	if [ x"$(SKIP_IMAGE_BUILD)" = x"" ]; then \
 		$(CONTAINER_TOOL) build \
+			--progress=plain \
 			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 			--tag $(BUILDIMAGE) \
 			-f $(^) \
