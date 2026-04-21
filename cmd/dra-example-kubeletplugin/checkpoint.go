@@ -35,7 +35,7 @@ func readCheckpoint(path string, decoder runtime.Decoder) (*checkpointapi.Checkp
 	checkpoint := new(checkpointapi.Checkpoint)
 	_, _, err = decoder.Decode(data, ptr.To(checkpointapi.SchemeGroupVersion.WithKind("Checkpoint")), checkpoint)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshal json from %s: %w", path, err)
+		return nil, fmt.Errorf("unmarshal JSON from %s: %w", path, err)
 	}
 	return checkpoint, nil
 }
