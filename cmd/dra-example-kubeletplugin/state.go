@@ -154,7 +154,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if err != nil {
 		return nil, fmt.Errorf("unable to sync from checkpoint: %v", err)
 	}
-	restoredDevices, err := s.restoreCheckpoint(checkpoint, claim)
+	restoredDevices, err := s.restoreClaimFromCheckpoint(checkpoint, claim)
 	if err != nil {
 		return nil, fmt.Errorf("unable to restore from checkpoint: %v", err)
 	}
@@ -319,9 +319,9 @@ func (*DeviceState) removeClaimFromCheckpoint(checkpoint *checkpointapi.Checkpoi
 	checkpoint.PreparedClaims = slices.DeleteFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == claimUID })
 }
 
-// restoreCheckpoint returns the device definitions for devices already prepared
+// restoreClaimFromCheckpoint returns the device definitions for devices already prepared
 // for the given claim. If the claim has not yet been prepared, it returns nil.
-func (s *DeviceState) restoreCheckpoint(checkpoint *checkpointapi.Checkpoint, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
+func (s *DeviceState) restoreClaimFromCheckpoint(checkpoint *checkpointapi.Checkpoint, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
 	if slices.ContainsFunc(checkpoint.PreparedClaims, func(c checkpointapi.PreparedClaim) bool { return c.UID == claim.UID }) {
 		// If [DeviceState.addClaimToCheckpoint] associated any other data with
 		// the claim in the checkpoint, then that should be added to the
