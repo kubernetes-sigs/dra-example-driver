@@ -1,0 +1,77 @@
+# Example: DRA Admin Access
+#
+# One namespace with admin access label.
+# One pod with one container requesting all GPUs with admin access.
+# This demo shows the DRA admin access feature with DRA_ADMIN_ACCESS
+# environment variable.
+#
+# Key requirements:
+#   - The namespace must have the label:
+#       resource.kubernetes.io/admin-access: "true"
+#   - The request must set adminAccess: true
+#   - allocationMode: All is used here to access all available GPUs
+#
+# Expected: The container has DRA_ADMIN_ACCESS=true and GPU_DEVICE env vars
+# for all available GPUs. Check with:
+#   kubectl logs -n admin-access pod0 -c ctr0 | grep DRA_ADMIN_ACCESS
+#   kubectl logs -n admin-access pod0 -c ctr0 | grep GPU_DEVICE
+#
+# Resources created:
+#   - 1 Namespace (with admin-access label)
+#   - 1 ResourceClaimTemplate (multiple-gpus-admin)
+#   - 1 Pod (pod0) with 1 container
+#
+# GPUs required: all available (uses allocationMode: All)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: admin-access
+  labels:
+    resource.kubernetes.io/admin-access: "true"
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: admin-access
+  name: multiple-gpus-admin
+spec:
+  spec:
+    devices:
+      requests:
+      - name: admin-gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          allocationMode: All
+          adminAccess: true
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: admin-access
+  name: pod0
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args:
+    - |
+      export
+      echo "=== DRA Admin Access Demo ==="
+      echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
+      echo ""
+      echo "GPU Environment Variables:"
+      env | grep GPU_ | sort
+      echo ""
+      echo "=== Sleeping to allow inspection ==="
+      trap 'exit 0' TERM
+      sleep 9999 & wait
+    resources:
+      claims:
+      - name: admin-gpus
+  resourceClaims:
+  - name: admin-gpus
+    resourceClaimTemplateName: multiple-gpus-admin

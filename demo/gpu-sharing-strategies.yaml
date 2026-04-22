@@ -1,17 +1,36 @@
-# One pod, 1 container
-# Run as deployment with 1 replica
+# Example: GPU Sharing Strategies (TimeSlicing + SpacePartitioning)
+#
+# One pod, four containers, two GPUs with custom GpuConfig:
+#
+#   - ts-gpu: Configured with TimeSlicing (interval: Long). Two containers
+#     (ts-ctr0, ts-ctr1) share this GPU by taking turns.
+#
+#   - sp-gpu: Configured with SpacePartitioning (partitionCount: 10). Two
+#     containers (sp-ctr0, sp-ctr1) each get a partition of this GPU.
+#
+# Expected: ts-ctr0 and ts-ctr1 share one GPU with SHARING_STRATEGY=TimeSlicing
+# and TIMESLICE_INTERVAL=Long. sp-ctr0 and sp-ctr1 share a different GPU with
+# SHARING_STRATEGY=SpacePartitioning and PARTITION_COUNT=10. Check with:
+#   kubectl logs -n gpu-sharing-strategies pod0 -c ts-ctr0 | grep GPU_DEVICE
+#   kubectl logs -n gpu-sharing-strategies pod0 -c sp-ctr0 | grep GPU_DEVICE
+#
+# Resources created:
+#   - 1 ResourceClaimTemplate (multiple-gpus) with 2 requests + config
+#   - 1 Pod (pod0) with 4 containers
+#
+# GPUs required: 2
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test5
+  name: gpu-sharing-strategies
 
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test5
+  namespace: gpu-sharing-strategies
   name: multiple-gpus
 spec:
   spec:
@@ -49,7 +68,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test5
+  namespace: gpu-sharing-strategies
   name: pod0
 spec:
   containers:

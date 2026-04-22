@@ -1,17 +1,29 @@
-# One pod, one container
-# Asking for 2 distinct GPUs
+# Example: One Pod, Two GPUs
+#
+# One pod, one container.
+# Asking for 2 distinct GPUs.
+#
+# Expected: The container gets 2 different GPUs. Check with:
+#   kubectl logs -n one-pod-two-gpus pod0 -c ctr0 | grep GPU_DEVICE
+# The container should have 2 GPU_DEVICE env vars with distinct GPU IDs.
+#
+# Resources created:
+#   - 1 ResourceClaimTemplate (multiple-gpus) with 2 requests
+#   - 1 Pod (pod0) with 1 container
+#
+# GPUs required: 2
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test2
+  name: one-pod-two-gpus
 
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test2
+  namespace: one-pod-two-gpus
   name: multiple-gpus
 spec:
   spec:
@@ -28,7 +40,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test2
+  namespace: one-pod-two-gpus
   name: pod0
   labels:
     app: pod

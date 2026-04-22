@@ -104,239 +104,80 @@ dra-example-driver-webhook-7d465fbd5b-n2wxt           1/1     Running   0       
 ```
 
 And show the initial state of available GPU devices on the worker node:
-```
-$ kubectl get resourceslice -o yaml
-apiVersion: v1
-items:
-- apiVersion: resource.k8s.io/v1
-  kind: ResourceSlice
-  metadata:
-    creationTimestamp: "2024-12-09T16:17:09Z"
-    generateName: dra-example-driver-cluster-worker-gpu.example.com-
-    generation: 1
-    name: dra-example-driver-cluster-worker-gpu.example.com-rf2f7
-    ownerReferences:
-    - apiVersion: v1
-      controller: true
-      kind: Node
-      name: dra-example-driver-cluster-worker
-      uid: 6633c2e1-d947-40c3-ba1f-78f3c9aad05c
-    resourceVersion: "530"
-    uid: d13fd8bd-0a71-43e1-ba79-ebd2fae4847a
-  spec:
-    driver: gpu.example.com
-    nodeName: dra-example-driver-cluster-worker
-    pool:
-      generation: 0
-      name: dra-example-driver-cluster-worker
-      resourceSliceCount: 1
-    devices:
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 0
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-18db0e85-99e9-c746-8531-ffeb86328b39
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-0
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 1
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-93d37703-997c-c46f-a531-755e3e0dc2ac
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-1
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 2
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-ee3e4b55-fcda-44b8-0605-64b7a9967744
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-2
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 3
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-9ede7e32-5825-a11b-fa3d-bab6d47e0243
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-3
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 4
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-e7b42cb1-4fd8-91b2-bc77-352a0c1f5747
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-4
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 5
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-f11773a1-5bfb-e48b-3d98-1beb5baaf08e
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-5
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 6
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-0159f35e-99ee-b2b5-74f1-9d18df3f22ac
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-6
-    - attributes:
-        driverVersion:
-          version: 1.0.0
-        index:
-          int: 7
-        model:
-          string: LATEST-GPU-MODEL
-        uuid:
-          string: gpu-657bd2e7-f5c2-a7f2-fbaa-0d1cdc32f81b
-      capacity:
-        memory:
-          value: 80Gi
-      name: gpu-7
-kind: List
-metadata:
-  resourceVersion: ""
-```
-
-Next, deploy four example apps that demonstrate how `ResourceClaim`s,
-`ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
-select and configure resources in various ways:
 ```bash
-kubectl apply --filename=demo/gpu-test{1,2,3,4,5}.yaml
+kubectl get resourceslice -o yaml
 ```
 
-And verify that they are coming up successfully:
-```console
-$ kubectl get pod -A
-NAMESPACE   NAME   READY   STATUS              RESTARTS   AGE
-...
-gpu-test1   pod0   0/1     Pending             0          2s
-gpu-test1   pod1   0/1     Pending             0          2s
-gpu-test2   pod0   0/2     Pending             0          2s
-gpu-test3   pod0   0/1     ContainerCreating   0          2s
-gpu-test3   pod1   0/1     ContainerCreating   0          2s
-gpu-test4   pod0   0/1     Pending             0          2s
-gpu-test5   pod0   0/4     Pending             0          2s
-...
-```
+You should see 2 GPUs (gpu-0, gpu-1) on the worker node, each with model
+`LATEST-GPU-MODEL` and 80Gi of memory.
 
-Use your favorite editor to look through each of the `gpu-test{1,2,3,4,5}.yaml`
-files and see what they are doing. The semantics of each match the figure
-below:
+Next, deploy some example apps to see DRA in action. The default configuration
+provides 2 GPUs per node, which is enough to run each example individually.
+Each example file has detailed comments at the top explaining what it
+demonstrates and how to verify the results.
 
-![Demo Apps Figure](demo/demo-apps.png?raw=true "Semantics of the applications requesting resources from the example DRA resource driver.")
+**Example 1: Exclusive GPU access**
 
-Then dump the logs of each app to verify that GPUs were allocated to them
-according to these semantics:
+Two pods each requesting their own distinct GPU:
 ```bash
-for example in $(seq 1 5); do \
-  echo "gpu-test${example}:"
-  for pod in $(kubectl get pod -n gpu-test${example} --output=jsonpath='{.items[*].metadata.name}'); do \
-    for ctr in $(kubectl get pod -n gpu-test${example} ${pod} -o jsonpath='{.spec.containers[*].name}'); do \
-      echo "${pod} ${ctr}:"
-      if [ "${example}" -lt 3 ]; then
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+=" | grep -v "RESOURCE_CLAIM"
-      else
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
-      fi
-    done
-  done
-  echo ""
+kubectl apply -f demo/two-pods-one-gpu-each.yaml
+kubectl wait --for=condition=Ready pod/pod0 pod/pod1 -n two-pods-one-gpu-each --timeout=60s
+```
+
+Check that each pod got a different GPU:
+```bash
+for pod in pod0 pod1; do
+  echo "${pod}:"
+  kubectl logs -n two-pods-one-gpu-each ${pod} -c ctr0 | grep -E "GPU_DEVICE_[0-9]+=" | grep -v "RESOURCE_CLAIM"
 done
 ```
 
-This should produce output similar to the following:
+Clean up before the next example:
 ```bash
-gpu-test1:
-pod0 ctr0:
-declare -x GPU_DEVICE_6="gpu-6"
-pod1 ctr0:
-declare -x GPU_DEVICE_7="gpu-7"
+kubectl delete -f demo/two-pods-one-gpu-each.yaml
+```
 
-gpu-test2:
-pod0 ctr0:
-declare -x GPU_DEVICE_0="gpu-0"
-declare -x GPU_DEVICE_1="gpu-1"
+**Example 2: Shared GPU across containers**
 
-gpu-test3:
-pod0 ctr0:
-declare -x GPU_DEVICE_2="gpu-2"
-declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
-pod0 ctr1:
-declare -x GPU_DEVICE_2="gpu-2"
-declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
+Two containers in one pod sharing a single GPU:
+```bash
+kubectl apply -f demo/shared-gpu-across-containers.yaml
+kubectl wait --for=condition=Ready pod/pod0 -n shared-gpu-across-containers --timeout=60s
+```
 
-gpu-test4:
-pod0 ctr0:
-declare -x GPU_DEVICE_3="gpu-3"
-declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Default"
-pod1 ctr0:
-declare -x GPU_DEVICE_3="gpu-3"
-declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Default"
+Check that both containers see the same GPU with TimeSlicing:
+```bash
+for ctr in ctr0 ctr1; do
+  echo "pod0 ${ctr}:"
+  kubectl logs -n shared-gpu-across-containers pod0 -c ${ctr} | grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
+done
+```
 
-gpu-test5:
-pod0 ts-ctr0:
-declare -x GPU_DEVICE_4="gpu-4"
-declare -x GPU_DEVICE_4_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_4_TIMESLICE_INTERVAL="Long"
-pod0 ts-ctr1:
-declare -x GPU_DEVICE_4="gpu-4"
-declare -x GPU_DEVICE_4_SHARING_STRATEGY="TimeSlicing"
-declare -x GPU_DEVICE_4_TIMESLICE_INTERVAL="Long"
-pod0 sp-ctr0:
-declare -x GPU_DEVICE_5="gpu-5"
-declare -x GPU_DEVICE_5_PARTITION_COUNT="10"
-declare -x GPU_DEVICE_5_SHARING_STRATEGY="SpacePartitioning"
-pod0 sp-ctr1:
-declare -x GPU_DEVICE_5="gpu-5"
-declare -x GPU_DEVICE_5_PARTITION_COUNT="10"
-declare -x GPU_DEVICE_5_SHARING_STRATEGY="SpacePartitioning"
+Clean up before the next example:
+```bash
+kubectl delete -f demo/shared-gpu-across-containers.yaml
+```
+
+**Example 3: GPU sharing strategies**
+
+Two GPUs configured with different sharing modes (TimeSlicing and SpacePartitioning):
+```bash
+kubectl apply -f demo/gpu-sharing-strategies.yaml
+kubectl wait --for=condition=Ready pod/pod0 -n gpu-sharing-strategies --timeout=60s
+```
+
+Check that ts-ctr0/ts-ctr1 share one GPU with TimeSlicing and sp-ctr0/sp-ctr1
+share another with SpacePartitioning:
+```bash
+for ctr in ts-ctr0 ts-ctr1 sp-ctr0 sp-ctr1; do
+  echo "pod0 ${ctr}:"
+  kubectl logs -n gpu-sharing-strategies pod0 -c ${ctr} | grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
+done
+```
+
+Clean up:
+```bash
+kubectl delete -f demo/gpu-sharing-strategies.yaml
 ```
 
 In this example resource driver, no "actual" GPUs are made available to any
@@ -344,82 +185,27 @@ containers. Instead, a set of environment variables are set in each container
 to indicate which GPUs *would* have been injected into them by a real resource
 driver and how they *would* have been configured.
 
-You can use the IDs of the GPUs as well as the GPU sharing settings set in
-these environment variables to verify that they were handed out in a way
-consistent with the semantics shown in the figure above.
+For the full list of all 8 available examples, see [`demo/README.md`](demo/README.md).
+To run multiple examples at the same time, increase `kubeletPlugin.numDevices`
+when installing the Helm chart.
 
 ### Demo DRA Admin Access Feature
 This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable. A driver managing real devices could use this to expose host hardware information.
 
-#### Usage Example
-
-See `demo/gpu-test7.yaml` for a complete example. Key points:
+See [`demo/admin-access.yaml`](demo/admin-access.yaml) for the complete example and inline documentation. Key points:
 
 1. **Namespace**: Must have the `resource.kubernetes.io/admin-access` label set to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true` for Kubernetes v1.34+.
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: gpu-test7
-  labels:
-    resource.kubernetes.io/admin-access: "true"
-```
-
 2. **Resource Claim Template**: Request must have `adminAccess: true`. The `allocationMode: All` is used to demonstrate accessing all available devices with admin privileges.
-```yaml
-spec:
-  spec:
-    devices:
-      requests:
-      - name: admin-gpu
-        exactly:
-          deviceClassName: gpu.example.com
-          allocationMode: All
-          adminAccess: true
-```
-
-3. **Container**: Will receive elevated privileges from the driver, represented here as environment variables
-```bash
-echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-# Output examples:
-# DRA Admin Access: true
-```
-
-#### Testing
+3. **Container**: Will receive elevated privileges from the driver, represented here as environment variables (e.g., `DRA_ADMIN_ACCESS=true`).
 
 To run this demo:
 ```bash
 ./demo/test-admin-access.sh
 ```
 
-This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In a production environment, drivers could use this admin access indication to provide additional privileged capabilities or information to authorized workloads.
-
 ### Clean Up
 
-Once you have verified everything is running correctly, delete all of the
-example apps:
-```bash
-kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5,7}.yaml
-```
-
-And wait for them to terminate:
-```console
-$ kubectl get pod -A
-NAMESPACE   NAME   READY   STATUS        RESTARTS   AGE
-...
-gpu-test1   pod0   1/1     Terminating   0          31m
-gpu-test1   pod1   1/1     Terminating   0          31m
-gpu-test2   pod0   2/2     Terminating   0          31m
-gpu-test3   pod0   1/1     Terminating   0          31m
-gpu-test3   pod1   1/1     Terminating   0          31m
-gpu-test4   pod0   1/1     Terminating   0          31m
-gpu-test5   pod0   4/4     Terminating   0          31m
-gpu-test7   pod0   1/1     Terminating   0          31m
-...
-```
-
-Finally, you can run the following to cleanup your environment and delete the
-`kind` cluster started previously:
+Once you are done, delete the `kind` cluster:
 ```bash
 ./demo/delete-cluster.sh
 ```
