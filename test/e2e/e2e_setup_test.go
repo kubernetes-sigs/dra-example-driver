@@ -46,14 +46,14 @@ import (
 var rootDir, currentDir, demoManifestsDir string
 var observedGPUs map[string]string
 var demoFiles = []string{
-	"gpu-test1.yaml",
-	"gpu-test2.yaml",
-	"gpu-test3.yaml",
-	"gpu-test7.yaml", // deploying this earlier to ensure the pod can access in-use devices and does not block future allocations of the same devices
-	"gpu-test4.yaml",
-	"gpu-test5.yaml",
-	"gpu-test6.yaml",
-	"gpu-test8.yaml",
+	"basic-resourceclaimtemplate.yaml",
+	"basic-multiple-requests.yaml",
+	"basic-shared-claim-across-containers.yaml",
+	"admin-access.yaml", // deploying this earlier to ensure the pod can access in-use devices and does not block future allocations of the same devices
+	"basic-shared-claim-across-pods.yaml",
+	"basic-resourceclaim-opaque-config.yaml",
+	"initcontainer-shared-gpu.yaml",
+	"cel-selector.yaml",
 }
 var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface

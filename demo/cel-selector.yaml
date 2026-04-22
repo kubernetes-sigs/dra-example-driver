@@ -1,18 +1,31 @@
-# One pod, one container
-# Uses CEL expression selectors instead of matching on a DeviceClass
-# Selects a GPU with a specific model and at least 4Gi of memory
+# Example: CEL Expression Selectors
+#
+# One pod, one container.
+# Uses CEL expression selectors instead of matching on a DeviceClass.
+# Selects a GPU with a specific model and at least 4Gi of memory.
+#
+# Expected: The container gets 1 GPU matching the CEL constraints. Check with:
+#   kubectl logs -n cel-selector pod0 -c ctr0 | grep GPU_DEVICE
+# The container should have 1 GPU_DEVICE env var.
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 1
+#
+# Cluster requirements:
+#   Kubernetes 1.34+
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test8
+  name: cel-selector
 
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test8
+  namespace: cel-selector
   name: single-gpu-cel
 spec:
   spec:
@@ -31,7 +44,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test8
+  namespace: cel-selector
   name: pod0
   labels:
     app: pod
