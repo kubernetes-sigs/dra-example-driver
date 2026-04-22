@@ -25,10 +25,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
@@ -253,14 +254,17 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 	var preparedDevices profiles.PreparedDevices
 	for _, results := range configResultsMap {
 		for _, result := range results {
+			shareId := (*string)(result.ShareID)
+			deviceId := helpers.GetCDIDeviceID(result.Device, shareId)
 			device := &profiles.PreparedDevice{
 				Device: drapbv1.Device{
 					RequestNames: []string{result.Request},
 					PoolName:     result.Pool,
 					DeviceName:   result.Device,
-					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
+					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{deviceId}),
+					ShareId:      shareId,
 				},
-				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+				ContainerEdits: perDeviceCDIContainerEdits[deviceId],
 				AdminAccess:    hasAdminAccess,
 			}
 			preparedDevices = append(preparedDevices, device)
