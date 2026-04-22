@@ -30,6 +30,7 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
 : ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
 : ${DRIVER_IMAGE_PLATFORM:="ubuntu22.04"}
+: ${DRIVER_IMAGE_PLATFORMS:="linux/amd64,linux/arm64"}
 
 # The kubernetes repo to build the kind cluster from
 : ${KIND_K8S_REPO:="https://github.com/kubernetes/kubernetes.git"}

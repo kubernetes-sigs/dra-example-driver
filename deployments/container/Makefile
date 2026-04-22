@@ -22,9 +22,11 @@ include $(CURDIR)/common.mk
 
 IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
+PLATFORMS ?= linux/amd64,linux/arm64
+BUILDX_BUILDER ?= dra-example-driver-builder
 
 ##### Public rules #####
-.PHONY: $(DISTRIBUTIONS)
+.PHONY: $(DISTRIBUTIONS) ensure-buildx-builder
 
 ubuntu22.04: BASE_IMAGE = docker.io/ubuntu:22.04
 
@@ -41,3 +43,49 @@ $(DISTRIBUTIONS):
 
 push:
 	$(CONTAINER_TOOL) push $(IMAGE)
+
+ensure-buildx-builder:
+ifeq ($(CONTAINER_TOOL),docker)
+	@docker buildx inspect $(BUILDX_BUILDER) >/dev/null 2>&1 || \
+		docker buildx create --name $(BUILDX_BUILDER) --driver docker-container --use
+	@docker buildx use $(BUILDX_BUILDER)
+	@docker buildx inspect --bootstrap $(BUILDX_BUILDER) >/dev/null
+else
+	@echo "ensure-buildx-builder requires CONTAINER_TOOL=docker"
+	@exit 1
+endif
+
+build-local:
+ifeq ($(CONTAINER_TOOL),docker)
+	DOCKER_BUILDKIT=1 \
+		$(CONTAINER_TOOL) buildx build --pull \
+		--platform linux/amd64 \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
+		--build-arg VERSION="$(VERSION)" \
+		-f $(DOCKERFILE) \
+		--load \
+		$(CURDIR)
+else
+	@echo "build-local requires CONTAINER_TOOL=docker (uses buildx --load)"
+	@exit 1
+endif
+
+push-multiarch: ensure-buildx-builder
+ifeq ($(CONTAINER_TOOL),docker)
+	DOCKER_BUILDKIT=1 \
+		$(CONTAINER_TOOL) buildx build --pull \
+		--builder $(BUILDX_BUILDER) \
+		--platform $(PLATFORMS) \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
+		--build-arg VERSION="$(VERSION)" \
+		-f $(DOCKERFILE) \
+		--push \
+		$(CURDIR)
+else
+	@echo "push-multiarch requires CONTAINER_TOOL=docker (for buildx)"
+	@exit 1
+endif
