@@ -48,6 +48,23 @@ From here we will build the image for the example resource driver:
 ./demo/build-driver.sh
 ```
 
+### Container image make recipes
+
+The image build logic lives in `deployments/container/Makefile`.
+
+- Build a single-arch image with the standard Docker/Podman build flow:
+  ```bash
+  make -f deployments/container/Makefile ubuntu22.04 VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=<docker|podman>
+  ```
+- Build and load a local Docker image (visible via `docker images`):
+  ```bash
+  make -f deployments/container/Makefile build-local VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=docker
+  ```
+- Build and push a multi-arch image (`linux/amd64,linux/arm64`) with Docker Buildx:
+  ```bash
+  make -f deployments/container/Makefile push-multiarch VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=docker
+  ```
+
 And create a `kind` cluster to run it in:
 ```bash
 ./demo/create-cluster.sh
