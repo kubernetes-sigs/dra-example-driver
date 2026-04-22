@@ -63,9 +63,9 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 		Scheme: "unix",
 		Path: func() string {
 			if config.flags.seamlessUpgrades && config.flags.podUID != "" {
-				return path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-"+config.flags.podUID+"-reg.sock")
+				return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-"+config.flags.podUID+"-reg.sock")
 			}
-			return path.Join(config.flags.kubeletRegistrarDirectoryPath, consts.DriverName+"-reg.sock")
+			return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-reg.sock")
 		}(),
 	}).String()
 	log.Info("connecting to registration socket", "path", regSockPath)
