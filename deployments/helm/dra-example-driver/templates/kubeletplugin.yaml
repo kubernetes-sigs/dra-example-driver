@@ -101,10 +101,6 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.uid
-        {{- if .Values.kubeletPlugin.seamlessUpgrades.enabled }}
-        - name: SEAMLESS_UPGRADES
-          value: "true"
-        {{- end }}
         volumeMounts:
         - name: plugins-registry
           mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}

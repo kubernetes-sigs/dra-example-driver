@@ -53,7 +53,6 @@ type Flags struct {
 	profile                       string
 	driverName                    string
 	podUID                        string
-	seamlessUpgrades              bool
 }
 
 type Config struct {
@@ -154,12 +153,6 @@ func newApp() *cli.App {
 			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
 			Destination: &flags.podUID,
 			EnvVars:     []string{"POD_UID"},
-		},
-		&cli.BoolFlag{
-			Name:        "seamless-upgrades",
-			Usage:       "Enable seamless upgrades support. When enabled, the driver will use rolling update mode if pod-uid is available.",
-			Destination: &flags.seamlessUpgrades,
-			EnvVars:     []string{"SEAMLESS_UPGRADES"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

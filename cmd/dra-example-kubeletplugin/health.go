@@ -62,7 +62,7 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 	regSockPath := (&url.URL{
 		Scheme: "unix",
 		Path: func() string {
-			if config.flags.seamlessUpgrades && config.flags.podUID != "" {
+			if config.flags.podUID != "" {
 				return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-"+config.flags.podUID+"-reg.sock")
 			}
 			return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-reg.sock")
@@ -80,7 +80,7 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 	draSockPath := (&url.URL{
 		Scheme: "unix",
 		Path: func() string {
-			if config.flags.seamlessUpgrades && config.flags.podUID != "" {
+			if config.flags.podUID != "" {
 				return path.Join(config.DriverPluginPath(), "dra-"+config.flags.podUID+".sock")
 			}
 			return path.Join(config.DriverPluginPath(), "dra.sock")
