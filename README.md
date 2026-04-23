@@ -424,6 +424,63 @@ Finally, you can run the following to cleanup your environment and delete the
 ./demo/delete-cluster.sh
 ```
 
+## Installing the example driver on a GKE cluster
+It is also possible to run the example driver on a GKE cluster. For this, we
+use the pre-built image for the kubelet plugin, so there is no need
+to build anything. All that is needed is a Google Cloud Platform account,
+the gcloud CLI, and Helm.
+
+To keep things simple and similar to the kind example, we use a single-node
+GKE cluster.
+
+CDI must be enabled in containerd for the DRA driver to work. CDI is
+enabled by default in GKE since 1.32.1-gke.1489001, so we create
+a cluster in the rapid channel to make sure we get a recent version.
+
+Since DRA is still a beta feature, we need to explicitly enable it
+when the cluster is created.
+
+### GKE Creation
+First, create a GKE cluster with gcloud.
+```bash
+gcloud container clusters create dra-example-driver-cluster \
+--location=us-central1-c \
+--release-channel=rapid \
+--num-nodes=1 \
+--enable-kubernetes-unstable-apis=resource.k8s.io/v1beta1/deviceclasses,resource.k8s.io/v1beta1/resourceclaims,resource.k8s.io/v1beta1/resourceclaimtemplates,resource.k8s.io/v1beta1/resourceslices
+```
+
+Once the cluster is ready, install the DRA driver using Helm.
+
+The kubelet plugin in the example driver is set up to run with priority class
+`system-node-critical`. On GKE, pods are restricted by default from running
+with this priority class, so we need to use a ResourceQuota to allow it. The
+Helm chart supports this through `resourcequota.enabled=true`.
+
+```bash
+helm upgrade -i \
+  --create-namespace \
+  --namespace dra-example-driver \
+  --set=resourcequota.enabled=true \
+  dra-example-driver \
+  deployments/helm/dra-example-driver
+```
+
+To avoid chart/image skew, prefer using matching source revisions (for example,
+the chart and image built from the same checkout/commit).
+
+The examples in `demo/gpu-test{1,2,3,4,5}.yaml` work just like with kind.
+
+### GKE Clean Up
+When finished, clean up example workloads, uninstall the chart, and delete the
+GKE cluster:
+```bash
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5}.yaml
+helm uninstall dra-example-driver --namespace dra-example-driver
+gcloud container clusters delete dra-example-driver-cluster \
+  --location=us-central1-c
+```
+
 ## Device Profiles
 
 The example driver can manage several different kinds of devices to demonstrate
