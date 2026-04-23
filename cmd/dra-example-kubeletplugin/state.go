@@ -97,12 +97,18 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	}
 
 	// Set up a json serializer to decode our types.
-	decoder := json.NewSerializerWithOptions(
+	configDecoder := json.NewSerializerWithOptions(
 		json.DefaultMetaFactory,
 		configScheme,
 		configScheme,
 		json.SerializerOptions{
-			Pretty: true, Strict: true,
+			Pretty: true,
+			// Config objects are defined by users in ResourceClaims. Strict
+			// decoding helps prevent mistakes.
+			//
+			// Note: this flag only produces errors when decoding objects that
+			// define duplicate keys. Unknown fields are still silently dropped.
+			Strict: true,
 		},
 	)
 
@@ -123,7 +129,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		cdi:               cdi,
 		driverResources:   driverResources,
 		allocatable:       allocatable,
-		configDecoder:     decoder,
+		configDecoder:     configDecoder,
 		configHandler:     configHandler,
 		checkpointPath:    filepath.Join(config.DriverPluginPath(), DriverPluginCheckpointFile),
 		checkpointDecoder: checkpointDecoder,
@@ -338,7 +344,10 @@ func checkpointSerializer() (runtime.Decoder, runtime.Encoder, error) {
 		checkpointScheme,
 		json.SerializerOptions{
 			Pretty: true,
-			Strict: true,
+			// Checkpoints are meant to be read and written only by the driver,
+			// so there is minimal risk that strict decoding will identify any
+			// mistakes. Performance is the better trade-off.
+			Strict: false,
 		},
 	)
 	checkpointCodecFactory := serializer.NewCodecFactory(checkpointScheme)
