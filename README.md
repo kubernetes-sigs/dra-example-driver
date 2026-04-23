@@ -440,15 +440,58 @@ abstraction like the example driver's profiles.
 
 ## Anatomy of a DRA resource driver
 
-TBD
+A DRA resource driver consists of several key components that work together to manage custom resources within a Kubernetes cluster. This example driver illustrates a common pattern for these components:
+
+1.  **Kubelet Plugin**: This is a gRPC server that runs on every node where the resource is available, typically as a DaemonSet. It communicates with the kubelet over a Unix domain socket. Its primary responsibilities are:
+    - **Resource Discovery**: Detecting the available resources on the node and reporting them to the Kubernetes API server by creating `ResourceSlice` objects.
+    - **Resource Preparation**: When a pod is scheduled to a node, the kubelet calls the `NodePrepareResources` RPC. The plugin then performs any necessary setup for the allocated devices, such as configuring hardware or setting modes.
+    - **CDI File Generation**: It creates Container Device Interface (CDI) specification files. These files tell the container runtime (like containerd or CRI-O) how to expose the device to the container (e.g., by mounting device nodes or setting environment variables).
+    - **Resource Unpreparation**: When the pod terminates, the kubelet calls `NodeUnprepareResources`, and the plugin cleans up the resources.
+
+2.  **Validating Admission Webhook**: This is a central component, typically run as a Deployment, that intercepts requests to create or update `ResourceClaim` and `ResourceClaimTemplate` objects. It validates the driver-specific parameters to ensure they are correct before the objects are stored in etcd, providing early feedback to the user.
+
+3.  **Custom API (CRD) for Parameters**: The driver defines its own API for configuration, which is installed as a Custom Resource Definition (CRD). In this example, it's the `GpuConfig` CRD. This allows users to specify detailed, structured configuration for their resource requests within a `ResourceClaim`.
+
+4.  **Deployment Mechanism (Helm)**: The driver components (Kubelet Plugin DaemonSet, Webhook Deployment, CRD, RBAC rules, etc.) are packaged into a Helm chart for easy and repeatable installation onto a cluster.
 
 ## Code Organization
 
-TBD
+The repository is organized to separate these components clearly:
+
+```
+├── api/                     # Go types for the custom resource parameters (ex. GpuConfig CRD)
+├── cmd/
+│   ├── dra-example-kubeletplugin/ # Source code for the node-local Kubelet Plugin
+│   └── dra-example-webhook/       # Source code for the validating admission webhook
+├── demo/                    # Scripts and manifests for running a local demo
+├── deployments/
+│   └── helm/                  # The Helm chart for deploying the driver and other Kubernetes objects needed to run it
+├── pkg/                     # Shared Go packages (currently minimal)
+├── hack/                    # Helper scripts for development (e.g., code generation)
+└── test/                    # End-to-end tests
+```
 
 ## Best Practices
 
-TBD
+When using this repository as a starting point for your own production driver, consider the following best practices:
+
+*   **Fork, Don't Reinvent**: Use this repository as a template. It provides a solid foundation for handling gRPC communication, checkpointing, and CDI integration.
+
+*   **Define a Clear API**: Create a well-defined, versioned API for your resource parameters (your equivalent of `GpuConfig`). Use the validating webhook to enforce the schema and provide users with immediate, clear feedback on invalid configurations.
+
+*   **Implement Real Device Logic**:
+    *   Replace the mock device discovery in `cmd/dra-example-kubeletplugin/discovery.go` with code that interacts with your actual hardware.
+    *   In `cmd/dra-example-kubeletplugin/state.go`, modify `applyConfig` to perform real hardware configuration instead of just setting environment variables.
+
+*   **Use CDI for Container Integration**: The Container Device Interface (CDI) is the standard, portable way to make devices available to containers. Use it to specify device nodes, environment variables, and mounts. Avoid runtime-specific workarounds.
+
+*   **Ensure Idempotency**: The kubelet may call `NodePrepareResources` or `NodeUnprepareResources` multiple times for the same claim. Your implementation of these functions must be idempotent, meaning they can be run multiple times without causing errors or unintended side effects.
+
+*   **Manage State with Checkpoints**: The kubelet plugin is stateless from the kubelet's perspective. As shown in `cmd/dra-example-kubeletplugin/state.go`, use a checkpoint file to persist the state of prepared resources on the node. This allows your driver to recover its state if it restarts.
+
+*   **Robust Deployment**:
+    *   Use a Helm chart or a similar tool to manage the deployment of all your driver's components, including the CRD, DaemonSet, Deployment, and all necessary RBAC roles and bindings.
+    *   Ensure your Kubelet Plugin DaemonSet uses the correct tolerations to run on all applicable nodes.
 
 ## References
 
