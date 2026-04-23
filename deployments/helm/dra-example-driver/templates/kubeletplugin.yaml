@@ -12,28 +12,11 @@ spec:
     matchLabels:
       {{- include "dra-example-driver.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: kubeletplugin
-  {{- $defaultMaxSurge := 0 }}
-  {{- $defaultMaxUnavailable := 1 }}
-  {{- if .Values.kubeletPlugin.seamlessUpgrades.enabled }}
-    {{- $defaultMaxSurge = 1 }}
-    {{- $defaultMaxUnavailable = 0 }}
-  {{- end }}
-  {{- $userMaxSurge := $defaultMaxSurge }}
-  {{- $userMaxUnavailable := $defaultMaxUnavailable }}
-  {{- if and .Values.kubeletPlugin.updateStrategy .Values.kubeletPlugin.updateStrategy.rollingUpdate }}
-    {{- if hasKey .Values.kubeletPlugin.updateStrategy.rollingUpdate "maxSurge" }}
-      {{- $userMaxSurge = .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxSurge }}
-    {{- end }}
-    {{- if hasKey .Values.kubeletPlugin.updateStrategy.rollingUpdate "maxUnavailable" }}
-      {{- $userMaxUnavailable = .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxUnavailable }}
-    {{- end }}
-  {{- end }}
   updateStrategy:
-    type: {{ .Values.kubeletPlugin.updateStrategy.type | default "RollingUpdate" }}
-    {{- if eq (.Values.kubeletPlugin.updateStrategy.type | default "RollingUpdate") "RollingUpdate" }}
-    rollingUpdate:
-      maxSurge: {{ $userMaxSurge }}
-      maxUnavailable: {{ $userMaxUnavailable }}
+    {{- if .Values.kubeletPlugin.updateStrategy }}
+    {{- toYaml .Values.kubeletPlugin.updateStrategy | nindent 4 }}
+    {{- else }}
+    type: RollingUpdate
     {{- end }}
   template:
     metadata:

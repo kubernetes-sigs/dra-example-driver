@@ -57,12 +57,9 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
 	}
 
-	// Enable seamless upgrades when POD_UID is available
-	if config.flags.podUID != "" {
-		kubeletPluginOptions = append(kubeletPluginOptions,
-			kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
-		)
-	}
+	kubeletPluginOptions = append(kubeletPluginOptions,
+		kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
+	)
 
 	helper, err := kubeletplugin.Start(ctx, driver, kubeletPluginOptions...)
 	if err != nil {

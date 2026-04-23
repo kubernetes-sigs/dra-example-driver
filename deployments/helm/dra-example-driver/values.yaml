@@ -39,10 +39,13 @@ kubeletPlugin:
   # deviceProfile is used. Not relevant for other profiles.
   numDevices: 9
   priorityClassName: "system-node-critical"
-  seamlessUpgrades:
-    enabled: true
   updateStrategy:
     type: RollingUpdate
+    # for seamless rolling updates, maxSurge can be greater than 0.
+    # See: https://pkg.go.dev/k8s.io/dynamic-resource-allocation/kubeletplugin#RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   podAnnotations: {}
   podSecurityContext: {}
   nodeSelector: {}
