@@ -24,6 +24,15 @@ IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 PLATFORMS ?= linux/amd64,linux/arm64
 BUILDX_BUILDER ?= dra-example-driver-builder
+BUILDX_PROVENANCE ?= false
+BUILDX_SBOM ?= false
+BUILDX_COMMON_ARGS = --pull \
+	--tag $(IMAGE) \
+	--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+	--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
+	--build-arg VERSION="$(VERSION)" \
+	-f $(DOCKERFILE) \
+	$(CURDIR)
 
 ##### Public rules #####
 .PHONY: $(DISTRIBUTIONS) ensure-buildx-builder
@@ -58,15 +67,10 @@ endif
 build-local:
 ifeq ($(CONTAINER_TOOL),docker)
 	DOCKER_BUILDKIT=1 \
-		$(CONTAINER_TOOL) buildx build --pull \
+		$(CONTAINER_TOOL) buildx build \
+		$(BUILDX_COMMON_ARGS) \
 		--platform linux/amd64 \
-		--tag $(IMAGE) \
-		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-		--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
-		--build-arg VERSION="$(VERSION)" \
-		-f $(DOCKERFILE) \
-		--load \
-		$(CURDIR)
+		--load
 else
 	@echo "build-local requires CONTAINER_TOOL=docker (uses buildx --load)"
 	@exit 1
@@ -75,16 +79,13 @@ endif
 push-multiarch: ensure-buildx-builder
 ifeq ($(CONTAINER_TOOL),docker)
 	DOCKER_BUILDKIT=1 \
-		$(CONTAINER_TOOL) buildx build --pull \
+		$(CONTAINER_TOOL) buildx build \
+		$(BUILDX_COMMON_ARGS) \
 		--builder $(BUILDX_BUILDER) \
 		--platform $(PLATFORMS) \
-		--tag $(IMAGE) \
-		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-		--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
-		--build-arg VERSION="$(VERSION)" \
-		-f $(DOCKERFILE) \
-		--push \
-		$(CURDIR)
+		--provenance=$(BUILDX_PROVENANCE) \
+		--sbom=$(BUILDX_SBOM) \
+		--push
 else
 	@echo "push-multiarch requires CONTAINER_TOOL=docker (for buildx)"
 	@exit 1
