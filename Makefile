@@ -172,5 +172,9 @@ push-release-artifacts:
 		HELM=$(HELM) \
 		demo/scripts/push-driver-chart.sh
 	export DRIVER_IMAGE_TAG="${IMAGE_GIT_TAG}"; \
-	demo/scripts/build-driver-image.sh && \
-	demo/scripts/push-driver-image.sh
+	if [ "$(CONTAINER_TOOL)" = "docker" ]; then \
+		demo/scripts/push-driver-image.sh; \
+	else \
+		demo/scripts/build-driver-image.sh && \
+		demo/scripts/push-driver-image.sh; \
+	fi
