@@ -40,7 +40,7 @@ kubeletPlugin:
   numDevices: 9
   priorityClassName: "system-node-critical"
   seamlessUpgrades:
-    enabled: true
+    enabled: false
   updateStrategy:
     type: RollingUpdate
   podAnnotations: {}

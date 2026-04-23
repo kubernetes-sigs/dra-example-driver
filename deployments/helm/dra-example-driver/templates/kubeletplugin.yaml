@@ -12,27 +12,9 @@ spec:
     matchLabels:
       {{- include "dra-example-driver.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: kubeletplugin
-  {{- with .Values.kubeletPlugin.updateStrategy }}
+  {{- if and .Values.kubeletPlugin.updateStrategy .Values.kubeletPlugin.updateStrategy.rollingUpdate }}
   updateStrategy:
-    {{- if $.Values.kubeletPlugin.seamlessUpgrades.enabled }}
-    {{- $strategy := . }}
-    {{- range $key, $value := . }}
-    {{- if eq $key "rollingUpdate" }}
-    {{ $key }}:
-      maxSurge: 1
-      maxUnavailable: 0
-      {{- range $subkey, $subvalue := $value }}
-      {{- if and (ne $subkey "maxSurge") (ne $subkey "maxUnavailable") }}
-      {{ $subkey }}: {{ $subvalue }}
-      {{- end }}
-      {{- end }}
-    {{- else }}
-    {{ $key }}: {{ $value }}
-    {{- end }}
-    {{- end }}
-    {{- else }}
-    {{- toYaml . | nindent 4 }}
-    {{- end }}
+    {{- toYaml .Values.kubeletPlugin.updateStrategy | nindent 4 }}
   {{- else }}
   updateStrategy:
     type: {{ .Values.kubeletPlugin.updateStrategy.type | default "RollingUpdate" }}
@@ -42,8 +24,8 @@ spec:
       maxSurge: 1
       maxUnavailable: 0
       {{- else }}
-      maxSurge: {{ .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxSurge | default 0 }}
-      maxUnavailable: {{ .Values.kubeletPlugin.updateStrategy.rollingUpdate.maxUnavailable | default 1 }}
+      maxSurge: 0
+      maxUnavailable: 1
       {{- end }}
     {{- end }}
   {{- end }}
