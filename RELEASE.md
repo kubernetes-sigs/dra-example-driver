@@ -41,11 +41,13 @@ The process for both is as follows:
    SHA digests and tags of the new artifacts from the staging repo.
     - Example PR: https://github.com/kubernetes/k8s.io/pull/7871
     - After the PR merges, a run of the [promotion job] will kick off.
-1. The artifacts are verified to be available from registry.k8s.io:
-    - e.g. the v0.2.0 image and 0.2.0 chart can be verified with the following
-      commands:
-        - `docker manifest inspect registry.k8s.io/dra-example-driver/dra-example-driver:v0.2.0`
-        - `docker manifest inspect registry.k8s.io/dra-example-driver/charts/dra-example-driver:0.2.0`
+1. The artifacts are verified to be available from registry.k8s.io and validated through e2e tests:
+   - e.g. the v0.2.0 image and 0.2.0 chart can be verified with the following
+     commands:
+     - `docker manifest inspect registry.k8s.io/dra-example-driver/dra-example-driver:v0.2.0`
+     - `docker manifest inspect registry.k8s.io/dra-example-driver/charts/dra-example-driver:0.2.0`
+   - Run the e2e tests against the latest release artifacts by setting `HELM_CHART_PATH` to the registry path:
+     - `HELM_CHART_PATH="oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver" make setup-e2e test-e2e teardown-e2e`
 1. The drafted [GitHub release][releases] is published.
 1. The release issue is closed.
 1. An announcement is made to [#wg-device-management] on Slack.
