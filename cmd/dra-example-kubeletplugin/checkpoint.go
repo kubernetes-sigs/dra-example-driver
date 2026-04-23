@@ -1,53 +1,74 @@
+/*
+ * Copyright The Kubernetes Authors.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package main
 
 import (
-	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
 
-	"k8s.io/kubernetes/pkg/kubelet/checkpointmanager/checksum"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
+
+	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 )
 
-type Checkpoint struct {
-	Checksum checksum.Checksum `json:"checksum"`
-	V1       *CheckpointV1     `json:"v1,omitempty"`
-}
-
-type CheckpointV1 struct {
-	PreparedClaims PreparedClaims `json:"preparedClaims,omitempty"`
-}
-
-func newCheckpoint() *Checkpoint {
-	pc := &Checkpoint{
-		Checksum: 0,
-		V1: &CheckpointV1{
-			PreparedClaims: make(PreparedClaims),
-		},
-	}
-	return pc
-}
-
-func (cp *Checkpoint) MarshalCheckpoint() ([]byte, error) {
-	cp.Checksum = 0
-	out, err := json.Marshal(*cp)
-	if err != nil {
+// readCheckpoint returns the Checkpoint at the given path in the format
+// expected by the given decoder. If the path doesn't exist, returns an empty
+// Checkpoint and no error.
+func readCheckpoint(path string, decoder runtime.Decoder) (*checkpointapi.Checkpoint, error) {
+	data, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
-	cp.Checksum = checksum.New(out)
-	return json.Marshal(*cp)
-}
-
-func (cp *Checkpoint) UnmarshalCheckpoint(data []byte) error {
-	return json.Unmarshal(data, cp)
-}
-
-func (cp *Checkpoint) VerifyChecksum() error {
-	ck := cp.Checksum
-	cp.Checksum = 0
-	defer func() {
-		cp.Checksum = ck
-	}()
-	out, err := json.Marshal(*cp)
-	if err != nil {
-		return err
+	checkpoint := new(checkpointapi.Checkpoint)
+	if data != nil {
+		_, _, err = decoder.Decode(data, ptr.To(checkpointapi.SchemeGroupVersion.WithKind("Checkpoint")), checkpoint)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal JSON from %s: %w", path, err)
+		}
 	}
-	return ck.Verify(out)
+	return checkpoint, nil
+}
+
+// writeCheckpoint writes checkpoint to the file at path in
+// the format prescribed by encoder. The file is overwritten if it already
+// exists and is created if it does not already exist.
+func writeCheckpoint(path string, encoder runtime.Encoder, checkpoint *checkpointapi.Checkpoint) (err error) {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, "tmp-checkpoint-*")
+	if err != nil {
+		return fmt.Errorf("create temp file in %s: %w", dir, err)
+	}
+	defer func() {
+		if err1 := tmp.Close(); err1 != nil && err == nil {
+			err = fmt.Errorf("close temp file: %w", err1)
+		}
+	}()
+	if err := encoder.Encode(checkpoint, tmp); err != nil {
+		return fmt.Errorf("encode to temp file %s: %w", tmp.Name(), err)
+	}
+	if err := tmp.Sync(); err != nil {
+		return fmt.Errorf("sync temp file: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("rename %s to %s: %w", tmp.Name(), path, err)
+	}
+	return nil
 }
