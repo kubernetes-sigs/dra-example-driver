@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package v1alpha1
+package v1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,8 +25,8 @@ import (
 // GroupName is the group name for checkpoints.
 const GroupName = "checkpoint.internal.example.com"
 
-// SchemeGroupVersion is the group version for v1alpha1 types.
-var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1alpha1"}
+// SchemeGroupVersion is the group version for v1 types.
+var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
 
 var (
 	// localSchemeBuilder is used to add types and conversion functions to the scheme.

@@ -17,6 +17,6 @@ limitations under the License.
 // +k8s:deepcopy-gen=package
 // +k8s:conversion-gen=sigs.k8s.io/dra-example-driver/internal/api/checkpoint
 
-// Package v1alpha1 contains the v1alpha1 serialization format for checkpoints.
+// Package v1 contains the v1 serialization format for checkpoints.
 // These types include JSON tags and are used for reading/writing files on disk.
-package v1alpha1
+package v1

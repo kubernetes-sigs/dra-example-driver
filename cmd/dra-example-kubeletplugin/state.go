@@ -33,7 +33,7 @@ import (
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 	checkpointinstall "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/install"
-	checkpointv1alpha1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1alpha1"
+	checkpointv1alpha1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
 

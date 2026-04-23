@@ -24,13 +24,13 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
-	"sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1alpha1"
+	v1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1"
 )
 
-// Install registers the internal and v1alpha1 checkpoint types with the given scheme.
+// Install registers the internal and v1 checkpoint types with the given scheme.
 func Install(scheme *runtime.Scheme) {
 	utilruntime.Must(checkpointapi.AddToScheme(scheme))
-	utilruntime.Must(v1alpha1.AddToScheme(scheme))
+	utilruntime.Must(v1.AddToScheme(scheme))
 }
 
 // NewScheme returns a new runtime.Scheme with all checkpoint versions registered.
