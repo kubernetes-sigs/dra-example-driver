@@ -51,19 +51,31 @@ From here we will build the image for the example resource driver:
 ### Container image make recipes
 
 The image build logic lives in `deployments/container/Makefile`.
+If variables are not provided, defaults are:
+
+- `IMAGE_NAME=registry.example.com/dra-example-driver`
+- `VERSION=latest`
+- `PLATFORMS=linux/amd64,linux/arm64`
+- `CONTAINER_TOOL=docker`
 
 - Build a single-arch image with the standard Docker/Podman build flow:
   ```bash
-  make -f deployments/container/Makefile ubuntu22.04 VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=<docker|podman>
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=<docker|podman>
   ```
-- Build and load a local Docker image (visible via `docker images`):
+- Build for specific platform(s):
   ```bash
-  make -f deployments/container/Makefile build-local VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=docker
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
   ```
-- Build and push a multi-arch image (`linux/amd64,linux/arm64`) with Docker Buildx:
+- Push for current platform:
   ```bash
-  make -f deployments/container/Makefile push-multiarch VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=docker
+  make -f deployments/container/Makefile push VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=<docker|podman>
   ```
+- Push for specific platform(s):
+  ```bash
+  make -f deployments/container/Makefile push VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
+  ```
+
+For Docker, `build` with multiple platforms performs a Buildx build without loading an image into the local Docker daemon; use `push` to publish multi-arch images.
 
 And create a `kind` cluster to run it in:
 ```bash

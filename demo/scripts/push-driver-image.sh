@@ -29,8 +29,4 @@ export VERSION="${DRIVER_IMAGE_TAG}"
 export PLATFORMS="${DOCKER_BUILD_PLATFORMS}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-if [[ "${CONTAINER_TOOL}" == "docker" ]]; then
-    make -f deployments/container/Makefile push-multiarch
-else
-    make -f deployments/container/Makefile push
-fi
+make -f deployments/container/Makefile push
