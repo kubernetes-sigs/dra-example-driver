@@ -30,7 +30,8 @@ endif
 IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 BASE_IMAGE ?= docker.io/ubuntu:22.04
-PLATFORMS ?= linux/amd64,linux/arm64
+PLATFORMS ?= $(LOCAL_PLATFORM)
+MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Detect host CPU architecture via `uname -m` and map it to a Docker platform
 # used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
@@ -121,4 +122,4 @@ build-local:
 	$(MAKE) -f $(SELF_MAKEFILE) build PLATFORMS="$(LOCAL_PLATFORM)"
 
 push-multiarch: ensure-buildx-builder
-	$(MAKE) -f $(SELF_MAKEFILE) push PLATFORMS="$(PLATFORMS)"
+	$(MAKE) -f $(SELF_MAKEFILE) push PLATFORMS="$(MULTIARCH_PLATFORMS)"

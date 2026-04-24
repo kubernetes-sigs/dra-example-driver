@@ -55,7 +55,7 @@ If variables are not provided, defaults are:
 
 - `IMAGE_NAME=registry.example.com/dra-example-driver`
 - `VERSION=latest`
-- `PLATFORMS=linux/amd64,linux/arm64`
+- `PLATFORMS=<current host platform>` (for example `linux/amd64` or `linux/arm64`)
 - `CONTAINER_TOOL=docker`
 
 - Build a single-arch image with the standard Docker/Podman build flow:
