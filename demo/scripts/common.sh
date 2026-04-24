@@ -31,6 +31,11 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
 # Use DRIVER_IMAGE_OS as the canonical variable name.
 # DRIVER_IMAGE_PLATFORM is a deprecated compatibility fallback.
+if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -n "${DRIVER_IMAGE_OS:-}" && "${DRIVER_IMAGE_PLATFORM}" != "${DRIVER_IMAGE_OS}" ]]; then
+    echo "Both DRIVER_IMAGE_PLATFORM and DRIVER_IMAGE_OS are set with different values."
+    echo "Use DRIVER_IMAGE_OS only, or set both to the same value."
+    return 1
+fi
 if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -z "${DRIVER_IMAGE_OS:-}" ]]; then
     DRIVER_IMAGE_OS="${DRIVER_IMAGE_PLATFORM}"
 fi
