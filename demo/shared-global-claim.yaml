@@ -1,17 +1,33 @@
-# One shared, global claim providing access to a GPU
-# Two pods, each asking for access to the shared GPU
+# Example: Shared Global ResourceClaim
+#
+# One shared, global claim providing access to a GPU.
+# Two pods, each asking for access to the shared GPU.
+#
+# Uses a ResourceClaim (not a ResourceClaimTemplate), which is a standalone
+# object that multiple pods can reference by name.
+#
+# Expected: Both pods see the same GPU with TimeSlicing. Check with:
+#   kubectl logs -n shared-global-claim pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n shared-global-claim pod1 -c ctr0 | grep GPU_DEVICE
+# Both pods should show the same GPU ID with SHARING_STRATEGY=TimeSlicing.
+#
+# Resources created:
+#   - 1 ResourceClaim (single-gpu)
+#   - 2 Pods (pod0, pod1), each with 1 container
+#
+# GPUs required: 1
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test4
+  name: shared-global-claim
 
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
-  namespace: gpu-test4
+  namespace: shared-global-claim
   name: single-gpu
 spec:
     devices:
@@ -24,7 +40,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test4
+  namespace: shared-global-claim
   name: pod0
   labels:
     app: pod
@@ -45,7 +61,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test4
+  namespace: shared-global-claim
   name: pod1
   labels:
     app: pod

@@ -28,8 +28,8 @@ import (
 )
 
 var _ = Describe("Test GPU allocation", func() {
-	Context("GPU Test 1- Two pods, one container each, one GPU per container", func() {
-		namespace := "gpu-test1"
+	Context("Two pods, one container each, one GPU per container", func() {
+		namespace := "two-pods-one-gpu-each"
 		pods := []string{"pod0", "pod1"}
 		containerName := "ctr0"
 		expectedGPUCount := 1
@@ -43,8 +43,8 @@ var _ = Describe("Test GPU allocation", func() {
 			}
 		})
 	})
-	Context("GPU Test 2- One pod, one container with two GPUs", func() {
-		namespace := "gpu-test2"
+	Context("One pod, one container with two GPUs", func() {
+		namespace := "one-pod-two-gpus"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 		expectedGPUCount := 2
@@ -56,8 +56,8 @@ var _ = Describe("Test GPU allocation", func() {
 			verifyGPUAllocation(namespace, pods[0], containerName, expectedGPUCount)
 		})
 	})
-	Context("GPU Test 3- One pod, two containers and one GPU having TimeSlicing sharing strategy and Default TimeSlice interval", func() {
-		namespace := "gpu-test3"
+	Context("One pod, two containers sharing one GPU with TimeSlicing and Default interval", func() {
+		namespace := "shared-gpu-across-containers"
 		pods := []string{"pod0"}
 		containerNames := []string{"ctr0", "ctr1"}
 		expectedGPUCount := 1
@@ -90,8 +90,8 @@ var _ = Describe("Test GPU allocation", func() {
 			}
 		})
 	})
-	Context("GPU Test 4- Two pods, one container each, one GPU having TimeSlicing sharing strategy and Default TimeSlice interval", func() {
-		namespace := "gpu-test4"
+	Context("Two pods sharing a global ResourceClaim with TimeSlicing and Default interval", func() {
+		namespace := "shared-global-claim"
 		pods := []string{"pod0", "pod1"}
 		containers := []string{"ctr0"}
 		expectedGPUCount := 1
@@ -124,8 +124,8 @@ var _ = Describe("Test GPU allocation", func() {
 			}
 		})
 	})
-	Context("GPU Test 5- One pod, four containers, two shared GPUs having TimeSlicing & SpacePartitioning sharing strategy and Long TimeSlice interval", func() {
-		namespace := "gpu-test5"
+	Context("GPU sharing strategies: TimeSlicing with Long interval and SpacePartitioning", func() {
+		namespace := "gpu-sharing-strategies"
 		pods := []string{"pod0"}
 		tsContainers := []string{"ts-ctr0", "ts-ctr1"}
 		spContainers := []string{"sp-ctr0", "sp-ctr1"}
@@ -183,8 +183,8 @@ var _ = Describe("Test GPU allocation", func() {
 			}
 		})
 	})
-	Context("GPU Test 6- One pod, one init container, one container, one GPU having TimeSlicing sharing strategy and Default TimeSlice interval", func() {
-		namespace := "gpu-test6"
+	Context("InitContainer and container sharing one GPU with TimeSlicing and Default interval", func() {
+		namespace := "initcontainer-shared-gpu"
 		pods := []string{"pod0"}
 		containerNames := []string{"init0", "ctr0"}
 		expectedGPUCount := 1
@@ -217,8 +217,8 @@ var _ = Describe("Test GPU allocation", func() {
 			}
 		})
 	})
-	Context("GPU Test 7- Test DRAAdminAccess set to true", func() {
-		namespace := "gpu-test7"
+	Context("DRA AdminAccess set to true", func() {
+		namespace := "admin-access"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 
@@ -229,8 +229,8 @@ var _ = Describe("Test GPU allocation", func() {
 			verifyDRAAdminAccess(namespace, pods[0], containerName, "true")
 		})
 	})
-	Context("GPU Test 8- One pod, one container with single gpu selected using cel expression", func() {
-		namespace := "gpu-test8"
+	Context("CEL expression selector for single GPU", func() {
+		namespace := "cel-selector"
 		pods := []string{"pod0"}
 		containerNames := []string{"ctr0"}
 		expectedGPUCount := 1
