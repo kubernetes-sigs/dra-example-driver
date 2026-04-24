@@ -26,6 +26,7 @@ source "${CURRENT_DIR}/common.sh"
 export REGISTRY="${DRIVER_IMAGE_REGISTRY}"
 export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
+export PLATFORMS="${DOCKER_BUILD_PLATFORMS}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 make -f deployments/container/Makefile push

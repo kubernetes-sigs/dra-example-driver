@@ -29,7 +29,25 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${DRIVER_IMAGE_REGISTRY:="registry.k8s.io/dra-example-driver"}
 : ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
 : ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
-: ${DRIVER_IMAGE_PLATFORM:="ubuntu22.04"}
+# Use DRIVER_IMAGE_OS as the canonical variable name.
+# DRIVER_IMAGE_PLATFORM is a deprecated compatibility fallback.
+if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -n "${DRIVER_IMAGE_OS:-}" && "${DRIVER_IMAGE_PLATFORM}" != "${DRIVER_IMAGE_OS}" ]]; then
+    echo "Both DRIVER_IMAGE_PLATFORM and DRIVER_IMAGE_OS are set with different values."
+    echo "Use DRIVER_IMAGE_OS only, or set both to the same value."
+    return 1
+fi
+if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -z "${DRIVER_IMAGE_OS:-}" ]]; then
+    DRIVER_IMAGE_OS="${DRIVER_IMAGE_PLATFORM}"
+fi
+: ${DRIVER_IMAGE_OS:="ubuntu22.04"}
+
+# Use DOCKER_BUILD_PLATFORMS as the canonical variable name.
+# "Platforms" follows Docker Buildx terminology; DRIVER_IMAGE_PLATFORMS is a
+# deprecated compatibility fallback.
+if [[ -n "${DRIVER_IMAGE_PLATFORMS:-}" && -z "${DOCKER_BUILD_PLATFORMS:-}" ]]; then
+    DOCKER_BUILD_PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
+fi
+: ${DOCKER_BUILD_PLATFORMS:="linux/amd64,linux/arm64"}
 
 # The kubernetes repo to build the kind cluster from
 : ${KIND_K8S_REPO:="https://github.com/kubernetes/kubernetes.git"}

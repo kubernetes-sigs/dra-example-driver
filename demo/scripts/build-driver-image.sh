@@ -45,4 +45,4 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image
 make docker-generate
-make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"
