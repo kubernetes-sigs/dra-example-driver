@@ -29,7 +29,9 @@ The procedure below has been tested and verified on both Linux and Mac.
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
 
-### Demo
+### Creating a cluster and installing the example driver
+
+#### Kind
 We start by first cloning this repository and `cd`ing into it. All of the
 scripts and example Pod specs used in this demo are contained here, so take a
 moment to browse through the various files and see what's available:
@@ -240,6 +242,51 @@ metadata:
   resourceVersion: ""
 ```
 
+#### GKE
+It is also possible to run the example driver on a GKE cluster. For this, we
+use the pre-built image for the kubelet plugin, so there is no need
+to build anything. All that is needed is a Google Cloud Platform account,
+the gcloud CLI, and Helm.
+
+To keep things simple and similar to the kind example, we use a single-node
+GKE cluster.
+
+CDI must be enabled in containerd for the DRA driver to work. CDI is
+enabled by default in GKE since 1.32.1-gke.1489001, so we create
+a cluster in the rapid channel to make sure we get a recent version.
+
+Since DRA is still a beta feature, we need to explicitly enable it
+when the cluster is created.
+
+Create a GKE cluster with gcloud:
+```bash
+gcloud container clusters create dra-example-driver-cluster \
+--location=us-central1-c \
+--release-channel=rapid \
+--num-nodes=1 \
+--enable-kubernetes-unstable-apis=resource.k8s.io/v1beta1/deviceclasses,resource.k8s.io/v1beta1/resourceclaims,resource.k8s.io/v1beta1/resourceclaimtemplates,resource.k8s.io/v1beta1/resourceslices
+```
+
+Once the cluster is ready, install the DRA driver using Helm.
+
+The kubelet plugin in the example driver is set up to run with priority class
+`system-node-critical`. On GKE, pods are restricted by default from running
+with this priority class, so we need to use a ResourceQuota to allow it. The
+Helm chart supports this through `resourcequota.enabled=true`.
+
+```bash
+helm upgrade -i \
+  --create-namespace \
+  --namespace dra-example-driver \
+  --set=resourcequota.enabled=true \
+  dra-example-driver \
+  deployments/helm/dra-example-driver
+```
+
+To avoid chart/image skew, prefer using matching source revisions (for example,
+the chart and image built from the same checkout/commit).
+
+### Run example workloads (shared across kind and GKE)
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
 select and configure resources in various ways:
@@ -394,7 +441,7 @@ To run this demo:
 
 This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In a production environment, drivers could use this admin access indication to provide additional privileged capabilities or information to authorized workloads.
 
-### Clean Up
+### Cleanup
 
 Once you have verified everything is running correctly, delete all of the
 example apps:
@@ -418,10 +465,21 @@ gpu-test7   pod0   1/1     Terminating   0          31m
 ...
 ```
 
-Finally, you can run the following to cleanup your environment and delete the
-`kind` cluster started previously:
+#### Kind
+Finally, you can run the following to clean up your environment and delete the
+kind cluster started previously:
 ```bash
 ./demo/delete-cluster.sh
+```
+
+#### GKE
+When finished, clean up example workloads, uninstall the chart, and delete the
+GKE cluster:
+```bash
+kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5}.yaml
+helm uninstall dra-example-driver --namespace dra-example-driver
+gcloud container clusters delete dra-example-driver-cluster \
+  --location=us-central1-c
 ```
 
 ## Device Profiles
