@@ -49,19 +49,14 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.state = state
 
-	kubeletPluginOptions := []kubeletplugin.Option{
+	helper, err := kubeletplugin.Start(ctx, driver,
 		kubeletplugin.KubeClient(config.coreclient),
 		kubeletplugin.NodeName(config.flags.nodeName),
 		kubeletplugin.DriverName(config.flags.driverName),
 		kubeletplugin.RegistrarDirectoryPath(config.flags.kubeletRegistrarDirectoryPath),
 		kubeletplugin.PluginDataDirectoryPath(config.DriverPluginPath()),
-	}
-
-	kubeletPluginOptions = append(kubeletPluginOptions,
 		kubeletplugin.RollingUpdate(types.UID(config.flags.podUID)),
 	)
-
-	helper, err := kubeletplugin.Start(ctx, driver, kubeletPluginOptions...)
 	if err != nil {
 		return nil, err
 	}
