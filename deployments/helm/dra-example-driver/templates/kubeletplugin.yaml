@@ -12,12 +12,10 @@ spec:
     matchLabels:
       {{- include "dra-example-driver.selectorLabels" . | nindent 6 }}
       app.kubernetes.io/component: kubeletplugin
+  {{- with .Values.kubeletPlugin.updateStrategy }}
   updateStrategy:
-    {{- if .Values.kubeletPlugin.updateStrategy }}
-    {{- toYaml .Values.kubeletPlugin.updateStrategy | nindent 4 }}
-    {{- else }}
-    type: RollingUpdate
-    {{- end }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
   template:
     metadata:
       {{- with .Values.kubeletPlugin.podAnnotations }}
