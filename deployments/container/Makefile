@@ -30,20 +30,21 @@ endif
 IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 BASE_IMAGE ?= docker.io/ubuntu:22.04
-PLATFORMS ?= $(LOCAL_PLATFORM)
 
-# Detect host CPU architecture via `uname -m` and map it to a Docker platform
-# used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
-UNAME_M ?= $(shell uname -m)
-ifeq ($(UNAME_M),x86_64)
-	LOCAL_PLATFORM ?= linux/amd64
-else ifeq ($(UNAME_M),arm64)
-	LOCAL_PLATFORM ?= linux/arm64
-else ifeq ($(UNAME_M),aarch64)
-	LOCAL_PLATFORM ?= linux/arm64
-else
-	@echo "Unsupported local platform: $(UNAME_M)"
-	@exit 1
+# Only detect host architecture when PLATFORMS is not provided explicitly.
+ifeq ($(strip $(PLATFORMS)),)
+	# Detect host CPU architecture via `uname -m` and map it to a Docker platform
+	# used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
+	UNAME_M ?= $(shell uname -m)
+	ifeq ($(UNAME_M),x86_64)
+		PLATFORMS := linux/amd64
+	else ifeq ($(UNAME_M),arm64)
+		PLATFORMS := linux/arm64
+	else ifeq ($(UNAME_M),aarch64)
+		PLATFORMS := linux/arm64
+	else
+		$(error Unsupported local platform: $(UNAME_M))
+	endif
 endif
 
 BUILDX_BUILDER ?= dra-example-driver-builder
@@ -53,14 +54,6 @@ BUILDX_BUILDER ?= dra-example-driver-builder
 BUILDX_PROVENANCE ?= false
 # Default to disabled to avoid extra metadata generation unless explicitly needed.
 BUILDX_SBOM ?= false
-
-BUILDX_COMMON_ARGS = --pull \
-	--tag $(IMAGE) \
-	--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-	--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
-	--build-arg VERSION="$(VERSION)" \
-	-f $(DOCKERFILE) \
-	$(CURDIR)
 
 ##### Public rules #####
 .PHONY: $(DISTRIBUTIONS) build push build-local push-multiarch ensure-buildx-builder
@@ -72,21 +65,27 @@ $(DISTRIBUTIONS):
 	$(MAKE) -f $(SELF_MAKEFILE) build
 
 build:
-ifeq ($(CONTAINER_TOOL),docker)
+# Multi-arch builds must use buildx (docker only).
 ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
-	@echo "Building Docker image for multiple platforms: $(PLATFORMS)"
+	@echo "Building image for multiple platforms with buildx: $(PLATFORMS)"
+ifeq ($(CONTAINER_TOOL),docker)
 	@echo "Note: multi-platform build does not load image into local Docker daemon."
 	$(CONTAINER_TOOL) buildx build \
-		$(BUILDX_COMMON_ARGS) \
+		--pull \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
+		--build-arg VERSION="$(VERSION)" \
+		-f $(DOCKERFILE) \
+		$(CURDIR) \
 		--platform $(PLATFORMS)
 else
-	@echo "Building Docker image for single platform: $(PLATFORMS)"
-	$(CONTAINER_TOOL) buildx build \
-		$(BUILDX_COMMON_ARGS) \
-		--platform $(PLATFORMS) \
-		--load
+	@echo "Multi-platform build requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"
+	@exit 1
 endif
 else
+	# Single-arch builds use the standard container build flow.
+	@echo "Building image for single platform: $(PLATFORMS)"
 	DOCKER_BUILDKIT=1 \
 		$(CONTAINER_TOOL) build --pull \
 		--tag $(IMAGE) \
@@ -98,16 +97,29 @@ else
 endif
 
 push:
+# Multi-arch pushes publish a multi-platform manifest via buildx.
+ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
 ifeq ($(CONTAINER_TOOL),docker)
 	$(MAKE) -f $(SELF_MAKEFILE) ensure-buildx-builder
 	$(CONTAINER_TOOL) buildx build \
-		$(BUILDX_COMMON_ARGS) \
+		--pull \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
+		--build-arg VERSION="$(VERSION)" \
+		-f $(DOCKERFILE) \
+		$(CURDIR) \
 		--builder $(BUILDX_BUILDER) \
 		--platform $(PLATFORMS) \
 		--provenance=$(BUILDX_PROVENANCE) \
 		--sbom=$(BUILDX_SBOM) \
 		--push
 else
+	@echo "Multi-platform push requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"
+	@exit 1
+endif
+else
+	# Single-arch pushes build locally first, then push the image tag.
 	$(MAKE) -f $(SELF_MAKEFILE) build
 	$(CONTAINER_TOOL) push $(IMAGE)
 endif
