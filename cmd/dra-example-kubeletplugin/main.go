@@ -52,6 +52,7 @@ type Flags struct {
 	healthcheckPort               int
 	profile                       string
 	driverName                    string
+	podUID                        string
 }
 
 type Config struct {
@@ -146,6 +147,12 @@ func newApp() *cli.App {
 			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
+		},
+		&cli.StringFlag{
+			Name:        "pod-uid",
+			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
+			Destination: &flags.podUID,
+			EnvVars:     []string{"POD_UID"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
