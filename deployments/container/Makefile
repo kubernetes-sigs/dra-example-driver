@@ -37,13 +37,13 @@ MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64
 # used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
 UNAME_M ?= $(shell uname -m)
 ifeq ($(UNAME_M),x86_64)
-LOCAL_PLATFORM ?= linux/amd64
+	LOCAL_PLATFORM ?= linux/amd64
 else ifeq ($(UNAME_M),arm64)
-LOCAL_PLATFORM ?= linux/arm64
+	LOCAL_PLATFORM ?= linux/arm64
 else ifeq ($(UNAME_M),aarch64)
-LOCAL_PLATFORM ?= linux/arm64
+	LOCAL_PLATFORM ?= linux/arm64
 else
-LOCAL_PLATFORM ?= linux/amd64
+	LOCAL_PLATFORM ?= linux/amd64
 endif
 
 BUILDX_BUILDER ?= dra-example-driver-builder
