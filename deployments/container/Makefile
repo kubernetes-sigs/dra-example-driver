@@ -31,7 +31,6 @@ IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 BASE_IMAGE ?= docker.io/ubuntu:22.04
 PLATFORMS ?= $(LOCAL_PLATFORM)
-MULTIARCH_PLATFORMS ?= linux/amd64,linux/arm64
 
 # Detect host CPU architecture via `uname -m` and map it to a Docker platform
 # used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
@@ -43,16 +42,22 @@ else ifeq ($(UNAME_M),arm64)
 else ifeq ($(UNAME_M),aarch64)
 	LOCAL_PLATFORM ?= linux/arm64
 else
-	LOCAL_PLATFORM ?= linux/amd64
+	@echo "Unsupported local platform: $(UNAME_M)"
+	@exit 1
 endif
 
 BUILDX_BUILDER ?= dra-example-driver-builder
+
+# Default to disabled so release builds are stable across older buildx setups.
+# Can be overridden by CI/release jobs that require attestations.
 BUILDX_PROVENANCE ?= false
+# Default to disabled to avoid extra metadata generation unless explicitly needed.
 BUILDX_SBOM ?= false
+
 BUILDX_COMMON_ARGS = --pull \
 	--tag $(IMAGE) \
 	--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-	--build-arg BASE_IMAGE="docker.io/ubuntu:22.04" \
+	--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 	--build-arg VERSION="$(VERSION)" \
 	-f $(DOCKERFILE) \
 	$(CURDIR)
@@ -117,9 +122,3 @@ else
 	@echo "ensure-buildx-builder requires CONTAINER_TOOL=docker"
 	@exit 1
 endif
-
-build-local:
-	$(MAKE) -f $(SELF_MAKEFILE) build PLATFORMS="$(LOCAL_PLATFORM)"
-
-push-multiarch: ensure-buildx-builder
-	$(MAKE) -f $(SELF_MAKEFILE) push PLATFORMS="$(MULTIARCH_PLATFORMS)"

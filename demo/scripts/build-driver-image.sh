@@ -43,6 +43,11 @@ export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-# Regenerate the CRDs and build the container image
-make docker-generate
+# Docker release path builds and pushes in one step via buildx in
+# demo/scripts/push-driver-image.sh, so skip the standalone build here.
+if [[ "${CONTAINER_TOOL}" == "docker" ]]; then
+    exit 0
+fi
+
+# Non-docker release path needs an explicit local image build before push.
 make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"

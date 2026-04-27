@@ -26,6 +26,11 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/scripts/common.sh"
+## check return value is 1 then exit
+if [ $? -eq 1 ]; then
+    echo "Failed to source common.sh"
+    exit 1
+fi
 
 # Build the kind image and create a test cluster
 if [ "${BUILD_KIND_IMAGE}" = "true" ]; then
