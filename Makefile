@@ -172,5 +172,5 @@ push-release-artifacts:
 		HELM=$(HELM) \
 		demo/scripts/push-driver-chart.sh
 	export DRIVER_IMAGE_TAG="${IMAGE_GIT_TAG}"; \
-	demo/scripts/build-driver-image.sh && \
+	SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH=1 demo/scripts/build-driver-image.sh && \
 	demo/scripts/push-driver-image.sh

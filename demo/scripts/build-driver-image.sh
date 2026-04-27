@@ -46,9 +46,9 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 # Regenerate the CRDs and build the container image
 make docker-generate
 
-# Docker multi-arch release path builds and pushes in one step via buildx in
-# demo/scripts/push-driver-image.sh, so skip standalone build only in that case.
-if [[ "${CONTAINER_TOOL}" == "docker" && "${PLATFORMS}" == *,* ]]; then
+# In push-release-artifacts, Docker multi-arch builds and pushes in one step via
+# buildx in demo/scripts/push-driver-image.sh, so skip standalone build there.
+if [[ "${SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH:-}" == "1" && "${CONTAINER_TOOL}" == "docker" && "${PLATFORMS}" == *,* ]]; then
     exit 0
 fi
 
