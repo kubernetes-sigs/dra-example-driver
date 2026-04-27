@@ -41,13 +41,14 @@ if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -z "${DRIVER_IMAGE_OS:-}" ]]; then
 fi
 : ${DRIVER_IMAGE_OS:="ubuntu22.04"}
 
-# Use DOCKER_BUILD_PLATFORMS as the canonical variable name.
-# "Platforms" follows Docker Buildx terminology; DRIVER_IMAGE_PLATFORMS is a
-# deprecated compatibility fallback.
-if [[ -n "${DRIVER_IMAGE_PLATFORMS:-}" && -z "${DOCKER_BUILD_PLATFORMS:-}" ]]; then
-    DOCKER_BUILD_PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
+# Use PLATFORMS as the canonical variable name.
+# DRIVER_IMAGE_PLATFORMS is a deprecated compatibility fallback.
+if [[ -z "${PLATFORMS:-}" ]]; then
+    if [[ -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
+        PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
+    fi
 fi
-: ${DOCKER_BUILD_PLATFORMS:="linux/amd64,linux/arm64"}
+: ${PLATFORMS:="linux/amd64,linux/arm64"}
 
 # The kubernetes repo to build the kind cluster from
 : ${KIND_K8S_REPO:="https://github.com/kubernetes/kubernetes.git"}

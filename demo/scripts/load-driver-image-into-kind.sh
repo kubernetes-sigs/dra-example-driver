@@ -26,6 +26,11 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
+## check return value is 1 then exit
+if [ $? -eq 1 ]; then
+    echo "Failed to source common.sh"
+    exit 1
+fi
 
 # Work around kind not loading image with podman
 IMAGE_ARCHIVE=driver_image.tar
