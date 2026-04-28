@@ -24,6 +24,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"k8s.io/dynamic-resource-allocation/api/metadata"
 	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
@@ -240,6 +241,63 @@ var _ = Describe("Test GPU allocation", func() {
 		})
 		It("should have exactly 1 unclaimed GPU selected using cel expression", func() {
 			verifyGPUAllocation(namespace, pods[0], containerNames[0], expectedGPUCount)
+		})
+	})
+	Context("GPU Test 9- One pod, one container, verify in-container device metadata for ResourceClaimTemplate", func() {
+		namespace := "gpu-test9"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		It("should have all the pods ready and running", func() {
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
+		})
+		It("should have exactly 1 GPU with valid device metadata", func() {
+			var gpus []string
+			Eventually(func(g Gomega) {
+				By("checking that there is exactly 1 GPU")
+				gpus, _ = getGPUsFromPodLogs(namespace, pods[0], containerName)
+				verifyGPUCount(g, gpus, expectedGPUCount, namespace, pods[0], containerName)
+				claimNewGPU(g, gpus[0], namespace, pods[0], containerName)
+			}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+
+			metadataPath := metadata.ResourceClaimTemplateFilePath("gpu.example.com", "gpu", "gpu")
+			By("checking that the device metadata file exists and is valid")
+			dm, err := readDeviceMetadata(namespace, pods[0], containerName, metadataPath)
+			Expect(err).NotTo(HaveOccurred(),
+				fmt.Sprintf("Expected to read metadata file at %s", metadataPath))
+			fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has metadata file at: %s\n",
+				namespace, pods[0], containerName, metadataPath)
+			Expect(dm.PodClaimName).ToNot(BeEmpty(), "Expected PodClaimName in metadata to not be empty")
+			Expect(dm.Requests).To(HaveLen(1)))
+		})
+	})
+	Context("GPU Test 10- One pod, one container, verify in-container device metadata for ResourceClaim", func() {
+		namespace := "gpu-test10"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		It("should have all the pods ready and running", func() {
+			checkPodsReadyAndRunning(namespace, pods, len(pods))
+		})
+		It("should have exactly 1 GPU with valid device metadata", func() {
+			var gpus []string
+			Eventually(func(g Gomega) {
+				By("checking that there is exactly 1 GPU")
+				gpus, _ = getGPUsFromPodLogs(namespace, pods[0], containerName)
+				verifyGPUCount(g, gpus, expectedGPUCount, namespace, pods[0], containerName)
+				claimNewGPU(g, gpus[0], namespace, pods[0], containerName)
+			}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+
+			metadataPath := metadata.ResourceClaimFilePath("gpu.example.com", "single-gpu", "gpu")
+			By("checking that the device metadata file exists and is valid")
+			dm, err := readDeviceMetadata(namespace, pods[0], containerName, metadataPath)
+			Expect(err).NotTo(HaveOccurred(),
+				fmt.Sprintf("Expected to read metadata file at %s", metadataPath))
+			fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has metadata file at: %s\n",
+				namespace, pods[0], containerName, metadataPath)
+			Expect(dm.Requests).To(HaveLen(1))
 		})
 	})
 	Context("Webhooks", func() {

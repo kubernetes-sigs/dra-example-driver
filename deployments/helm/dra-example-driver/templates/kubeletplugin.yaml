@@ -88,6 +88,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.uid
+        {{- if .Values.kubeletPlugin.enableDeviceMetadata }}
+        - name: ENABLE_DEVICE_METADATA
+          value: {{ .Values.kubeletPlugin.enableDeviceMetadata | quote }}
+        {{- end }}
         volumeMounts:
         - name: plugins-registry
           mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}
