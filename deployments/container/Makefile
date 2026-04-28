@@ -34,7 +34,7 @@ BASE_IMAGE ?= docker.io/ubuntu:22.04
 # Only detect host architecture when PLATFORMS is not provided explicitly.
 ifeq ($(strip $(PLATFORMS)),)
 	# Detect host CPU architecture via `uname -m` and map it to a Docker platform
-	# used by build-local (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
+	# used by build (`linux/amd64` on x86_64, `linux/arm64` on arm64/aarch64).
 	UNAME_M ?= $(shell uname -m)
 	ifeq ($(UNAME_M),x86_64)
 		PLATFORMS := linux/amd64
@@ -56,7 +56,7 @@ BUILDX_PROVENANCE ?= false
 BUILDX_SBOM ?= false
 
 ##### Public rules #####
-.PHONY: $(DISTRIBUTIONS) build push build-local push-multiarch ensure-buildx-builder
+.PHONY: $(DISTRIBUTIONS) build push ensure-buildx-builder
 
 ubuntu22.04: BASE_IMAGE = docker.io/ubuntu:22.04
 
