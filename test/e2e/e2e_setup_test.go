@@ -21,6 +21,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -40,7 +41,12 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/dynamic-resource-allocation/api/metadata"
+	"k8s.io/dynamic-resource-allocation/devicemetadata"
 )
 
 var rootDir, currentDir, demoManifestsDir string
@@ -54,9 +60,12 @@ var demoFiles = []string{
 	"gpu-test5.yaml",
 	"gpu-test6.yaml",
 	"gpu-test8.yaml",
+	"gpu-test9.yaml",
+	"gpu-test10.yaml",
 }
 var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
+var restConfig *rest.Config
 
 func init() {
 	currentDir, _ = os.Getwd()
@@ -89,6 +98,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
 	config, err := kubeConfig.ClientConfig()
 	Expect(err).NotTo(HaveOccurred())
+	restConfig = config
 
 	clientset, err = kubernetes.NewForConfig(config)
 	Expect(err).NotTo(HaveOccurred())
@@ -445,6 +455,52 @@ func verifyGPUProperties(g Gomega, logs, namespace, podName, containerName strin
 			fmt.Sprintf("Expected Pod %s/%s, container %s to have %s=%s, got %s",
 				namespace, podName, containerName, expectedProperty, expectedPropertyValue, propertyValue))
 	}
+}
+
+// execInContainer executes a command inside a container and returns stdout.
+func execInContainer(namespace, podName, containerName string, command []string) (string, error) {
+	req := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace(namespace).
+		Name(podName).
+		SubResource("exec").
+		VersionedParams(&v1.PodExecOptions{
+			Container: containerName,
+			Command:   command,
+			Stdout:    true,
+			Stderr:    true,
+		}, scheme.ParameterCodec)
+
+	exec, err := remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL())
+	if err != nil {
+		return "", fmt.Errorf("create SPDY executor: %w", err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = exec.StreamWithContext(context.TODO(), remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		return "", fmt.Errorf("exec in %s/%s container %s failed: %w, stderr: %s",
+			namespace, podName, containerName, err, stderr.String())
+	}
+	return stdout.String(), nil
+}
+
+// readDeviceMetadata reads a device metadata file from inside a container
+// and decodes it into a metadata.DeviceMetadata struct.
+func readDeviceMetadata(namespace, podName, containerName, metadataPath string) (*metadata.DeviceMetadata, error) {
+	raw, err := execInContainer(namespace, podName, containerName, []string{"cat", metadataPath})
+	if err != nil {
+		return nil, err
+	}
+
+	var dm metadata.DeviceMetadata
+	if err := devicemetadata.DecodeMetadataFromStream(json.NewDecoder(bytes.NewReader([]byte(raw))), &dm); err != nil {
+		return nil, fmt.Errorf("decode metadata from %s: %w", metadataPath, err)
+	}
+	return &dm, nil
 }
 
 var _ = AfterSuite(func(ctx SpecContext) {

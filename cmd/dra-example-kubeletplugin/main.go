@@ -53,6 +53,7 @@ type Flags struct {
 	profile                       string
 	driverName                    string
 	podUID                        string
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -153,6 +154,13 @@ func newApp() *cli.App {
 			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
 			Destination: &flags.podUID,
 			EnvVars:     []string{"POD_UID"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
