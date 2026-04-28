@@ -244,43 +244,40 @@ Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
 select and configure resources in various ways:
 ```bash
-kubectl apply --filename=demo/gpu-test{1,2,3,4,5}.yaml
+kubectl apply --filename=demo/basic-resourceclaimtemplate.yaml \
+  --filename=demo/basic-multiple-requests.yaml \
+  --filename=demo/basic-shared-claim-across-containers.yaml \
+  --filename=demo/basic-shared-claim-across-pods.yaml \
+  --filename=demo/basic-resourceclaim-opaque-config.yaml
 ```
 
 And verify that they are coming up successfully:
 ```console
 $ kubectl get pod -A
-NAMESPACE   NAME   READY   STATUS              RESTARTS   AGE
+NAMESPACE                              NAME   READY   STATUS              RESTARTS   AGE
 ...
-gpu-test1   pod0   0/1     Pending             0          2s
-gpu-test1   pod1   0/1     Pending             0          2s
-gpu-test2   pod0   0/2     Pending             0          2s
-gpu-test3   pod0   0/1     ContainerCreating   0          2s
-gpu-test3   pod1   0/1     ContainerCreating   0          2s
-gpu-test4   pod0   0/1     Pending             0          2s
-gpu-test5   pod0   0/4     Pending             0          2s
+basic-resourceclaimtemplate            pod0   0/1     Pending             0          2s
+basic-resourceclaimtemplate            pod1   0/1     Pending             0          2s
+basic-multiple-requests                pod0   0/2     Pending             0          2s
+basic-shared-claim-across-containers   pod0   0/1     ContainerCreating   0          2s
+basic-shared-claim-across-containers   pod1   0/1     ContainerCreating   0          2s
+basic-shared-claim-across-pods         pod0   0/1     Pending             0          2s
+basic-resourceclaim-opaque-config      pod0   0/4     Pending             0          2s
 ...
 ```
 
-Use your favorite editor to look through each of the `gpu-test{1,2,3,4,5}.yaml`
-files and see what they are doing. The semantics of each match the figure
-below:
-
-![Demo Apps Figure](demo/demo-apps.png?raw=true "Semantics of the applications requesting resources from the example DRA resource driver.")
+Use your favorite editor to look through each of the `basic-*.yaml`
+files and see what they are doing.
 
 Then dump the logs of each app to verify that GPUs were allocated to them
 according to these semantics:
 ```bash
-for example in $(seq 1 5); do \
-  echo "gpu-test${example}:"
-  for pod in $(kubectl get pod -n gpu-test${example} --output=jsonpath='{.items[*].metadata.name}'); do \
-    for ctr in $(kubectl get pod -n gpu-test${example} ${pod} -o jsonpath='{.spec.containers[*].name}'); do \
+for ns in basic-resourceclaimtemplate basic-multiple-requests basic-shared-claim-across-containers basic-shared-claim-across-pods basic-resourceclaim-opaque-config; do \
+  echo "${ns}:"
+  for pod in $(kubectl get pod -n ${ns} --output=jsonpath='{.items[*].metadata.name}'); do \
+    for ctr in $(kubectl get pod -n ${ns} ${pod} -o jsonpath='{.spec.containers[*].name}'); do \
       echo "${pod} ${ctr}:"
-      if [ "${example}" -lt 3 ]; then
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+=" | grep -v "RESOURCE_CLAIM"
-      else
-        kubectl logs -n gpu-test${example} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
-      fi
+      kubectl logs -n ${ns} ${pod} -c ${ctr}| grep -E "GPU_DEVICE_[0-9]+" | grep -v "RESOURCE_CLAIM"
     done
   done
   echo ""
@@ -289,18 +286,18 @@ done
 
 This should produce output similar to the following:
 ```bash
-gpu-test1:
+basic-resourceclaimtemplate:
 pod0 ctr0:
 declare -x GPU_DEVICE_6="gpu-6"
 pod1 ctr0:
 declare -x GPU_DEVICE_7="gpu-7"
 
-gpu-test2:
+basic-multiple-requests:
 pod0 ctr0:
 declare -x GPU_DEVICE_0="gpu-0"
 declare -x GPU_DEVICE_1="gpu-1"
 
-gpu-test3:
+basic-shared-claim-across-containers:
 pod0 ctr0:
 declare -x GPU_DEVICE_2="gpu-2"
 declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
@@ -310,7 +307,7 @@ declare -x GPU_DEVICE_2="gpu-2"
 declare -x GPU_DEVICE_2_SHARING_STRATEGY="TimeSlicing"
 declare -x GPU_DEVICE_2_TIMESLICE_INTERVAL="Default"
 
-gpu-test4:
+basic-shared-claim-across-pods:
 pod0 ctr0:
 declare -x GPU_DEVICE_3="gpu-3"
 declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
@@ -320,7 +317,7 @@ declare -x GPU_DEVICE_3="gpu-3"
 declare -x GPU_DEVICE_3_SHARING_STRATEGY="TimeSlicing"
 declare -x GPU_DEVICE_3_TIMESLICE_INTERVAL="Default"
 
-gpu-test5:
+basic-resourceclaim-opaque-config:
 pod0 ts-ctr0:
 declare -x GPU_DEVICE_4="gpu-4"
 declare -x GPU_DEVICE_4_SHARING_STRATEGY="TimeSlicing"
@@ -353,14 +350,14 @@ This example driver includes support for the [DRA AdminAccess feature](https://k
 
 #### Usage Example
 
-See `demo/gpu-test7.yaml` for a complete example. Key points:
+See `demo/admin-access.yaml` for a complete example. Key points:
 
 1. **Namespace**: Must have the `resource.kubernetes.io/admin-access` label set to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true` for Kubernetes v1.34+.
 ```yaml
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test7
+  name: admin-access
   labels:
     resource.kubernetes.io/admin-access: "true"
 ```
@@ -399,22 +396,27 @@ This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In 
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=demo/gpu-test{1,2,3,4,5,7}.yaml
+kubectl delete --wait=false --filename=demo/basic-resourceclaimtemplate.yaml \
+  --filename=demo/basic-multiple-requests.yaml \
+  --filename=demo/basic-shared-claim-across-containers.yaml \
+  --filename=demo/basic-shared-claim-across-pods.yaml \
+  --filename=demo/basic-resourceclaim-opaque-config.yaml \
+  --filename=demo/admin-access.yaml
 ```
 
 And wait for them to terminate:
 ```console
 $ kubectl get pod -A
-NAMESPACE   NAME   READY   STATUS        RESTARTS   AGE
+NAMESPACE                              NAME   READY   STATUS        RESTARTS   AGE
 ...
-gpu-test1   pod0   1/1     Terminating   0          31m
-gpu-test1   pod1   1/1     Terminating   0          31m
-gpu-test2   pod0   2/2     Terminating   0          31m
-gpu-test3   pod0   1/1     Terminating   0          31m
-gpu-test3   pod1   1/1     Terminating   0          31m
-gpu-test4   pod0   1/1     Terminating   0          31m
-gpu-test5   pod0   4/4     Terminating   0          31m
-gpu-test7   pod0   1/1     Terminating   0          31m
+basic-resourceclaimtemplate            pod0   1/1     Terminating   0          31m
+basic-resourceclaimtemplate            pod1   1/1     Terminating   0          31m
+basic-multiple-requests                pod0   2/2     Terminating   0          31m
+basic-shared-claim-across-containers   pod0   1/1     Terminating   0          31m
+basic-shared-claim-across-containers   pod1   1/1     Terminating   0          31m
+basic-shared-claim-across-pods         pod0   1/1     Terminating   0          31m
+basic-resourceclaim-opaque-config      pod0   4/4     Terminating   0          31m
+admin-access                           pod0   1/1     Terminating   0          31m
 ...
 ```
 

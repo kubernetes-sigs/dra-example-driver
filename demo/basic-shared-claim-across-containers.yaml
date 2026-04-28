@@ -1,17 +1,31 @@
-# One pod, two containers
-# Each asking for shared access to a single GPU
+# Example: Shared GPU Across Containers
+#
+# One pod, two containers.
+# Each asking for shared access to a single GPU.
+#
+# Expected: Both containers see the same GPU. Check with:
+#   kubectl logs -n basic-shared-claim-across-containers pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n basic-shared-claim-across-containers pod0 -c ctr1 | grep GPU_DEVICE
+# Both containers should show the same GPU ID.
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 1
+#
+# Cluster requirements:
+#   Kubernetes 1.34+
 
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: gpu-test3
+  name: basic-shared-claim-across-containers
 
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaimTemplate
 metadata:
-  namespace: gpu-test3
+  namespace: basic-shared-claim-across-containers
   name: single-gpu
 spec:
   spec:
@@ -25,7 +39,7 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-  namespace: gpu-test3
+  namespace: basic-shared-claim-across-containers
   name: pod0
 spec:
   containers:
