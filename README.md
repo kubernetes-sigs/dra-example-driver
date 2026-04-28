@@ -58,13 +58,16 @@ If variables are not provided, defaults are:
 - `PLATFORMS=<current host platform>` (for example `linux/amd64` or `linux/arm64`)
 - `CONTAINER_TOOL=docker`
 
+For demo scripts, `PLATFORMS` is the canonical variable and `DRIVER_IMAGE_PLATFORMS`
+is only a backward compatible fallback. If both are set, `PLATFORMS` takes precedence.
+
 - Build a single-arch image with the standard Docker/Podman build flow:
   ```bash
-  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=<docker|podman>
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name|registry/name> CONTAINER_TOOL=<docker|podman>
   ```
 - Build for specific platform(s):
   ```bash
-  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name|registry/name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
   ```
 - Push for current platform:
   ```bash
