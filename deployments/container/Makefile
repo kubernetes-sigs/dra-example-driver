@@ -68,7 +68,10 @@ build:
 # Multi-arch builds must use buildx (docker only).
 ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
 	@echo "Building image for multiple platforms with buildx: $(PLATFORMS)"
-ifeq ($(CONTAINER_TOOL),docker)
+	@if [ "$(CONTAINER_TOOL)" != "docker" ]; then \
+		echo "Multi-platform build requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"; \
+		exit 1; \
+	fi
 	@echo "Note: multi-platform build does not load image into local Docker daemon."
 	$(CONTAINER_TOOL) buildx build \
 		--pull \
@@ -79,10 +82,6 @@ ifeq ($(CONTAINER_TOOL),docker)
 		-f $(DOCKERFILE) \
 		$(CURDIR) \
 		--platform $(PLATFORMS)
-else
-	@echo "Multi-platform build requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"
-	@exit 1
-endif
 else
 	# Single-arch builds use the standard container build flow.
 	@echo "Building image for single platform: $(PLATFORMS)"
@@ -99,7 +98,11 @@ endif
 push:
 # Multi-arch pushes publish a multi-platform manifest via buildx.
 ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
-ifeq ($(CONTAINER_TOOL),docker)
+	@if [ "$(CONTAINER_TOOL)" != "docker" ]; then \
+		echo "Multi-platform push requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"; \
+		exit 1; \
+	fi
+	@echo "Pushing image for multiple platforms with buildx: $(PLATFORMS)"
 	$(MAKE) -f $(SELF_MAKEFILE) ensure-buildx-builder
 	$(CONTAINER_TOOL) buildx build \
 		--pull \
@@ -114,10 +117,6 @@ ifeq ($(CONTAINER_TOOL),docker)
 		--provenance=$(BUILDX_PROVENANCE) \
 		--sbom=$(BUILDX_SBOM) \
 		--push
-else
-	@echo "Multi-platform push requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"
-	@exit 1
-endif
 else
 	# Single-arch pushes build locally first, then push the image tag.
 	$(MAKE) -f $(SELF_MAKEFILE) build
