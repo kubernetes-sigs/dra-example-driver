@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2023 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,5 +19,18 @@
 #
 # Usage: kind-build-image.sh <tag of generated image>
 
+# A reference to the current directory where this script is located
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
-exec "${CURRENT_DIR}/clusters/kind/create-cluster.sh"
+
+set -ex
+set -o pipefail
+
+source "${CURRENT_DIR}/../../scripts/common.sh"
+
+# Delete the test cluster
+${SCRIPTS_DIR}/delete-kind-cluster.sh
+
+set +x
+printf '\033[0;32m'
+echo "Cluster deletion complete: ${KIND_CLUSTER_NAME}"
+printf '\033[0m'
