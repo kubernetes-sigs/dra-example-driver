@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2023 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,5 +19,27 @@
 #
 # Usage: kind-build-image.sh <tag of generated image>
 
+# A reference to the current directory where this script is located
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
-exec "${CURRENT_DIR}/clusters/kind/create-cluster.sh"
+
+set -ex
+set -o pipefail
+
+source "${CURRENT_DIR}/../../scripts/common.sh"
+
+# Build the kind image and create a test cluster
+if ! "${CONTAINER_TOOL}" manifest inspect "${KIND_IMAGE}"; then
+	${SCRIPTS_DIR}/build-kind-image.sh
+fi
+${SCRIPTS_DIR}/create-kind-cluster.sh
+
+# If a driver image already exists load it into the cluster
+EXISTING_IMAGE_ID="$(${CONTAINER_TOOL} images --filter "reference=${DRIVER_IMAGE}" -q)"
+if [ "${EXISTING_IMAGE_ID}" != "" ]; then
+	${SCRIPTS_DIR}/load-driver-image-into-kind.sh
+fi
+
+set +x
+printf '\033[0;32m'
+echo "Cluster creation complete: ${KIND_CLUSTER_NAME}"
+printf '\033[0m'
