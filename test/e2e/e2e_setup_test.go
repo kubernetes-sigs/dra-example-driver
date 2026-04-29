@@ -34,12 +34,14 @@ import (
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
 )
 
@@ -57,6 +59,7 @@ var demoFiles = []string{
 }
 var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
+var restMapper meta.RESTMapper
 
 func init() {
 	currentDir, _ = os.Getwd()
@@ -95,6 +98,11 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 
 	dynamicClient, err = dynamic.NewForConfig(config)
 	Expect(err).NotTo(HaveOccurred())
+
+	// Create a RESTMapper to properly map GVK to GVR
+	groupResources, err := restmapper.GetAPIGroupResources(clientset.Discovery())
+	Expect(err).NotTo(HaveOccurred())
+	restMapper = restmapper.NewDiscoveryRESTMapper(groupResources)
 
 	// Check if the webhook is ready
 	// Even after verifying that the Pod is Ready and the expected Endpoints resource
@@ -185,23 +193,27 @@ func parseManifests(manifestPath string) ([]*unstructured.Unstructured, error) {
 }
 
 // getGVRForObject returns the GroupVersionResource for an unstructured object
-func getGVRForObject(obj *unstructured.Unstructured) schema.GroupVersionResource {
+func getGVRForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
 	gvk := obj.GroupVersionKind()
-	// Map Kind to proper resource name
-	resourceName := strings.ToLower(gvk.Kind) + "s"
-	// TODO: Add a RestMapper to get the correct resource name
-	return schema.GroupVersionResource{
-		Group:    gvk.Group,
-		Version:  gvk.Version,
-		Resource: resourceName,
+	
+	// Use RESTMapper to get the correct resource name
+	mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
+	if err != nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("failed to get REST mapping for %v: %w", gvk, err)
 	}
+	
+	return mapping.Resource, nil
 }
 
 // createObjects creates a list of unstructured objects using the dynamic client
 func createObjects(ctx context.Context, dynamicClient dynamic.Interface, objects []*unstructured.Unstructured, dryRun bool) error {
 	GinkgoHelper()
 	for _, obj := range objects {
-		gvr := getGVRForObject(obj)
+		gvr, err := getGVRForObject(obj)
+		if err != nil {
+			return fmt.Errorf("failed to get GVR for object %s/%s: %w", obj.GetNamespace(), obj.GetName(), err)
+		}
+		
 		namespace := obj.GetNamespace()
 
 		createOptions := metav1.CreateOptions{}
@@ -209,7 +221,6 @@ func createObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 			createOptions.DryRun = []string{metav1.DryRunAll}
 		}
 
-		var err error
 		if namespace != "" {
 			_, err = dynamicClient.Resource(gvr).Namespace(namespace).Create(ctx, obj, createOptions)
 		} else {
@@ -235,11 +246,16 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 	}
 
 	for _, obj := range objects {
-		gvr := getGVRForObject(obj)
+		gvr, err := getGVRForObject(obj)
+		if err != nil {
+			fmt.Fprintf(GinkgoWriter, "Warning: Failed to get GVR for object %s/%s: %v\n",
+				obj.GetNamespace(), obj.GetName(), err)
+			continue
+		}
+		
 		namespace := obj.GetNamespace()
 		gvk := obj.GroupVersionKind()
 
-		var err error
 		if namespace != "" {
 			err = dynamicClient.Resource(gvr).Namespace(namespace).Delete(ctx, obj.GetName(), deleteOptions)
 		} else {
