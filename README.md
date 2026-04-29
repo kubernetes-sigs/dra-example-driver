@@ -59,7 +59,7 @@ If variables are not provided, defaults are:
 - `CONTAINER_TOOL=docker`
 
 For demo scripts, `PLATFORMS` is the canonical variable and `DRIVER_IMAGE_PLATFORMS`
-is only a backward compatible fallback. If both are set, `PLATFORMS` takes precedence.
+is only a backward compatible fallback. Setting both is treated as an error.
 
 - Build a single-arch image with the standard Docker/Podman build flow:
   ```bash

@@ -43,10 +43,13 @@ fi
 
 # Use PLATFORMS as the canonical variable name.
 # DRIVER_IMAGE_PLATFORMS is a deprecated compatibility fallback.
-if [[ -z "${PLATFORMS:-}" ]]; then
-    if [[ -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
-        PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
-    fi
+if [[ -n "${PLATFORMS:-}" && -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
+    echo "Both PLATFORMS and DRIVER_IMAGE_PLATFORMS are set."
+    echo "Use PLATFORMS only. DRIVER_IMAGE_PLATFORMS is deprecated."
+    return 1
+fi
+if [[ -z "${PLATFORMS:-}" && -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
+    PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
 fi
 : ${PLATFORMS:="linux/amd64,linux/arm64"}
 
