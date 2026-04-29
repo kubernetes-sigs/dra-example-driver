@@ -45,4 +45,8 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image
 make docker-generate
-make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+
+# When MULTI_ARCH is set, build and push are combined in push-driver-image.sh
+if [ "${MULTI_ARCH}" != "true" ]; then
+    make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+fi

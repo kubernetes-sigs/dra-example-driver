@@ -17,6 +17,7 @@ CONTAINER_TOOL ?= docker
 MKDIR ?= mkdir
 DISTRIBUTIONS := ubuntu22.04
 DOCKERFILE := $(CURDIR)/deployments/container/Dockerfile
+PLATFORMS ?= linux/amd64,linux/arm64
 
 include $(CURDIR)/common.mk
 
@@ -41,3 +42,20 @@ $(DISTRIBUTIONS):
 
 push:
 	$(CONTAINER_TOOL) push $(IMAGE)
+
+##### Multi-arch rules #####
+MULTIARCH_TARGETS := $(addsuffix -push-multiarch,$(DISTRIBUTIONS))
+.PHONY: $(MULTIARCH_TARGETS)
+
+ubuntu22.04-push-multiarch: BASE_IMAGE = docker.io/ubuntu:22.04
+
+$(MULTIARCH_TARGETS): %-push-multiarch:
+	$(CONTAINER_TOOL) buildx build --pull \
+		--platform $(PLATFORMS) \
+		--tag $(IMAGE) \
+		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
+		--build-arg VERSION="$(VERSION)" \
+		-f $(DOCKERFILE) \
+		--push \
+		$(CURDIR)

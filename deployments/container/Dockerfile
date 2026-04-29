@@ -14,13 +14,16 @@
 
 ARG GOLANG_VERSION=undefined
 ARG BASE_IMAGE=undefined
-FROM golang:${GOLANG_VERSION} AS build
+FROM --platform=${BUILDPLATFORM} golang:${GOLANG_VERSION} AS build
+
+ARG TARGETARCH
+ARG TARGETOS=linux
 
 WORKDIR /build
 COPY . .
 
 RUN mkdir /artifacts
-RUN make PREFIX=/artifacts cmds
+RUN GOARCH=${TARGETARCH} GOOS=${TARGETOS} make PREFIX=/artifacts cmds
 
 FROM ${BASE_IMAGE}
 

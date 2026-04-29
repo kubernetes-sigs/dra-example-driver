@@ -28,4 +28,8 @@ export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-make -f deployments/container/Makefile push
+if [ "${MULTI_ARCH}" = "true" ]; then
+    make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}-push-multiarch"
+else
+    make -f deployments/container/Makefile push
+fi
