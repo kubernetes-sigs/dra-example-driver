@@ -38,18 +38,5 @@ if [[ "${CONTAINER_TOOL}" != "docker" ]]; then
     exit 1
 fi
 
-# Create a temorary directory to hold all the artifacts we need for building the image
-TMP_DIR="$(mktemp -d)"
-cleanup() {
-    rm -rf "${TMP_DIR}"
-}
-trap cleanup EXIT
-
-# Set some build variables
-KIND_K8S_DIR="${TMP_DIR}/kubernetes-${KIND_K8S_TAG}"
-
-# Checkout the version of kubernetes we want to build our kind image from
-git clone --depth 1 --branch ${KIND_K8S_TAG} ${KIND_K8S_REPO} ${KIND_K8S_DIR}
-
 # Build the kind base image
-${KIND} build node-image --image "${KIND_IMAGE}" "${KIND_K8S_DIR}"
+${KIND} build node-image --image "${KIND_IMAGE}" --type release "${KIND_K8S_TAG}"

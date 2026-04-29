@@ -36,12 +36,7 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 # The kubernetes tag to build the kind cluster from
 # From ${KIND_K8S_REPO}/tags
-: ${KIND_K8S_TAG:="v1.35.0"}
-
-# At present, kind has a new enough node image that we don't need to build our
-# own. This won't always be true and we may need to set the variable below to
-# 'true' from time to time as things change.
-: ${BUILD_KIND_IMAGE:="false"}
+: ${KIND_K8S_TAG:="v1.36.0"}
 
 # The name of the kind cluster to create
 : ${KIND_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}

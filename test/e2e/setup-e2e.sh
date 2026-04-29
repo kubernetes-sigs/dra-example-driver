@@ -22,7 +22,7 @@ bash demo/create-cluster.sh
 
 helm upgrade -i \
   --repo https://charts.jetstack.io \
-  --version v1.16.3 \
+  --version v1.20.2 \
   --create-namespace \
   --namespace cert-manager \
   --wait \
