@@ -28,7 +28,7 @@ set -o pipefail
 source "${CURRENT_DIR}/scripts/common.sh"
 
 # Build the kind image and create a test cluster
-if [ "${BUILD_KIND_IMAGE}" = "true" ]; then
+if ! "${CONTAINER_TOOL}" manifest inspect "${KIND_IMAGE}"; then
 	${SCRIPTS_DIR}/build-kind-image.sh
 fi
 ${SCRIPTS_DIR}/create-kind-cluster.sh
