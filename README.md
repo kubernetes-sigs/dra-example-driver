@@ -29,7 +29,9 @@ The procedure below has been tested and verified on both Linux and Mac.
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
 
-### Demo
+### Creating a cluster and installing the example driver
+
+#### Kind
 We start by first cloning this repository and `cd`ing into it. All of the
 scripts and example Pod specs used in this demo are contained here, so take a
 moment to browse through the various files and see what's available:
@@ -240,6 +242,12 @@ metadata:
   resourceVersion: ""
 ```
 
+#### Other platforms
+This demo uses kind by default. Additional platform-specific setup and cleanup
+guides are documented in [`demo/clusters`](demo/clusters/README.md), including
+GKE instructions in [`demo/clusters/gke`](demo/clusters/gke/README.md).
+
+### Run example workloads (shared across kind and GKE)
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
 select and configure resources in various ways:
@@ -391,7 +399,7 @@ To run this demo:
 
 This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In a production environment, drivers could use this admin access indication to provide additional privileged capabilities or information to authorized workloads.
 
-### Clean Up
+### Cleanup
 
 Once you have verified everything is running correctly, delete all of the
 example apps:
@@ -420,11 +428,15 @@ admin-access                           pod0   1/1     Terminating   0          3
 ...
 ```
 
-Finally, you can run the following to cleanup your environment and delete the
-`kind` cluster started previously:
+#### Kind
+Finally, you can run the following to clean up your environment and delete the
+kind cluster started previously:
 ```bash
 ./demo/delete-cluster.sh
 ```
+
+#### Other platforms
+Use the cleanup steps documented in [`demo/clusters`](demo/clusters/README.md).
 
 ## Device Profiles
 

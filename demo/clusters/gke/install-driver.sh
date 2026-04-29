@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2023 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,10 +14,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This scripts invokes `kind build image` so that the resulting
-# image has a containerd with CDI support.
-#
-# Usage: kind-build-image.sh <tag of generated image>
+set -euo pipefail
 
-CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
-exec "${CURRENT_DIR}/clusters/kind/create-cluster.sh"
+SCRIPT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
+
+: "${DRIVER_RELEASE_NAME:=dra-example-driver}"
+: "${DRIVER_NAMESPACE:=dra-example-driver}"
+
+helm upgrade -i \
+  --create-namespace \
+  --namespace "${DRIVER_NAMESPACE}" \
+  --set resourceQuota.enabled=true \
+  "${DRIVER_RELEASE_NAME}" \
+  "${REPO_ROOT}/deployments/helm/dra-example-driver"
+
+echo "Driver install/upgrade complete: ${DRIVER_RELEASE_NAME} (${DRIVER_NAMESPACE})"
