@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2026 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,7 +17,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
 
 : "${DRIVER_RELEASE_NAME:=dra-example-driver}"
 : "${DRIVER_NAMESPACE:=dra-example-driver}"
@@ -25,7 +25,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 helm upgrade -i \
   --create-namespace \
   --namespace "${DRIVER_NAMESPACE}" \
-  --set resourcequota.enabled=true \
+  --set resourceQuota.enabled=true \
   "${DRIVER_RELEASE_NAME}" \
   "${REPO_ROOT}/deployments/helm/dra-example-driver"
 

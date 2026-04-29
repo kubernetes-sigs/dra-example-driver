@@ -242,9 +242,10 @@ metadata:
   resourceVersion: ""
 ```
 
-#### GKE
-See [GKE setup and lifecycle details](docs/GKE.md) for cluster creation,
-driver install, and cleanup commands.
+#### Other platforms
+This demo uses kind by default. Additional platform-specific setup and cleanup
+guides are documented in [`demo/clusters`](demo/clusters/README.md), including
+GKE instructions in [`demo/clusters/gke`](demo/clusters/gke/README.md).
 
 ### Run example workloads (shared across kind and GKE)
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
@@ -432,8 +433,8 @@ kind cluster started previously:
 ./demo/delete-cluster.sh
 ```
 
-#### GKE
-Use the cleanup steps in [GKE setup and lifecycle details](docs/GKE.md).
+#### Other platforms
+Use the cleanup steps documented in [`demo/clusters`](demo/clusters/README.md).
 
 ## Device Profiles
 

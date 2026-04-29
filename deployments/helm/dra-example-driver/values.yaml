@@ -86,7 +86,7 @@ webhook:
     # If not set and create is true, a name is generated using the fullname template
     name: ""
 
-resourcequota:
+resourceQuota:
   enabled: false
   pods: 10
   scopeSelector:

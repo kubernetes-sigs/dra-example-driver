@@ -1,4 +1,4 @@
-{{- if .Values.resourcequota.enabled }}
+{{- if .Values.resourceQuota.enabled }}
 apiVersion: v1
 kind: ResourceQuota
 metadata:
@@ -6,8 +6,8 @@ metadata:
   namespace: {{ include "dra-example-driver.namespace" . }}
 spec:
   hard:
-    pods: {{ .Values.resourcequota.pods }}
-  {{- with .Values.resourcequota.scopeSelector.matchExpressions }}
+    pods: {{ .Values.resourceQuota.pods }}
+  {{- with .Values.resourceQuota.scopeSelector.matchExpressions }}
   scopeSelector:
     matchExpressions:
       {{- toYaml . | nindent 4 }}

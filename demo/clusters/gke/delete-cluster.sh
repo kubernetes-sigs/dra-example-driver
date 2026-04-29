@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Copyright 2026 The Kubernetes Authors.
+# Copyright The Kubernetes Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,9 +16,10 @@
 
 set -euo pipefail
 
-: "${DRIVER_RELEASE_NAME:=dra-example-driver}"
-: "${DRIVER_NAMESPACE:=dra-example-driver}"
+: "${GKE_CLUSTER_NAME:=dra-example-driver-cluster}"
+: "${GKE_LOCATION:=us-central1-c}"
 
-helm uninstall "${DRIVER_RELEASE_NAME}" --namespace "${DRIVER_NAMESPACE}"
+gcloud container clusters delete "${GKE_CLUSTER_NAME}" \
+  --location="${GKE_LOCATION}"
 
-echo "Driver uninstall complete: ${DRIVER_RELEASE_NAME} (${DRIVER_NAMESPACE})"
+echo "GKE cluster deletion complete: ${GKE_CLUSTER_NAME}"
