@@ -17,7 +17,14 @@
 # stop at first failure to save time
 set -e
 
-bash demo/build-driver.sh
+# Use local Helm chart by default, or from OCI registry if HELM_CHART_PATH is set
+# Example: HELM_CHART_PATH="oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver" make setup-e2e
+HELM_CHART_PATH="${HELM_CHART_PATH:-deployments/helm/dra-example-driver}"
+
+# Skip building local driver image if using OCI registry chart
+if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
+	bash demo/build-driver.sh
+fi
 bash demo/create-cluster.sh
 
 helm upgrade -i \
@@ -36,4 +43,4 @@ helm upgrade -i \
   --set webhook.enabled=true \
   --set kubeletPlugin.numDevices=10 \
   dra-example-driver \
-  deployments/helm/dra-example-driver
+  ${HELM_CHART_PATH}
