@@ -1,0 +1,72 @@
+# Example: Extended Resource Requests via DRA (KEP-5004)
+#
+# Two pods, one container each.
+# Each container asks for one GPU using the classic `resources.limits` API
+# instead of via a ResourceClaim. The kube-scheduler dynamically allocates a
+# device from the DRA driver to satisfy each request.
+#
+# pod0 uses the implicit name `deviceclass.resource.kubernetes.io/<className>`
+# and works against the default chart install.
+# pod1 uses an explicit name (`example.com/gpu`) and requires the chart to be
+# installed with `--set deviceClass.extendedResourceName=example.com/gpu`.
+# Without that, pod1 stays Pending while pod0 still runs.
+#
+# Expected: each pod gets one GPU. Check with:
+#   kubectl logs -n extended-resource-request pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n extended-resource-request pod1 -c ctr0 | grep GPU_DEVICE
+# The scheduler also records the allocation in pod.status:
+#   kubectl get pod -n extended-resource-request pod0 \
+#     -o jsonpath='{.status.extendedResourceClaimStatus}'
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 2
+#
+# Cluster requirements:
+#   Kubernetes 1.34+
+#   Feature gate: DRAExtendedResource
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: extended-resource-request
+
+---
+# pod0: implicit extended-resource name. Works with the default chart install.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: extended-resource-request
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      limits:
+        deviceclass.resource.kubernetes.io/gpu.example.com: 1
+
+---
+# pod1: explicit extended-resource name. Requires the chart installed with
+# `--set deviceClass.extendedResourceName=example.com/gpu`, otherwise Pending.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: extended-resource-request
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      limits:
+        example.com/gpu: 1
