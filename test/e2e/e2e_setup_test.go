@@ -27,13 +27,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strings"
 	"testing"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -46,25 +47,16 @@ import (
 )
 
 var rootDir, currentDir, demoManifestsDir string
-var observedGPUs map[string]string
-var demoFiles = []string{
-	"basic-resourceclaimtemplate.yaml",
-	"basic-multiple-requests.yaml",
-	"basic-shared-claim-across-containers.yaml",
-	"admin-access.yaml", // deploying this earlier to ensure the pod can access in-use devices and does not block future allocations of the same devices
-	"basic-shared-claim-across-pods.yaml",
-	"basic-resourceclaim-opaque-config.yaml",
-	"initcontainer-shared-gpu.yaml",
-	"cel-selector.yaml",
-}
 var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
 var restMapper meta.RESTMapper
 
+const driverNamespace = "dra-example-driver"
+const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
+
 func init() {
 	currentDir, _ = os.Getwd()
 	rootDir = filepath.Join(filepath.Dir(currentDir), "..")
-	observedGPUs = make(map[string]string)
 	// command line flag for demo manifests directory
 	flag.StringVar(&demoManifestsDir, "demo-manifests-dir", filepath.Join(rootDir, "demo"), "Directory containing demo YAML manifests")
 }
@@ -74,6 +66,11 @@ const (
 	checkPodLogsInterval = "1s"
 )
 
+var (
+	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[0-9]+="(.+)"$`)
+	gpuIDRegexp     = regexp.MustCompile(`^gpu-([0-9]+)$`)
+)
+
 func TestE2e(t *testing.T) {
 	flag.Parse()
 	RegisterFailHandler(Fail)
@@ -81,11 +78,6 @@ func TestE2e(t *testing.T) {
 }
 
 var _ = BeforeSuite(func(ctx SpecContext) {
-	suiteConfig, _ := GinkgoConfiguration()
-	if suiteConfig.ParallelTotal > 1 {
-		Fail("tests cannot be run in parallel")
-	}
-
 	// Create a Kubernetes clientset
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	configOverrides := &clientcmd.ConfigOverrides{}
@@ -110,13 +102,6 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	// issues, so retry here until we can ensure it's available before the real tests start.
 	By("Ensuring the webhook is ready")
 	verifyWebhook(ctx)
-
-	// Deploy all the test files
-	By("Deploying all the GPU test files")
-	for _, file := range demoFiles {
-		absPath := filepath.Join(demoManifestsDir, file)
-		createManifest(ctx, dynamicClient, absPath)
-	}
 })
 
 func verifyWebhook(ctx context.Context) {
@@ -157,6 +142,78 @@ func verifyWebhook(ctx context.Context) {
 	}, "30s", "1s").WithContext(ctx).Should(Succeed())
 }
 
+// deployManifest creates resources from a manifest file and registers cleanup
+// and failure diagnostics via DeferCleanup.
+func deployManifest(ctx context.Context, namespace string, manifestFile string) {
+	GinkgoHelper()
+	absPath := filepath.Join(demoManifestsDir, manifestFile)
+	createManifest(ctx, dynamicClient, absPath)
+	// DeferCleanup is LIFO: register cleanup first, then diagnostics second.
+	// On teardown, diagnostics run first (while pods exist), then cleanup deletes them.
+	DeferCleanup(func(ctx context.Context) {
+		deleteManifest(ctx, dynamicClient, absPath)
+	}, NodeTimeout(30*time.Second))
+	DeferCleanup(dumpDiagnosticsOnFailure, namespace, NodeTimeout(15*time.Second))
+}
+
+// dumpDiagnosticsOnFailure collects pod status, events, and driver logs
+// when a test has failed. Intended for use as a DeferCleanup callback.
+func dumpDiagnosticsOnFailure(ctx context.Context, namespace string) {
+	if !CurrentSpecReport().Failed() {
+		return
+	}
+
+	fmt.Fprintf(GinkgoWriter, "\n=== Failure diagnostics for namespace %s ===\n", namespace)
+
+	// Pod status
+	podList, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failed to list pods: %v\n", err)
+	} else {
+		for _, pod := range podList.Items {
+			fmt.Fprintf(GinkgoWriter, "Pod %s: phase=%s conditions=%v\n",
+				pod.Name, pod.Status.Phase, pod.Status.Conditions)
+		}
+	}
+
+	// Events
+	events, err := clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failed to list events: %v\n", err)
+	} else {
+		for _, e := range events.Items {
+			fmt.Fprintf(GinkgoWriter, "Event %s/%s: %s %s\n",
+				e.InvolvedObject.Kind, e.InvolvedObject.Name, e.Reason, e.Message)
+		}
+	}
+
+	// Driver logs
+	tailLines := int64(20)
+	driverPods, err := clientset.CoreV1().Pods(driverNamespace).List(ctx, metav1.ListOptions{
+		LabelSelector: driverPodSelector,
+	})
+	if err != nil {
+		fmt.Fprintf(GinkgoWriter, "Failed to list driver pods: %v\n", err)
+		return
+	}
+	for _, pod := range driverPods.Items {
+		for _, c := range pod.Spec.Containers {
+			stream, err := clientset.CoreV1().Pods(driverNamespace).GetLogs(pod.Name, &v1.PodLogOptions{
+				Container: c.Name,
+				TailLines: &tailLines,
+			}).Stream(ctx)
+			if err != nil {
+				fmt.Fprintf(GinkgoWriter, "Driver pod %s, container %s: failed to get logs: %v\n", pod.Name, c.Name, err)
+				continue
+			}
+			buf := new(bytes.Buffer)
+			io.Copy(buf, stream)
+			stream.Close()
+			fmt.Fprintf(GinkgoWriter, "Driver pod %s, container %s (last %d lines):\n%s\n", pod.Name, c.Name, tailLines, buf.String())
+		}
+	}
+}
+
 // parseManifests reads a YAML file and returns a slice of unstructured objects
 func parseManifests(manifestPath string) ([]*unstructured.Unstructured, error) {
 	data, err := os.ReadFile(manifestPath)
@@ -195,13 +252,13 @@ func parseManifests(manifestPath string) ([]*unstructured.Unstructured, error) {
 // getGVRForObject returns the GroupVersionResource for an unstructured object
 func getGVRForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
 	gvk := obj.GroupVersionKind()
-	
+
 	// Use RESTMapper to get the correct resource name
 	mapping, err := restMapper.RESTMapping(gvk.GroupKind(), gvk.Version)
 	if err != nil {
 		return schema.GroupVersionResource{}, fmt.Errorf("failed to get REST mapping for %v: %w", gvk, err)
 	}
-	
+
 	return mapping.Resource, nil
 }
 
@@ -213,7 +270,7 @@ func createObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 		if err != nil {
 			return fmt.Errorf("failed to get GVR for object %s/%s: %w", obj.GetNamespace(), obj.GetName(), err)
 		}
-		
+
 		namespace := obj.GetNamespace()
 
 		createOptions := metav1.CreateOptions{}
@@ -238,6 +295,7 @@ func createObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 }
 
 // deleteObjects deletes a list of unstructured objects using the dynamic client
+// and waits for them to be fully removed.
 func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects []*unstructured.Unstructured) {
 	GinkgoHelper()
 	deletePolicy := metav1.DeletePropagationForeground
@@ -252,7 +310,7 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 				obj.GetNamespace(), obj.GetName(), err)
 			continue
 		}
-		
+
 		namespace := obj.GetNamespace()
 		gvk := obj.GroupVersionKind()
 
@@ -262,11 +320,34 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 			err = dynamicClient.Resource(gvr).Delete(ctx, obj.GetName(), deleteOptions)
 		}
 
-		// Ignore not found errors
-		if err != nil && !strings.Contains(err.Error(), "not found") {
+		if apierrors.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
 			fmt.Fprintf(GinkgoWriter, "Warning: Failed to delete %s/%s in namespace %s: %v\n",
 				gvk.Kind, obj.GetName(), namespace, err)
 		}
+	}
+
+	// Wait for all objects to be fully removed
+	for _, obj := range objects {
+		gvr, err := getGVRForObject(obj)
+		if err != nil {
+			continue
+		}
+		namespace := obj.GetNamespace()
+		name := obj.GetName()
+
+		Eventually(func() bool {
+			var err error
+			if namespace != "" {
+				_, err = dynamicClient.Resource(gvr).Namespace(namespace).Get(ctx, name, metav1.GetOptions{})
+			} else {
+				_, err = dynamicClient.Resource(gvr).Get(ctx, name, metav1.GetOptions{})
+			}
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(30*time.Second).WithPolling(1*time.Second).Should(BeTrue(),
+			"Timed out waiting for %s/%s to be deleted", obj.GroupVersionKind().Kind, name)
 	}
 }
 
@@ -302,52 +383,50 @@ func createManifestWithDryRun(ctx context.Context, dynamicClient dynamic.Interfa
 	return createObjects(ctx, dynamicClient, objects, true)
 }
 
-func checkPodsReadyAndRunning(namespace string, pods []string, expectedPodCount int) {
+func checkPodsReadyAndRunning(ctx context.Context, namespace string, pods []string) {
 	GinkgoHelper()
-	// check if the pods are Ready
+	// check if the pods are Ready and Running
 	for _, podName := range pods {
-		Eventually(func() bool {
-			pod, err := clientset.CoreV1().Pods(namespace).Get(context.TODO(), podName, metav1.GetOptions{})
-			if err != nil {
-				return false
-			}
+		Eventually(func(g Gomega) {
+			pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred(),
+				"Failed to get pod %s/%s", namespace, podName)
+			g.Expect(pod.Status.Phase).To(Equal(v1.PodRunning),
+				"Pod %s/%s has phase %s, expected Running (conditions: %v)",
+				namespace, podName, pod.Status.Phase, pod.Status.Conditions)
+			ready := false
 			for _, cond := range pod.Status.Conditions {
-				if cond.Type == "Ready" && cond.Status == "True" {
-					return true
+				if cond.Type == v1.PodReady && cond.Status == v1.ConditionTrue {
+					ready = true
+					break
 				}
 			}
-			return false
-		}, "120s", "5s").Should(BeTrue())
+			g.Expect(ready).To(BeTrue(),
+				"Pod %s/%s is Running but not Ready (conditions: %v)",
+				namespace, podName, pod.Status.Conditions)
+		}, "120s", "5s").Should(Succeed())
 	}
-	// check if the pods are in Running state
-	podList, err := clientset.CoreV1().Pods(namespace).List(context.TODO(), metav1.ListOptions{})
-	Expect(err).NotTo(HaveOccurred())
-	runningPodCount := 0
-	for _, pod := range podList.Items {
-		if pod.Status.Phase == "Running" {
-			runningPodCount++
-		}
-	}
-	Expect(runningPodCount).To(Equal(expectedPodCount))
 }
 
-// getGPUsFromPodLogs retrieves pod logs and extracts GPU device information
-func getGPUsFromPodLogs(namespace, pod, container string) ([]string, string) {
+// getGPUsFromPodLogs retrieves pod logs and extracts GPU device information.
+// Returns errors via g so callers inside Eventually can retry on transient failures.
+func getGPUsFromPodLogs(ctx context.Context, g Gomega, namespace, pod, container string) ([]string, string) {
 	GinkgoHelper()
 	req := clientset.CoreV1().Pods(namespace).GetLogs(pod, &v1.PodLogOptions{
 		Container: container,
 	})
-	podLogs, err := req.Stream(context.TODO())
-	Expect(err).NotTo(HaveOccurred())
+	podLogs, err := req.Stream(ctx)
+	g.Expect(err).NotTo(HaveOccurred(),
+		"Failed to stream logs for pod %s/%s, container %s", namespace, pod, container)
 	defer podLogs.Close()
 
 	buf := new(bytes.Buffer)
 	_, err = io.Copy(buf, podLogs)
-	Expect(err).NotTo(HaveOccurred())
+	g.Expect(err).NotTo(HaveOccurred(),
+		"Failed to read logs for pod %s/%s, container %s", namespace, pod, container)
 	logs := buf.String()
 
-	re := regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[0-9]+="(.+)"$`)
-	matches := re.FindAllStringSubmatch(logs, -1)
+	matches := gpuDeviceRegexp.FindAllStringSubmatch(logs, -1)
 
 	var gpus []string
 	for _, m := range matches {
@@ -356,13 +435,6 @@ func getGPUsFromPodLogs(namespace, pod, container string) ([]string, string) {
 		}
 	}
 	return gpus, logs
-}
-
-func isGPUAlreadySeen(gpu string) bool {
-	if _, alreadySeen := observedGPUs[gpu]; alreadySeen {
-		return true
-	}
-	return false
 }
 
 func extractGPUProperty(logs string, id string, property string) string {
@@ -382,8 +454,7 @@ func extractGPUProperty(logs string, id string, property string) string {
 }
 
 func getGPUID(gpu string) string {
-	re := regexp.MustCompile(`^gpu-([0-9]+)$`)
-	matches := re.FindAllStringSubmatch(gpu, -1)
+	matches := gpuIDRegexp.FindAllStringSubmatch(gpu, -1)
 	if len(matches) > 0 && len(matches[0]) > 1 {
 		return matches[0][1]
 	}
@@ -391,43 +462,45 @@ func getGPUID(gpu string) string {
 }
 
 // verifyGPUAllocation checks that a pod/container has the expected number of GPUs
-// and tracks them in observedGPUs to ensure no GPU is claimed twice
-func verifyGPUAllocation(namespace, podName, containerName string, expectedGPUCount int) {
+// and tracks them in observedGPUs to ensure no GPU is claimed twice within a test
+func verifyGPUAllocation(ctx context.Context, namespace, podName, containerName string, expectedGPUCount int, observedGPUs map[string]string) {
 	GinkgoHelper()
-	var gpus []string
 	Eventually(func(g Gomega) {
 		// Get pod logs and extract GPUs
-		gpus, _ = getGPUsFromPodLogs(namespace, podName, containerName)
+		gpus, _ := getGPUsFromPodLogs(ctx, g, namespace, podName, containerName)
 		verifyGPUCount(g, gpus, expectedGPUCount, namespace, podName, containerName)
 
 		// Verify each GPU is unclaimed
 		for _, gpu := range gpus {
-			claimNewGPU(g, gpu, namespace, podName, containerName)
+			claimNewGPU(g, observedGPUs, gpu, namespace, podName, containerName)
 		}
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
 // verifyDRAAdminAccess verifies that DRA_ADMIN_ACCESS is set to the expected value
-func verifyDRAAdminAccess(namespace, podName, containerName, expectedValue string) {
+func verifyDRAAdminAccess(ctx context.Context, namespace, podName, containerName, expectedValue string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
-		_, logs := getGPUsFromPodLogs(namespace, podName, containerName)
+		_, logs := getGPUsFromPodLogs(ctx, g, namespace, podName, containerName)
 		draAdminAccess := extractGPUProperty(logs, "", "DRA_ADMIN_ACCESS")
 		g.Expect(draAdminAccess).To(Equal(expectedValue),
 			fmt.Sprintf("Expected Pod %s/%s, container %s to have DRA_ADMIN_ACCESS=%s, but got %s",
 				namespace, podName, containerName, expectedValue, draAdminAccess))
-		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has DRA_ADMIN_ACCESS=%s\n", namespace, podName, containerName, draAdminAccess)
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has DRA_ADMIN_ACCESS=%s\n",
+			namespace, podName, containerName, draAdminAccess)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
 // claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs
-func claimNewGPU(g Gomega, gpu, namespace, podName, containerName string) {
+func claimNewGPU(g Gomega, observedGPUs map[string]string, gpu, namespace, podName, containerName string) {
 	GinkgoHelper()
-	g.Expect(isGPUAlreadySeen(gpu)).To(Equal(false),
-		fmt.Sprintf("Pod %s/%s, container %s should have a new GPU but claimed %s which is already claimed",
-			namespace, podName, containerName, gpu))
+	claimedBy, alreadySeen := observedGPUs[gpu]
+	g.Expect(alreadySeen).To(BeFalse(),
+		fmt.Sprintf("Pod %s/%s, container %s should have a new GPU but claimed %s which is already claimed by %s",
+			namespace, podName, containerName, gpu, claimedBy))
 	observedGPUs[gpu] = namespace + "/" + podName
-	fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s claimed %s", namespace, podName, containerName, gpu)
+	fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s claimed %s\n",
+		namespace, podName, containerName, gpu)
 }
 
 // verifyGPUCount verifies that a container has the expected number of GPUs
@@ -436,15 +509,6 @@ func verifyGPUCount(g Gomega, gpus []string, expectedGPUCount int, namespace, po
 	g.Expect(gpus).To(HaveLen(expectedGPUCount),
 		fmt.Sprintf("Expected Pod %s/%s, container %s to have %d GPUs, but got %d: %v",
 			namespace, podName, containerName, expectedGPUCount, len(gpus), gpus))
-}
-
-// verifySharedGPU verifies that a container reuses the same GPU as expected
-func verifySharedGPU(g Gomega, gpu, expectedGPU, namespace, podName, containerName string) {
-	GinkgoHelper()
-	g.Expect(gpu).To(Equal(expectedGPU),
-		fmt.Sprintf("Pod %s/%s, container %s should claim the same GPU as %s, but did not",
-			namespace, podName, containerName, observedGPUs[expectedGPU]))
-	fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s claimed %s", namespace, podName, containerName, gpu)
 }
 
 // verifyGPUProperties verifies GPU sharing strategy and an optional additional property
@@ -463,14 +527,47 @@ func verifyGPUProperties(g Gomega, logs, namespace, podName, containerName strin
 	}
 }
 
-var _ = AfterSuite(func(ctx SpecContext) {
-	// Pod deletion should be fast (less than the default grace period of 30s)
-	// see https://github.com/kubernetes/kubernetes/issues/127188 for details
-	for _, file := range demoFiles {
-		absPath := filepath.Join(demoManifestsDir, file)
-		Eventually(func() error {
-			deleteManifest(ctx, dynamicClient, absPath)
-			return nil
-		}, "25s", "1s").Should(Succeed(), fmt.Sprintf("Failed to delete resources in %s within 25s", file))
+// podContainer identifies a specific container in a specific pod.
+type podContainer struct {
+	pod       string
+	container string
+}
+
+// sharingGroup describes a set of pod/containers that should all share the same GPU,
+// along with the expected sharing properties.
+type sharingGroup struct {
+	// members lists the pod/container pairs that should all see the same GPU.
+	members []podContainer
+	// expectedStrategy is the expected GPU sharing strategy (e.g. "TimeSlicing", "SpacePartitioning").
+	expectedStrategy string
+	// expectedProperty is the name of the GPU property to verify (e.g. "TIMESLICE_INTERVAL", "PARTITION_COUNT").
+	expectedProperty string
+	// expectedPropValue is the expected value of expectedProperty (e.g. "Default", "Long", "10").
+	expectedPropValue string
+}
+
+// verifySharedGPUGroup verifies that all members of a sharing group see the same GPU
+// and that the GPU has the expected sharing properties.
+func verifySharedGPUGroup(ctx context.Context, namespace string, group sharingGroup) {
+	GinkgoHelper()
+	var firstGPU string
+	for i, member := range group.members {
+		Eventually(func(g Gomega) {
+			gpus, logs := getGPUsFromPodLogs(ctx, g, namespace, member.pod, member.container)
+			verifyGPUCount(g, gpus, 1, namespace, member.pod, member.container)
+			if i == 0 {
+				firstGPU = gpus[0]
+				fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has GPU %s (first in group)\n",
+					namespace, member.pod, member.container, firstGPU)
+			} else {
+				g.Expect(gpus[0]).To(Equal(firstGPU),
+					fmt.Sprintf("Pod %s/%s, container %s should claim the same GPU as previous, but got %s instead of %s",
+						namespace, member.pod, member.container, gpus[0], firstGPU))
+				fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s shares GPU %s\n",
+					namespace, member.pod, member.container, gpus[0])
+			}
+			verifyGPUProperties(g, logs, namespace, member.pod, member.container, gpus,
+				group.expectedStrategy, group.expectedProperty, group.expectedPropValue)
+		}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 	}
-})
+}
