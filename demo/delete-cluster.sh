@@ -26,6 +26,11 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/scripts/common.sh"
+## check return value of source command
+if [ $? -eq 1 ]; then
+    echo "Failed to source common.sh"
+    exit 1
+fi
 
 # Delete the test cluster
 ${SCRIPTS_DIR}/delete-kind-cluster.sh

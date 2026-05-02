@@ -20,12 +20,20 @@ CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 set -ex
 set -o pipefail
 
+
 source "${CURRENT_DIR}/common.sh"
+## check return value is 1 then exit
+if [ $? -eq 1 ]; then
+    echo "Failed to source common.sh"
+    exit 1
+fi
+
 
 # Set build variables
 export REGISTRY="${DRIVER_IMAGE_REGISTRY}"
 export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
+export PLATFORMS="${PLATFORMS}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 make -f deployments/container/Makefile push

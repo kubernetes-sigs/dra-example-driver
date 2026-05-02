@@ -45,4 +45,12 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image
 make docker-generate
-make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+
+# In push-release-artifacts, Docker multi-arch builds and pushes in one step via
+# buildx in demo/scripts/push-driver-image.sh, so skip standalone build there.
+if [[ "${SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH:-}" == "1" && "${CONTAINER_TOOL}" == "docker" && "${PLATFORMS}" == *,* ]]; then
+    exit 0
+fi
+
+# For single-arch (docker or non-docker), build the image locally before push.
+make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"

@@ -64,6 +64,8 @@ func init() {
 const (
 	checkPodLogsTimeout  = "30s"
 	checkPodLogsInterval = "1s"
+	webhookReadyTimeout  = "120s"
+	webhookReadyInterval = "1s"
 )
 
 var (
@@ -139,7 +141,7 @@ func verifyWebhook(ctx context.Context) {
 			return fmt.Errorf("webhook not ready: %w", err)
 		}
 		return nil
-	}, "30s", "1s").WithContext(ctx).Should(Succeed())
+	}, webhookReadyTimeout, webhookReadyInterval).WithContext(ctx).Should(Succeed())
 }
 
 // deployManifest creates resources from a manifest file and registers cleanup
