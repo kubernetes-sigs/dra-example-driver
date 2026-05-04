@@ -21,4 +21,4 @@
 
 set -e
 
-bash demo/delete-cluster.sh
+bash demo/clusters/kind/delete-cluster.sh

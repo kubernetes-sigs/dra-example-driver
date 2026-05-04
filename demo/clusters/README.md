@@ -1,11 +1,13 @@
-# Cluster setup guides
+# Cluster lifecycle
 
-The demo uses kind by default.
+This directory holds platform-specific scripts and documentation for bringing
+up Kubernetes clusters with Dynamic Resource Allocation (DRA) enabled, for
+use with the demo in this repository.
 
-- kind scripts: `demo/clusters/kind/`
+Each subdirectory is named for its platform. Where applicable, scripts follow a
+common layout:
 
-# Cluster setup guides
+- `create-cluster.sh` — create a cluster configured for the demo
+- `delete-cluster.sh` — delete that cluster
 
-The demo uses kind by default.
-
-- kind scripts: `demo/clusters/kind/`
+Platforms may add other scripts or notes next to these entrypoints as needed.

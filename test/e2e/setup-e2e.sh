@@ -25,7 +25,7 @@ HELM_CHART_PATH="${HELM_CHART_PATH:-deployments/helm/dra-example-driver}"
 if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
 	bash demo/build-driver.sh
 fi
-bash demo/create-cluster.sh
+bash demo/clusters/kind/create-cluster.sh
 
 helm upgrade -i \
   --repo https://charts.jetstack.io \

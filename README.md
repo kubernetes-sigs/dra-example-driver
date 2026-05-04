@@ -50,7 +50,7 @@ From here we will build the image for the example resource driver:
 
 And create a `kind` cluster to run it in:
 ```bash
-./demo/create-cluster.sh
+./demo/clusters/kind/create-cluster.sh
 ```
 
 Once the cluster has been created successfully, double check everything is
@@ -423,7 +423,7 @@ admin-access                           pod0   1/1     Terminating   0          3
 Finally, you can run the following to cleanup your environment and delete the
 `kind` cluster started previously:
 ```bash
-./demo/delete-cluster.sh
+./demo/clusters/kind/delete-cluster.sh
 ```
 
 ## Device Profiles

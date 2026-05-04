@@ -14,12 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# This scripts invokes `kind build image` so that the resulting
-# image has a containerd with CDI support.
-#
-# Usage: kind-build-image.sh <tag of generated image>
+# Creates a kind cluster for the demo (optionally from a custom node image with
+# containerd CDI support). See demo/scripts/common.sh for configuration.
 
-# A reference to the current directory where this script is located
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 set -ex
@@ -31,7 +28,12 @@ source "${CURRENT_DIR}/../../scripts/common.sh"
 if ! "${CONTAINER_TOOL}" manifest inspect "${KIND_IMAGE}"; then
 	${SCRIPTS_DIR}/build-kind-image.sh
 fi
-${SCRIPTS_DIR}/create-kind-cluster.sh
+
+${KIND} create cluster \
+	--name "${KIND_CLUSTER_NAME}" \
+	--image "${KIND_IMAGE}" \
+	--config "${KIND_CLUSTER_CONFIG_PATH}" \
+	--wait 2m
 
 # If a driver image already exists load it into the cluster
 EXISTING_IMAGE_ID="$(${CONTAINER_TOOL} images --filter "reference=${DRIVER_IMAGE}" -q)"
