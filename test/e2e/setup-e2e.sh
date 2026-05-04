@@ -40,8 +40,6 @@ helm upgrade -i \
 helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
-  --wait \
-  --timeout 5m \
   --set webhook.enabled=true \
   --set kubeletPlugin.numDevices=10 \
   dra-example-driver \

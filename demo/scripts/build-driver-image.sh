@@ -46,8 +46,10 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 # Regenerate the CRDs and build the container image
 make docker-generate
 
-# In push-release-artifacts, Docker multi-arch builds and pushes in one step via
-# buildx in demo/scripts/push-driver-image.sh, so skip standalone build there.
+# When SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH=1 (set only by push-release-artifacts for
+# Docker multi-arch), skip the local image build: push-driver-image performs one
+# buildx --push for all platforms. Unset or any value other than 1 runs the normal
+# local build below (including explicitly setting the variable to 0).
 if [[ "${SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH:-}" == "1" && "${CONTAINER_TOOL}" == "docker" && "${PLATFORMS}" == *,* ]]; then
     exit 0
 fi

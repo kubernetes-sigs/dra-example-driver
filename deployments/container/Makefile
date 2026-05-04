@@ -18,7 +18,6 @@ MKDIR ?= mkdir
 DISTRIBUTIONS := ubuntu22.04
 DOCKERFILE := $(CURDIR)/deployments/container/Dockerfile
 SELF_MAKEFILE := $(lastword $(MAKEFILE_LIST))
-COMMA := ,
 
 include $(CURDIR)/common.mk
 
@@ -47,6 +46,9 @@ ifeq ($(strip $(PLATFORMS)),)
 	endif
 endif
 
+# Split PLATFORMS on commas; more than one entry implies a multi-platform (buildx) build.
+PLATFORM_LIST := $(subst $(shell printf ','), ,$(PLATFORMS))
+
 BUILDX_BUILDER ?= dra-example-driver-builder
 
 # Default to disabled so release builds are stable across older buildx setups.
@@ -66,7 +68,7 @@ $(DISTRIBUTIONS):
 
 build:
 # Multi-arch builds must use buildx (docker only).
-ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
+ifneq ($(words $(PLATFORM_LIST)),1)
 	@echo "Building image for multiple platforms with buildx: $(PLATFORMS)"
 	@if [ "$(CONTAINER_TOOL)" != "docker" ]; then \
 		echo "Multi-platform build requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"; \
@@ -85,8 +87,7 @@ ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
 else
 	# Single-arch builds use the standard container build flow.
 	@echo "Building image for single platform: $(PLATFORMS)"
-	DOCKER_BUILDKIT=1 \
-		$(CONTAINER_TOOL) build --pull \
+	$(CONTAINER_TOOL) build --pull \
 		--tag $(IMAGE) \
 		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
@@ -97,7 +98,7 @@ endif
 
 push:
 # Multi-arch pushes publish a multi-platform manifest via buildx.
-ifneq ($(findstring $(COMMA),$(PLATFORMS)),)
+ifneq ($(words $(PLATFORM_LIST)),1)
 	@if [ "$(CONTAINER_TOOL)" != "docker" ]; then \
 		echo "Multi-platform push requires CONTAINER_TOOL=docker, got $(CONTAINER_TOOL)"; \
 		exit 1; \
