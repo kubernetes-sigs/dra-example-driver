@@ -19,11 +19,15 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
 	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
@@ -159,6 +163,57 @@ var _ = Describe("Test GPU allocation", func() {
 
 		observedGPUs := make(map[string]string)
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+	})
+
+	It("Should share 1 GPU among the Pods in each of 2 PodGroups", func(ctx SpecContext) {
+		namespace := "podgroup-resourceclaimtemplate"
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		deployManifest(ctx, namespace, "podgroup-resourceclaimtemplate.yaml")
+
+		Eventually(ctx, func(g Gomega, ctx context.Context) {
+			deployments, err := clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
+			g.Expect(err).NotTo(HaveOccurred())
+			for _, deployment := range deployments.Items {
+				g.Expect(deployment.Status.ObservedGeneration).To(Equal(deployment.Generation))
+				g.Expect(deployment.Status.Replicas).To(Equal(*deployment.Spec.Replicas))
+			}
+		}, "30s", "1s").Should(Succeed())
+
+		pods := map[string][]corev1.Pod{} // PodGroup name -> Pods
+		podList, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+		Expect(err).NotTo(HaveOccurred())
+
+		var podNames []string
+		for _, pod := range podList.Items {
+			pg := *pod.Spec.SchedulingGroup.PodGroupName
+			pods[pg] = append(pods[pg], pod)
+			podNames = append(podNames, pod.Name)
+		}
+
+		checkPodsReadyAndRunning(ctx, namespace, podNames)
+
+		observedGPUs := make(map[string]string)
+		for _, groupPods := range pods {
+			for _, pod := range groupPods {
+				verifyGPUAllocation(ctx, namespace, pod.Name, containerName, expectedGPUCount, observedGPUs)
+				break // only check one Pod for each PodGroup
+			}
+		}
+
+		for _, groupPods := range pods {
+			var members []podContainer
+			for _, pod := range groupPods {
+				members = append(members, podContainer{pod: pod.Name, container: containerName})
+			}
+			verifySharedGPUGroup(ctx, namespace, sharingGroup{
+				members:           members,
+				expectedStrategy:  string(gpuv1alpha1.TimeSlicingStrategy),
+				expectedProperty:  "TIMESLICE_INTERVAL",
+				expectedPropValue: string(gpuv1alpha1.DefaultTimeSlice),
+			})
+		}
 	})
 
 	Context("Webhooks", func() {
