@@ -10,8 +10,13 @@ install/uninstall the driver.
 - [kubectl](https://kubernetes.io/docs/reference/kubectl/)
 - Authenticated GCP account and a selected project
 
-This flow uses the pre-built image for the kubelet plugin, so no local image
-build is required.
+This flow installs published release artifacts from `registry.k8s.io` and pins
+both the Helm chart and driver image to the same version to avoid chart/image
+skew.
+
+The steps below were validated with:
+- GKE: `v1.35.2-gke.1485000`
+- Driver/chart release: `0.2.0`
 
 To keep the walkthrough simple and close to the kind demo, use a single-node
 GKE cluster.
@@ -39,8 +44,11 @@ Supported environment variables:
 
 - `DRIVER_RELEASE_NAME` (default: `dra-example-driver`)
 - `DRIVER_NAMESPACE` (default: `dra-example-driver`)
+- `DRIVER_VERSION` (default: `0.2.0`)
+- `DRIVER_CHART_REF` (default: `oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver`)
 
-The install script enables `resourceQuota.enabled=true` for GKE.
+The install script enables `resourceQuota.enabled=true` for GKE and sets
+`image.tag` to `DRIVER_VERSION` so chart/image versions remain aligned.
 
 ## Uninstall driver
 

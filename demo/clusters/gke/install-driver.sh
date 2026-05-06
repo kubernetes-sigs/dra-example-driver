@@ -16,17 +16,18 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../../../" && pwd)"
-
 : "${DRIVER_RELEASE_NAME:=dra-example-driver}"
 : "${DRIVER_NAMESPACE:=dra-example-driver}"
+: "${DRIVER_VERSION:=0.2.0}"
+: "${DRIVER_CHART_REF:=oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver}"
 
 helm upgrade -i \
   --create-namespace \
   --namespace "${DRIVER_NAMESPACE}" \
+  --version "${DRIVER_VERSION}" \
   --set resourceQuota.enabled=true \
+  --set image.tag="${DRIVER_VERSION}" \
   "${DRIVER_RELEASE_NAME}" \
-  "${REPO_ROOT}/deployments/helm/dra-example-driver"
+  "${DRIVER_CHART_REF}"
 
-echo "Driver install/upgrade complete: ${DRIVER_RELEASE_NAME} (${DRIVER_NAMESPACE})"
+echo "Driver install/upgrade complete: ${DRIVER_RELEASE_NAME} (${DRIVER_NAMESPACE}), version ${DRIVER_VERSION}"
