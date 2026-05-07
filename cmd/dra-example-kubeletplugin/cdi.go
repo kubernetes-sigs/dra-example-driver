@@ -27,6 +27,7 @@ import (
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 const cdiCommonDeviceName = "common"
@@ -107,9 +108,9 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 		// If this device has admin access, then here is where to inject host hardware information
 
 		claimEdits.Append(device.ContainerEdits)
-
+		deviceId := helpers.GetCDIDeviceID(device.DeviceName, device.ShareId)
 		cdiDevice := cdispec.Device{
-			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
+			Name:           fmt.Sprintf("%s-%s", claimUID, deviceId),
 			ContainerEdits: *claimEdits.ContainerEdits,
 		}
 
