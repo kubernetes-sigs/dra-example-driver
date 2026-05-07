@@ -23,7 +23,11 @@ import (
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
+)
+
+var (
+	testShareId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 )
 
 func TestPreparedDevicesGetDevices(t *testing.T) {
@@ -45,6 +49,16 @@ func TestPreparedDevicesGetDevices(t *testing.T) {
 				{DeviceName: "dev1"},
 				{DeviceName: "dev2"},
 				{DeviceName: "dev3"},
+			},
+		},
+		"preparedDevice with shareId": {
+			preparedDevices: profiles.PreparedDevices{
+				{Device: drapbv1.Device{DeviceName: "dev1", ShareId: &testShareId}},
+				{Device: drapbv1.Device{DeviceName: "dev2", ShareId: &testShareId}},
+			},
+			expected: []*drapbv1.Device{
+				{DeviceName: "dev1", ShareId: &testShareId},
+				{DeviceName: "dev2", ShareId: &testShareId},
 			},
 		},
 	}
