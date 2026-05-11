@@ -7,3 +7,6 @@ spec:
   selectors:
   - cel:
       expression: "device.driver == '{{ include "dra-example-driver.driverName" . }}'"
+  {{- with .Values.deviceClass.extendedResourceName }}
+  extendedResourceName: {{ . | quote }}
+  {{- end }}

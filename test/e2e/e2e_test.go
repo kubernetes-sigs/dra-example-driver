@@ -152,6 +152,26 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyDRAAdminAccess(ctx, namespace, pods[0], containerName, "true")
 	})
 
+	It("should allocate 1 GPU per pod for extended resource requests", func(ctx SpecContext) {
+		namespace := "extended-resource-request"
+		pods := []string{"pod0", "pod1"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+		expectedResourceNames := map[string]string{
+			"pod0": "deviceclass.resource.kubernetes.io/gpu.example.com",
+			"pod1": "example.com/gpu",
+		}
+
+		deployManifest(ctx, namespace, "extended-resource-request.yaml")
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		for _, podName := range pods {
+			verifyGPUAllocation(ctx, namespace, podName, containerName, expectedGPUCount, observedGPUs)
+			verifyExtendedResourceClaimStatus(ctx, namespace, podName, containerName, expectedResourceNames[podName])
+		}
+	})
+
 	It("should allocate 1 GPU selected using CEL expression", func(ctx SpecContext) {
 		namespace := "cel-selector"
 		pods := []string{"pod0"}

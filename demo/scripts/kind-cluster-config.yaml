@@ -6,6 +6,7 @@ featureGates:
   DRAWorkloadResourceClaims: true
   GangScheduling: true
   GenericWorkload: true
+  DRAExtendedResource: true
 containerdConfigPatches:
 # Enable CDI as described in
 # https://tags.cncf.io/container-device-interface#containerd-configuration

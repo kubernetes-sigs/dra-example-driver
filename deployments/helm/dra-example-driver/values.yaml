@@ -18,6 +18,16 @@ deviceProfile: "gpu"
 # value is derived from the deviceProfile.
 driverName: ""
 
+# deviceClass configures the DeviceClass the driver creates for its devices.
+deviceClass:
+  # extendedResourceName maps this DeviceClass to a classic extended resource
+  # name (KEP-5004), so pods can request a device via `resources.limits` (e.g.
+  # `example.com/gpu: 1`) instead of via a ResourceClaim. Defaults to "" so a
+  # fresh install does not silently claim ownership of a name that may collide
+  # with a real driver. The implicit form
+  # `deviceclass.resource.kubernetes.io/<deviceClassName>` is always available.
+  extendedResourceName: ""
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver

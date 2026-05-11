@@ -491,6 +491,40 @@ func verifyDRAAdminAccess(ctx context.Context, namespace, podName, containerName
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
+// verifyExtendedResourceClaimStatus verifies that the pod's
+// extendedResourceClaimStatus has a request mapping for the given container
+// that references the expected extended-resource name.
+func verifyExtendedResourceClaimStatus(ctx context.Context, namespace, podName, containerName, expectedResourceName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to get pod %s/%s", namespace, podName)
+		g.Expect(pod.Status.ExtendedResourceClaimStatus).NotTo(BeNil(),
+			"Pod %s/%s has no extendedResourceClaimStatus", namespace, podName)
+		g.Expect(pod.Status.ExtendedResourceClaimStatus.ResourceClaimName).NotTo(BeEmpty(),
+			"Pod %s/%s extendedResourceClaimStatus has empty resourceClaimName", namespace, podName)
+
+		var matched *v1.ContainerExtendedResourceRequest
+		for i := range pod.Status.ExtendedResourceClaimStatus.RequestMappings {
+			m := &pod.Status.ExtendedResourceClaimStatus.RequestMappings[i]
+			if m.ContainerName == containerName && m.ResourceName == expectedResourceName {
+				matched = m
+				break
+			}
+		}
+		g.Expect(matched).NotTo(BeNil(),
+			"Pod %s/%s extendedResourceClaimStatus has no requestMapping for container %s with resourceName %s; got: %+v",
+			namespace, podName, containerName, expectedResourceName,
+			pod.Status.ExtendedResourceClaimStatus.RequestMappings)
+		g.Expect(matched.RequestName).NotTo(BeEmpty(),
+			"Pod %s/%s extendedResourceClaimStatus requestMapping for container %s has empty requestName",
+			namespace, podName, containerName)
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has extendedResourceClaimStatus mapping %s -> %s\n",
+			namespace, podName, containerName, expectedResourceName, matched.RequestName)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
 // claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs
 func claimNewGPU(g Gomega, observedGPUs map[string]string, gpu, namespace, podName, containerName string) {
 	GinkgoHelper()
