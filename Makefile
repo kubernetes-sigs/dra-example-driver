@@ -26,6 +26,18 @@ include $(CURDIR)/common.mk
 BUILDIMAGE_TAG ?= golang$(GOLANG_VERSION)
 BUILDIMAGE ?= $(IMAGE_NAME)-build:$(BUILDIMAGE_TAG)
 
+# Proxy build arguments (passed only if the corresponding environment variables are set)
+PROXY_BUILD_ARGS :=
+ifneq ($(HTTP_PROXY),)
+PROXY_BUILD_ARGS += --build-arg HTTP_PROXY=$(HTTP_PROXY)
+endif
+ifneq ($(HTTPS_PROXY),)
+PROXY_BUILD_ARGS += --build-arg HTTPS_PROXY=$(HTTPS_PROXY)
+endif
+ifneq ($(NO_PROXY),)
+PROXY_BUILD_ARGS += --build-arg NO_PROXY=$(NO_PROXY)
+endif
+
 CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
 
@@ -130,6 +142,7 @@ teardown-e2e:
 		$(CONTAINER_TOOL) build \
 			--progress=plain \
 			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+			$(PROXY_BUILD_ARGS) \
 			--tag $(BUILDIMAGE) \
 			-f $(^) \
 			docker; \

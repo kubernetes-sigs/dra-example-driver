@@ -23,6 +23,18 @@ include $(CURDIR)/common.mk
 IMAGE_TAG := $(VERSION)
 IMAGE = $(IMAGE_NAME):$(IMAGE_TAG)
 
+# Proxy build arguments (passed only if the corresponding environment variables are set)
+PROXY_BUILD_ARGS :=
+ifneq ($(HTTP_PROXY),)
+PROXY_BUILD_ARGS += --build-arg HTTP_PROXY=$(HTTP_PROXY)
+endif
+ifneq ($(HTTPS_PROXY),)
+PROXY_BUILD_ARGS += --build-arg HTTPS_PROXY=$(HTTPS_PROXY)
+endif
+ifneq ($(NO_PROXY),)
+PROXY_BUILD_ARGS += --build-arg NO_PROXY=$(NO_PROXY)
+endif
+
 ##### Public rules #####
 .PHONY: $(DISTRIBUTIONS)
 
@@ -36,6 +48,7 @@ $(DISTRIBUTIONS):
 		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 		--build-arg VERSION="$(VERSION)" \
+		$(PROXY_BUILD_ARGS) \
 		-f $(DOCKERFILE) \
 		$(CURDIR)
 

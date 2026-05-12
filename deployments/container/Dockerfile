@@ -16,6 +16,16 @@ ARG GOLANG_VERSION=undefined
 ARG BASE_IMAGE=undefined
 FROM golang:${GOLANG_VERSION} AS build
 
+# Proxy arguments (optional)
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+# Set proxy environment variables only if they are provided as build args
+ENV HTTP_PROXY=${HTTP_PROXY}
+ENV HTTPS_PROXY=${HTTPS_PROXY}
+ENV NO_PROXY=${NO_PROXY}
+
 WORKDIR /build
 COPY . .
 
