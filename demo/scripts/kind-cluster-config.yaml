@@ -7,6 +7,7 @@ featureGates:
   GangScheduling: true
   GenericWorkload: true
   DRAExtendedResource: true
+  DRADeviceBindingConditions: true
 runtimeConfig:
   resource.k8s.io/v1beta1: "true"
   scheduling.k8s.io/v1alpha2: "true"

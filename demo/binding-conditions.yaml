@@ -1,0 +1,83 @@
+# Example: DRA Device Binding Conditions
+#
+# One namespace, one pod with one container requesting a single GPU.
+# This demo shows the DRA Device Binding Conditions feature.
+#
+# When binding conditions are enabled on the driver, each device in the
+# ResourceSlice is published with:
+#   bindsToNode: true
+#   bindingConditions:
+#   - BindingConditions
+#   bindingFailureConditions:
+#   - BindingFailureConditions
+#
+# The scheduler uses these fields to track the binding lifecycle of allocated
+# devices, deferring final binding decisions until the driver confirms device
+# readiness on the node.
+#
+# Key requirements:
+#   - The driver must be installed with bindingConditions=true:
+#       helm upgrade -i ... --set kubeletPlugin.bindingConditions=true
+#
+# Verify binding condition fields are published in the ResourceSlice with:
+#   kubectl get resourceslice -o yaml
+# Each device entry should contain:
+#   bindsToNode: true
+#   bindingConditions:
+#   - BindingConditions
+#   bindingFailureConditions:
+#   - BindingFailureConditions
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 1
+#
+# Cluster requirements:
+#   Kubernetes 1.34+
+#   Feature gate: DRADeviceBindingConditions
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: binding-conditions
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: binding-conditions
+  name: single-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: binding-conditions
+  name: pod0
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args:
+    - |
+      export
+      echo "=== DRA Device Binding Conditions Demo ==="
+      echo ""
+      echo "=== Sleeping to allow inspection ==="
+      trap 'exit 0' TERM
+      sleep 9999 & wait
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu

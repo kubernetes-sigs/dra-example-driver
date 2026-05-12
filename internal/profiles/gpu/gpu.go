@@ -44,14 +44,16 @@ type Profile struct {
 	numGPUs            int
 	partitionsPerGPU   int
 	enableDeviceStatus bool
+	bindingConditions  bool
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool, bindingConditions bool) Profile {
 	return Profile{
 		nodeName:           nodeName,
 		numGPUs:            numGPUs,
 		partitionsPerGPU:   partitionsPerGPU,
 		enableDeviceStatus: enableDeviceStatus,
+		bindingConditions:  bindingConditions,
 	}
 }
 
@@ -167,6 +169,13 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 					},
 				},
 			})
+		}
+	}
+
+	if p.bindingConditions {
+		for i := range devices {
+			devices[i].BindingConditions = []string{profiles.BindingConditions}
+			devices[i].BindingFailureConditions = []string{profiles.BindingFailureConditions}
 		}
 	}
 
