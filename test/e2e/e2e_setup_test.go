@@ -27,13 +27,13 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
-	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -51,8 +51,16 @@ var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
 var restMapper meta.RESTMapper
 
-const driverNamespace = "dra-example-driver"
+// driverPodSelector finds kubelet plugin Pods within an installed driver's release namespace.
 const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
+
+// defaultDeviceClassName is the driver name baked into demo manifests and
+// webhook testdata; deployManifest substitutes it for the per-test driver name.
+const defaultDeviceClassName = "gpu.example.com"
+
+// defaultExtendedResourceName is the extended resource name baked into demo
+// manifests; deployManifest substitutes it when ExtendedResourceName is set.
+const defaultExtendedResourceName = "example.com/gpu"
 
 func init() {
 	currentDir, _ = os.Getwd()
@@ -95,69 +103,52 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	groupResources, err := restmapper.GetAPIGroupResources(clientset.Discovery())
 	Expect(err).NotTo(HaveOccurred())
 	restMapper = restmapper.NewDiscoveryRESTMapper(groupResources)
-
-	// Check if the webhook is ready
-	// Even after verifying that the Pod is Ready and the expected Endpoints resource
-	// exists with the Pod's IP, the webhook still seems to have "connection refused"
-	// issues, so retry here until we can ensure it's available before the real tests start.
-	By("Ensuring the webhook is ready")
-	verifyWebhook(ctx)
 })
 
-func verifyWebhook(ctx context.Context) {
-	GinkgoHelper()
-	fmt.Fprintln(GinkgoWriter, "Waiting for webhook to be available")
-
-	// Create a simple ResourceClaim to test webhook availability
-	testClaim := &resourceapi.ResourceClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "webhook-test",
-			Namespace: "default",
-		},
-		Spec: resourceapi.ResourceClaimSpec{
-			Devices: resourceapi.DeviceClaim{
-				Requests: []resourceapi.DeviceRequest{
-					{
-						Name: "gpu",
-						Exactly: &resourceapi.ExactDeviceRequest{
-							DeviceClassName: "gpu.example.com",
-						},
-					},
-				},
-			},
-		},
-	}
-
-	// Wait for webhook to be available by trying to create the ResourceClaim with dry-run mode
-	Eventually(func() error {
-		_, err := clientset.ResourceV1().ResourceClaims("default").Create(
-			ctx,
-			testClaim,
-			metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}},
-		)
-		if err != nil {
-			return fmt.Errorf("webhook not ready: %w", err)
-		}
-		return nil
-	}, "30s", "1s").WithContext(ctx).Should(Succeed())
-}
-
-// deployManifest creates resources from a manifest file and registers cleanup
-// and failure diagnostics via DeferCleanup.
-func deployManifest(ctx context.Context, namespace string, manifestFile string) {
+// deployManifest reads a demo manifest file, substitutes per-test driver
+// identifiers, creates the resulting objects, and registers cleanup and
+// failure diagnostics via DeferCleanup. Substitution rules:
+//   - "gpu.example.com" -> drv.DriverName (always applied)
+//   - "example.com/gpu" -> drv.ExtendedResourceName (only when set)
+func deployManifest(ctx context.Context, namespace, manifestFile string, drv DriverConfig) {
 	GinkgoHelper()
 	absPath := filepath.Join(demoManifestsDir, manifestFile)
-	createManifest(ctx, dynamicClient, absPath)
+	raw, err := os.ReadFile(absPath)
+	Expect(err).NotTo(HaveOccurred(), "Failed to read manifest %s", absPath)
+
+	transformed := substituteDriverIdentifiers(string(raw), drv)
+	objects, err := parseManifests(transformed)
+	Expect(err).NotTo(HaveOccurred(), "Failed to parse manifest %s", absPath)
+
+	err = createObjects(ctx, dynamicClient, objects, false)
+	Expect(err).NotTo(HaveOccurred(), "Failed to create objects from %s", absPath)
+
 	// DeferCleanup is LIFO: register cleanup first, then diagnostics second.
 	// On teardown, diagnostics run first (while pods exist), then cleanup deletes them.
 	DeferCleanup(func(ctx context.Context) {
-		deleteManifest(ctx, dynamicClient, absPath)
+		deleteObjects(ctx, dynamicClient, objects)
 	}, NodeTimeout(30*time.Second))
 	DeferCleanup(dumpDiagnosticsOnFailure, namespace, NodeTimeout(15*time.Second))
 }
 
-// dumpDiagnosticsOnFailure collects pod status, events, and driver logs
-// when a test has failed. Intended for use as a DeferCleanup callback.
+// substituteDriverIdentifiers replaces the demo manifest driver identifiers
+// with the per-test driver name and (when set) extended resource name.
+func substituteDriverIdentifiers(raw string, drv DriverConfig) string {
+	GinkgoHelper()
+	out := strings.ReplaceAll(raw, defaultDeviceClassName, drv.DriverName)
+	if drv.ExtendedResourceName != "" {
+		out = strings.ReplaceAll(out, defaultExtendedResourceName, drv.ExtendedResourceName)
+	}
+	// Guard against demo manifests that drift from convention.
+	Expect(out).NotTo(ContainSubstring(defaultDeviceClassName),
+		"Manifest still references %q after substitution; deployManifest must replace every occurrence",
+		defaultDeviceClassName)
+	return out
+}
+
+// dumpDiagnosticsOnFailure collects pod status and events for the workload
+// namespace when a test has failed. Driver-pod logs are dumped separately by
+// dumpDriverDiagnostics.
 func dumpDiagnosticsOnFailure(ctx context.Context, namespace string) {
 	if !CurrentSpecReport().Failed() {
 		return
@@ -186,43 +177,14 @@ func dumpDiagnosticsOnFailure(ctx context.Context, namespace string) {
 				e.InvolvedObject.Kind, e.InvolvedObject.Name, e.Reason, e.Message)
 		}
 	}
-
-	// Driver logs
-	tailLines := int64(20)
-	driverPods, err := clientset.CoreV1().Pods(driverNamespace).List(ctx, metav1.ListOptions{
-		LabelSelector: driverPodSelector,
-	})
-	if err != nil {
-		fmt.Fprintf(GinkgoWriter, "Failed to list driver pods: %v\n", err)
-		return
-	}
-	for _, pod := range driverPods.Items {
-		for _, c := range pod.Spec.Containers {
-			stream, err := clientset.CoreV1().Pods(driverNamespace).GetLogs(pod.Name, &v1.PodLogOptions{
-				Container: c.Name,
-				TailLines: &tailLines,
-			}).Stream(ctx)
-			if err != nil {
-				fmt.Fprintf(GinkgoWriter, "Driver pod %s, container %s: failed to get logs: %v\n", pod.Name, c.Name, err)
-				continue
-			}
-			buf := new(bytes.Buffer)
-			io.Copy(buf, stream)
-			stream.Close()
-			fmt.Fprintf(GinkgoWriter, "Driver pod %s, container %s (last %d lines):\n%s\n", pod.Name, c.Name, tailLines, buf.String())
-		}
-	}
 }
 
-// parseManifests reads a YAML file and returns a slice of unstructured objects
-func parseManifests(manifestPath string) ([]*unstructured.Unstructured, error) {
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read manifest file %s: %w", manifestPath, err)
-	}
-
+// parseManifests decodes a YAML document (multiple objects allowed, separated
+// by ---) into unstructured objects. Takes a string so callers can transform
+// (e.g., driver-name substitution) before parsing.
+func parseManifests(data string) ([]*unstructured.Unstructured, error) {
 	var objects []*unstructured.Unstructured
-	decoder := utilyaml.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
+	decoder := utilyaml.NewYAMLOrJSONDecoder(strings.NewReader(data), 4096)
 
 	for {
 		var obj unstructured.Unstructured
@@ -230,7 +192,7 @@ func parseManifests(manifestPath string) ([]*unstructured.Unstructured, error) {
 			if err == io.EOF {
 				break
 			}
-			return nil, fmt.Errorf("failed to decode object from %s: %w", manifestPath, err)
+			return nil, fmt.Errorf("failed to decode object: %w", err)
 		}
 		if len(obj.Object) == 0 {
 			continue
@@ -351,34 +313,16 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 	}
 }
 
-// createManifest creates resources from a manifest file
-func createManifest(ctx context.Context, dynamicClient dynamic.Interface, manifestPath string) {
-	GinkgoHelper()
-	objects, err := parseManifests(manifestPath)
-	Expect(err).NotTo(HaveOccurred())
-
-	err = createObjects(ctx, dynamicClient, objects, false)
-	Expect(err).NotTo(HaveOccurred())
-}
-
-// deleteManifest deletes resources from a manifest file
-func deleteManifest(ctx context.Context, dynamicClient dynamic.Interface, manifestPath string) {
-	GinkgoHelper()
-	objects, err := parseManifests(manifestPath)
-	if err != nil {
-		fmt.Fprintf(GinkgoWriter, "Warning: %v\n", err)
-		return
-	}
-
-	deleteObjects(ctx, dynamicClient, objects)
-}
-
 // createManifestWithDryRun creates objects from a manifest with dry-run mode
 func createManifestWithDryRun(ctx context.Context, dynamicClient dynamic.Interface, manifestPath string) error {
 	GinkgoHelper()
-	objects, err := parseManifests(manifestPath)
+	data, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to read manifest file %s: %w", manifestPath, err)
+	}
+	objects, err := parseManifests(string(data))
+	if err != nil {
+		return fmt.Errorf("failed to parse manifest file %s: %w", manifestPath, err)
 	}
 	return createObjects(ctx, dynamicClient, objects, true)
 }
