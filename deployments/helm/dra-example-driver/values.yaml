@@ -67,6 +67,8 @@ kubeletPlugin:
   affinity: {}
   kubeletRegistrarDirectoryPath: /var/lib/kubelet/plugins_registry
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
+  # bindingConditions enables or disables binding conditions processing in the DRA driver
+  bindingConditions: false
   containers:
     init:
       securityContext: {}

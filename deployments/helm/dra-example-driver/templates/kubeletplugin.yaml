@@ -90,6 +90,8 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: metadata.uid
+        - name: BINDING_CONDITIONS
+          value: {{ .Values.kubeletPlugin.bindingConditions | quote }}
         volumeMounts:
         - name: plugins-registry
           mountPath: {{ .Values.kubeletPlugin.kubeletRegistrarDirectoryPath | quote }}

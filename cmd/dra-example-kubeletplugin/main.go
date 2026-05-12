@@ -54,6 +54,7 @@ type Flags struct {
 	driverName                    string
 	podUID                        string
 	gpuPartitions                 int
+	bindingConditions             bool
 }
 
 type Config struct {
@@ -66,7 +67,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.bindingConditions)
 	},
 }
 
@@ -161,6 +162,13 @@ func newApp() *cli.App {
 			Value:       0,
 			Destination: &flags.gpuPartitions,
 			EnvVars:     []string{"GPU_PARTITIONS"},
+		},
+		&cli.BoolFlag{
+			Name:        "binding-conditions",
+			Usage:       "Enable or disable binding conditions processing in the DRA driver.",
+			Value:       false,
+			Destination: &flags.bindingConditions,
+			EnvVars:     []string{"BINDING_CONDITIONS"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

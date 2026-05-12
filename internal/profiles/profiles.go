@@ -25,6 +25,11 @@ import (
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
+const (
+	BindingConditions        = "BindingConditions"
+	BindingFailureConditions = "BindingFailureConditions"
+)
+
 type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
 
 // Profile describes a kind of device that can be managed by the driver.
