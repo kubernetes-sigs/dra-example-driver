@@ -131,7 +131,7 @@ func (d *driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 }
 
 func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.NamespacedObject) error {
-	if err := d.state.Unprepare(string(claim.UID)); err != nil {
+	if err := d.state.Unprepare(claim.UID); err != nil {
 		return fmt.Errorf("error unpreparing devices for claim %v: %w", claim.UID, err)
 	}
 

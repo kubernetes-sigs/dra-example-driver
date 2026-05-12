@@ -20,3 +20,4 @@ RUN go install github.com/gordonklaus/ineffassign@latest && \
 RUN go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.52.0
 RUN go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.0
 RUN go install k8s.io/code-generator/cmd/client-gen@v0.36.0
+RUN go install k8s.io/code-generator/cmd/conversion-gen@v0.36.0

@@ -102,15 +102,24 @@ coverage: test
 	cat $(COVERAGE_FILE) | grep -v "_mock.go" > $(COVERAGE_FILE).no-mocks
 	go tool cover -func=$(COVERAGE_FILE).no-mocks
 
-generate: generate-deepcopy
+generate: generate-deepcopy generate-conversion
 
 generate-deepcopy:
 	for api in $(APIS); do \
-		rm -f $(CURDIR)/api/$(VENDOR)/resource/$${api}/zz_generated.deepcopy.go; \
+		rm -f $${api}/zz_generated.deepcopy.go; \
 		controller-gen \
 			object:headerFile=$(CURDIR)/hack/boilerplate.generatego.txt \
-			paths=$(CURDIR)/api/$(VENDOR)/resource/$${api}/ \
-			output:object:dir=$(CURDIR)/api/$(VENDOR)/resource/$${api}; \
+			paths=$${api}/ \
+			output:object:dir=$${api}; \
+	done
+
+generate-conversion:
+	for api in $(APIS); do \
+		rm -f $${api}/zz_generated.conversion.go; \
+		conversion-gen \
+			--go-header-file=$(CURDIR)/hack/boilerplate.generatego.txt \
+			--output-file=zz_generated.conversion.go \
+			$${api}/; \
 	done
 
 setup-e2e:
