@@ -84,6 +84,8 @@ spec:
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
         {{- end }}
+        - name: GPU_PARTITIONS
+          value: {{ .Values.kubeletPlugin.gpuPartitions | quote }}
         - name: POD_UID
           valueFrom:
             fieldRef:

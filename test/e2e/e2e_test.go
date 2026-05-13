@@ -236,6 +236,31 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
+	It("should allocate partition devices from shared GPU counters", Serial, func(ctx SpecContext) {
+		helmUpgradeDriver(
+			"--set", "kubeletPlugin.gpuPartitions=4",
+			"--set", "kubeletPlugin.numDevices=2",
+		)
+		DeferCleanup(func(ctx SpecContext) {
+			helmUpgradeDriver(
+				"--set", "kubeletPlugin.numDevices=12",
+				"--set", "kubeletPlugin.gpuPartitions=0",
+			)
+		})
+		waitForDriverReady(ctx)
+
+		namespace := "partitionable-devices"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 2
+
+		deployManifest(ctx, namespace, "partitionable-devices.yaml")
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+	})
+
 	Context("Webhooks", func() {
 		tests := []struct {
 			name     string

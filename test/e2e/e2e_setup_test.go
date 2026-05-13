@@ -25,8 +25,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,8 +69,8 @@ const (
 )
 
 var (
-	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[0-9]+="(.+)"$`)
-	gpuIDRegexp     = regexp.MustCompile(`^gpu-([0-9]+)$`)
+	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[A-Z0-9_]+="(gpu-.+)"$`)
+	gpuIDRegexp     = regexp.MustCompile(`^gpu-(.+)$`)
 )
 
 func TestE2e(t *testing.T) {
@@ -456,7 +458,7 @@ func extractGPUProperty(logs string, id string, property string) string {
 func getGPUID(gpu string) string {
 	matches := gpuIDRegexp.FindAllStringSubmatch(gpu, -1)
 	if len(matches) > 0 && len(matches[0]) > 1 {
-		return matches[0][1]
+		return strings.ToUpper(strings.ReplaceAll(matches[0][1], "-", "_"))
 	}
 	return ""
 }
@@ -559,6 +561,37 @@ func verifyGPUProperties(g Gomega, logs, namespace, podName, containerName strin
 			fmt.Sprintf("Expected Pod %s/%s, container %s to have %s=%s, got %s",
 				namespace, podName, containerName, expectedProperty, expectedPropertyValue, propertyValue))
 	}
+}
+
+func helmUpgradeDriver(args ...string) {
+	GinkgoHelper()
+	baseArgs := []string{
+		"upgrade", "-i",
+		"--namespace", driverNamespace,
+		"--set", "webhook.enabled=true",
+		"--wait",
+	}
+	baseArgs = append(baseArgs, args...)
+	baseArgs = append(baseArgs, "dra-example-driver", filepath.Join(rootDir, "deployments/helm/dra-example-driver"))
+
+	cmd := exec.Command("helm", baseArgs...)
+	output, err := cmd.CombinedOutput()
+	fmt.Fprintf(GinkgoWriter, "helm upgrade output:\n%s\n", string(output))
+	Expect(err).NotTo(HaveOccurred(), "helm upgrade failed: %s", string(output))
+}
+
+func waitForDriverReady(ctx context.Context) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pods, err := clientset.CoreV1().Pods(driverNamespace).List(ctx, metav1.ListOptions{
+			LabelSelector: driverPodSelector,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(pods.Items).NotTo(BeEmpty())
+		for _, pod := range pods.Items {
+			g.Expect(pod.Status.Phase).To(Equal(v1.PodRunning))
+		}
+	}, "60s", "2s").Should(Succeed())
 }
 
 // podContainer identifies a specific container in a specific pod.

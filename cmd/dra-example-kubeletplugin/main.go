@@ -53,6 +53,7 @@ type Flags struct {
 	profile                       string
 	driverName                    string
 	podUID                        string
+	gpuPartitions                 int
 }
 
 type Config struct {
@@ -65,7 +66,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions)
 	},
 }
 
@@ -153,6 +154,13 @@ func newApp() *cli.App {
 			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
 			Destination: &flags.podUID,
 			EnvVars:     []string{"POD_UID"},
+		},
+		&cli.IntFlag{
+			Name:        "gpu-partitions",
+			Usage:       "Number of partitions per GPU. When set to a value greater than 0, GPUs are exposed with shared counters allowing flexible partitioning (DRAPartitionableDevices feature).",
+			Value:       0,
+			Destination: &flags.gpuPartitions,
+			EnvVars:     []string{"GPU_PARTITIONS"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

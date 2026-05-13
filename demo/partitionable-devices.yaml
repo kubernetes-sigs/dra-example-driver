@@ -1,0 +1,71 @@
+# Example: DRA Partitionable Devices
+#
+# This demo shows the DRAPartitionableDevices feature, which allows GPUs to be
+# exposed with shared counters enabling flexible partitioning. Each physical GPU
+# has a counter set (memory and compute), and multiple partition devices consume
+# from those counters. A full-GPU device is also available that consumes all
+# counters.
+#
+# Helm install (required before running this demo):
+#   helm upgrade -i \
+#     --create-namespace \
+#     --namespace dra-example-driver \
+#     --set kubeletPlugin.gpuPartitions=4 \
+#     --set kubeletPlugin.numDevices=2 \
+#     dra-example-driver \
+#     deployments/helm/dra-example-driver
+#
+# Verify ResourceSlices are created (should see two slices per node — one for
+# shared counters and one for partition devices):
+#   kubectl get resourceslices -o wide
+#
+# Expected: pod0 gets two GPU partitions. The scheduler uses shared counters
+# to track that partitions share GPU resources. Check with:
+#   kubectl logs -n partitionable-devices pod0 -c ctr0 | grep GPU_DEVICE
+#
+# Driver requirements:
+#   Profile: gpu
+#   Helm values: kubeletPlugin.gpuPartitions=4
+#
+# Cluster requirements:
+#   Kubernetes 1.35+ with feature gate DRAPartitionableDevices enabled
+#   (Beta and enabled by default in 1.36+)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: partitionable-devices
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: partitionable-devices
+  name: gpu-partitions
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu-partition
+        exactly:
+          deviceClassName: gpu.example.com
+          count: 2
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: partitionable-devices
+  name: pod0
+spec:
+  restartPolicy: Never
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu-partitions
+  resourceClaims:
+  - name: gpu-partitions
+    resourceClaimTemplateName: gpu-partitions
