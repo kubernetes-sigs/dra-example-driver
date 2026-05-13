@@ -45,4 +45,14 @@ export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image
 make docker-generate
-make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+
+# When SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH=1 (set only by push-release-artifacts for
+# Docker multi-arch), skip the local image build: push-driver-image performs one
+# buildx --push for all platforms. Unset or any value other than 1 runs the normal
+# local build below (including explicitly setting the variable to 0).
+if [[ "${SKIP_LOCAL_BUILD_FOR_DOCKER_MULTIARCH:-}" == "1" && "${CONTAINER_TOOL}" == "docker" && "${PLATFORMS}" == *,* ]]; then
+    exit 0
+fi
+
+# For single-arch (docker or non-docker), build the image locally before push.
+make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"
