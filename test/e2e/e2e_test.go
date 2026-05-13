@@ -251,6 +251,25 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
+	It("should allocate partition devices from shared GPU counters", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{
+			ReleaseName: "partition",
+			ExtraValues: map[string]string{
+				"kubeletPlugin.gpuPartitions": "4",
+			},
+		})
+		namespace := "partitionable-devices"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 2
+
+		deployManifest(ctx, namespace, "partitionable-devices.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+	})
+
 	// Webhook tests share one driver pinned to "gpu.example.com" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
