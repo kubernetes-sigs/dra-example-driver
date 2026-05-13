@@ -23,7 +23,7 @@ export CHART_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'ch
 
 include $(CURDIR)/common.mk
 
-BUILDIMAGE_TAG ?= golang$(GOLANG_VERSION)
+BUILDIMAGE_TAG ?= golang$(GO_VERSION)
 BUILDIMAGE ?= $(IMAGE_NAME)-build:$(BUILDIMAGE_TAG)
 
 CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
@@ -138,7 +138,7 @@ teardown-e2e:
 	if [ x"$(SKIP_IMAGE_BUILD)" = x"" ]; then \
 		$(CONTAINER_TOOL) build \
 			--progress=plain \
-			--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+			--build-arg GO_VERSION="$(GO_VERSION)" \
 			--tag $(BUILDIMAGE) \
 			-f $(^) \
 			docker; \

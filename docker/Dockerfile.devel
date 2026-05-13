@@ -11,8 +11,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-ARG GOLANG_VERSION=x.x.x
-FROM golang:${GOLANG_VERSION}
+ARG GO_VERSION=x.x.x
+FROM golang:${GO_VERSION}
 
 RUN go install github.com/gordonklaus/ineffassign@latest && \
     go install github.com/client9/misspell/cmd/misspell@latest
