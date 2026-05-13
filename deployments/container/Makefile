@@ -33,7 +33,7 @@ $(DISTRIBUTIONS):
 	DOCKER_BUILDKIT=1 \
 		$(CONTAINER_TOOL) build --pull \
 		--tag $(IMAGE) \
-		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
+		--build-arg GO_VERSION="$(GO_VERSION)" \
 		--build-arg BASE_IMAGE="$(BASE_IMAGE)" \
 		--build-arg VERSION="$(VERSION)" \
 		-f $(DOCKERFILE) \

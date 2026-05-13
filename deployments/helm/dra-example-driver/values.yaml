@@ -48,6 +48,10 @@ kubeletPlugin:
   # numDevices describes how many GPUs to advertise on each node when the "gpu"
   # deviceProfile is used. Not relevant for other profiles.
   numDevices: 8
+  # gpuPartitions sets the number of partitions per GPU. When set to a value
+  # greater than 0, GPUs are exposed with shared counters allowing flexible
+  # partitioning (DRAPartitionableDevices feature). 0 disables partitioning.
+  gpuPartitions: 0
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate

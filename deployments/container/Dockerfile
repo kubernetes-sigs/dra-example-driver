@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG GOLANG_VERSION=undefined
+ARG GO_VERSION=undefined
 ARG BASE_IMAGE=undefined
-FROM golang:${GOLANG_VERSION} AS build
+FROM golang:${GO_VERSION} AS build
 
 WORKDIR /build
 COPY . .

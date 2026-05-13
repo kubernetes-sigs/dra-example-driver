@@ -75,8 +75,8 @@ const (
 )
 
 var (
-	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[0-9]+="(.+)"$`)
-	gpuIDRegexp     = regexp.MustCompile(`^gpu-([0-9]+)$`)
+	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[A-Z0-9_]+="(gpu-.+)"$`)
+	gpuIDRegexp     = regexp.MustCompile(`^gpu-(.+)$`)
 )
 
 func TestE2e(t *testing.T) {
@@ -400,7 +400,7 @@ func extractGPUProperty(logs string, id string, property string) string {
 func getGPUID(gpu string) string {
 	matches := gpuIDRegexp.FindAllStringSubmatch(gpu, -1)
 	if len(matches) > 0 && len(matches[0]) > 1 {
-		return matches[0][1]
+		return strings.ToUpper(strings.ReplaceAll(matches[0][1], "-", "_"))
 	}
 	return ""
 }
