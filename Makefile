@@ -80,6 +80,7 @@ ineffassign:
 
 lint:
 	golangci-lint run ./...
+	cd test && golangci-lint run --build-tags=e2e ./...
 
 misspell:
 	misspell $(MODULE)/...
@@ -126,7 +127,7 @@ setup-e2e:
 	test/e2e/setup-e2e.sh
 
 test-e2e:
-	go run github.com/onsi/ginkgo/v2/ginkgo --tags=e2e -p ./test/e2e/...
+	cd test && go run github.com/onsi/ginkgo/v2/ginkgo --tags=e2e -p ./e2e/...
 
 teardown-e2e:
 	test/e2e/teardown-e2e.sh

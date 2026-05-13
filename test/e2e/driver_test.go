@@ -19,17 +19,23 @@
 package e2e
 
 import (
-	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"helm.sh/helm/v3/pkg/action"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chart/loader"
+	"helm.sh/helm/v3/pkg/cli"
+	"helm.sh/helm/v3/pkg/registry"
+	"helm.sh/helm/v3/pkg/storage/driver"
+	"helm.sh/helm/v3/pkg/strvals"
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -56,6 +62,10 @@ const (
 	// 108-byte UNIX_PATH_MAX after the kubelet appends its registrar socket
 	// prefix and per-pod UID suffix.
 	maxDriverNameLen = 28
+
+	// diagnosticsLogLines is the number of trailing log lines collected from
+	// each driver container when a spec fails.
+	diagnosticsLogLines = 20
 )
 
 // DriverConfig captures per-test driver instance parameters and the resolved
@@ -91,41 +101,67 @@ func installDriver(ctx context.Context, cfg DriverConfig) DriverConfig {
 
 	cfg = withDriverDefaults(cfg)
 
-	chartPath := resolveChartPath()
-
-	// Ensure the install namespace exists before Helm runs.
-	_, err := clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{
-		ObjectMeta: metav1.ObjectMeta{Name: cfg.Namespace},
-	}, metav1.CreateOptions{})
-	if err != nil && !apierrors.IsAlreadyExists(err) {
-		Expect(err).NotTo(HaveOccurred(),
-			"Failed to create driver namespace %s", cfg.Namespace)
-	}
-
-	// Register cleanup before install so partially-installed releases are
-	// torn down. DeferCleanup is LIFO so driver-log diagnostics run first.
+	// Register cleanup before any cluster state is created. DeferCleanup is
+	// LIFO so driver-log diagnostics run first.
 	DeferCleanup(uninstallDriver, cfg, NodeTimeout(driverUninstallTimeout))
 	DeferCleanup(dumpDriverDiagnostics, cfg, NodeTimeout(30*time.Second))
 
-	args := []string{
-		"upgrade", "--install", cfg.ReleaseName, chartPath,
-		"--namespace", cfg.Namespace,
-		"--wait",
-		"--timeout", driverInstallTimeout.String(),
+	registryClient, err := registry.NewClient()
+	Expect(err).NotTo(HaveOccurred(), "Failed to create OCI registry client")
+	actionCfg := newHelmActionConfig(cfg.Namespace, registryClient)
+
+	install := action.NewInstall(actionCfg)
+	install.ReleaseName = cfg.ReleaseName
+	install.Namespace = cfg.Namespace
+	install.CreateNamespace = true
+	install.Wait = true
+	install.Timeout = driverInstallTimeout
+
+	chartRef := os.Getenv(chartPathEnvVar)
+	if chartRef == "" {
+		chartRef = filepath.Join(rootDir, "deployments", "helm", "dra-example-driver")
 	}
-	args = append(args, helmValueArgs(cfg)...)
+	settings := cli.New()
+	chartPath, err := install.LocateChart(chartRef, settings)
+	Expect(err).NotTo(HaveOccurred(), "Failed to locate helm chart")
+	chrt, err := loader.Load(chartPath)
+	Expect(err).NotTo(HaveOccurred(), "Failed to load helm chart from %s", chartPath)
 
 	fmt.Fprintf(GinkgoWriter,
 		"Installing driver release %s/%s (driverName=%s, webhook=%v)\n",
 		cfg.Namespace, cfg.ReleaseName, cfg.DriverName, cfg.WebhookEnabled)
 
-	out, err := runHelm(ctx, args...)
-	Expect(err).NotTo(HaveOccurred(),
-		"Failed to install helm release %s/%s: %s",
-		cfg.Namespace, cfg.ReleaseName, out)
+	runUpgradeOrInstall(ctx, actionCfg, install, chrt, buildHelmValues(cfg))
 
 	waitForDriverReady(ctx, cfg)
 	return cfg
+}
+
+// runUpgradeOrInstall emulates `helm upgrade --install`: if a release with
+// the configured name already exists it is upgraded in place, otherwise a
+// fresh install is performed.
+func runUpgradeOrInstall(ctx context.Context, actionCfg *action.Configuration, install *action.Install, chrt *chart.Chart, values map[string]any) {
+	GinkgoHelper()
+	history := action.NewHistory(actionCfg)
+	history.Max = 1
+	if _, err := history.Run(install.ReleaseName); errors.Is(err, driver.ErrReleaseNotFound) {
+		_, err = install.RunWithContext(ctx, chrt, values)
+		Expect(err).NotTo(HaveOccurred(),
+			"Failed to install helm release %s/%s", install.Namespace, install.ReleaseName)
+		return
+	} else {
+		Expect(err).NotTo(HaveOccurred(),
+			"Failed to query history for release %s/%s", install.Namespace, install.ReleaseName)
+	}
+
+	upgrade := action.NewUpgrade(actionCfg)
+	upgrade.Namespace = install.Namespace
+	upgrade.Install = true
+	upgrade.Wait = install.Wait
+	upgrade.Timeout = install.Timeout
+	_, err := upgrade.RunWithContext(ctx, install.ReleaseName, chrt, values)
+	Expect(err).NotTo(HaveOccurred(),
+		"Failed to upgrade helm release %s/%s", install.Namespace, install.ReleaseName)
 }
 
 // withDriverDefaults validates the release name and fills in unset fields.
@@ -148,41 +184,49 @@ func withDriverDefaults(cfg DriverConfig) DriverConfig {
 	return cfg
 }
 
-// helmValueArgs builds the --set arguments for installing the chart per cfg.
+// buildHelmValues builds the values map for installing the chart per cfg.
 // Test-supplied ExtraValues are applied last so they can override any default.
-func helmValueArgs(cfg DriverConfig) []string {
-	args := []string{
-		"--set", "driverName=" + cfg.DriverName,
-		"--set", "namespaceOverride=" + cfg.Namespace,
-		"--set", fmt.Sprintf("kubeletPlugin.numDevices=%d", cfg.NumDevices),
-		"--set", fmt.Sprintf("webhook.enabled=%t", cfg.WebhookEnabled),
+func buildHelmValues(cfg DriverConfig) map[string]any {
+	GinkgoHelper()
+	values := map[string]any{
+		"driverName":        cfg.DriverName,
+		"namespaceOverride": cfg.Namespace,
+		"kubeletPlugin": map[string]any{
+			"numDevices": cfg.NumDevices,
+		},
+		"webhook": map[string]any{
+			"enabled": cfg.WebhookEnabled,
+		},
 	}
 	if cfg.ExtendedResourceName != "" {
-		args = append(args, "--set", "deviceClass.extendedResourceName="+cfg.ExtendedResourceName)
+		values["deviceClass"] = map[string]any{
+			"extendedResourceName": cfg.ExtendedResourceName,
+		}
 	}
 	for k, v := range cfg.ExtraValues {
-		args = append(args, "--set", k+"="+v)
+		Expect(strvals.ParseInto(k+"="+v, values)).To(Succeed(),
+			"Invalid helm value %s=%s", k, v)
 	}
-	return args
+	return values
 }
 
 // uninstallDriver removes the Helm release and waits for the install
 // namespace to terminate. Safe to register before install runs.
 func uninstallDriver(ctx context.Context, cfg DriverConfig) {
-	out, err := runHelm(ctx, "uninstall", cfg.ReleaseName,
-		"--namespace", cfg.Namespace,
-		"--wait",
-		"--timeout", driverUninstallTimeout.String(),
-		"--ignore-not-found",
-	)
-	if err != nil {
+	actionCfg := newHelmActionConfig(cfg.Namespace, nil)
+	uninstall := action.NewUninstall(actionCfg)
+	uninstall.Wait = true
+	uninstall.Timeout = driverUninstallTimeout
+	uninstall.IgnoreNotFound = true
+
+	if _, err := uninstall.Run(cfg.ReleaseName); err != nil {
 		fmt.Fprintf(GinkgoWriter,
-			"Warning: failed to uninstall release %s/%s: %v\n%s\n",
-			cfg.Namespace, cfg.ReleaseName, err, out)
+			"Warning: failed to uninstall release %s/%s: %v\n",
+			cfg.Namespace, cfg.ReleaseName, err)
 	}
 
 	deletePolicy := metav1.DeletePropagationForeground
-	err = clientset.CoreV1().Namespaces().Delete(ctx, cfg.Namespace, metav1.DeleteOptions{
+	err := clientset.CoreV1().Namespaces().Delete(ctx, cfg.Namespace, metav1.DeleteOptions{
 		PropagationPolicy: &deletePolicy,
 	})
 	if err != nil && !apierrors.IsNotFound(err) {
@@ -207,7 +251,6 @@ func dumpDriverDiagnostics(ctx context.Context, cfg DriverConfig) {
 	fmt.Fprintf(GinkgoWriter,
 		"\n=== Driver diagnostics for release %s/%s ===\n", cfg.Namespace, cfg.ReleaseName)
 
-	tailLines := int64(20)
 	driverPods, err := clientset.CoreV1().Pods(cfg.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: driverPodSelector,
 	})
@@ -215,36 +258,63 @@ func dumpDriverDiagnostics(ctx context.Context, cfg DriverConfig) {
 		fmt.Fprintf(GinkgoWriter, "Failed to list driver pods: %v\n", err)
 		return
 	}
+	tailLines := int64(diagnosticsLogLines)
 	for _, pod := range driverPods.Items {
 		for _, c := range pod.Spec.Containers {
-			stream, err := clientset.CoreV1().Pods(cfg.Namespace).GetLogs(pod.Name, &corev1.PodLogOptions{
-				Container: c.Name,
-				TailLines: &tailLines,
-			}).Stream(ctx)
+			logs, err := readPodLogs(ctx, cfg.Namespace, pod.Name, c.Name, &tailLines)
 			if err != nil {
 				fmt.Fprintf(GinkgoWriter,
 					"Driver pod %s, container %s: failed to get logs: %v\n",
 					pod.Name, c.Name, err)
 				continue
 			}
-			buf := new(bytes.Buffer)
-			_, _ = io.Copy(buf, stream)
-			stream.Close()
 			fmt.Fprintf(GinkgoWriter,
 				"Driver pod %s, container %s (last %d lines):\n%s\n",
-				pod.Name, c.Name, tailLines, buf.String())
+				pod.Name, c.Name, tailLines, logs)
 		}
 	}
 }
 
-// waitForDriverReady polls for signals that Helm --wait does not cover:
-// the DeviceClass exists, ResourceSlices have been published, and (when
-// enabled) the webhook is serving.
+// readPodLogs streams the tail of a container's logs into a string.
+func readPodLogs(ctx context.Context, namespace, pod, container string, tailLines *int64) (string, error) {
+	stream, err := clientset.CoreV1().Pods(namespace).GetLogs(pod, &corev1.PodLogOptions{
+		Container: container,
+		TailLines: tailLines,
+	}).Stream(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer stream.Close()
+	data, err := io.ReadAll(stream)
+	return string(data), err
+}
+
+// waitForDriverReady polls for signals that Helm --wait does not cover: the
+// kubelet plugin DaemonSet has ready pods, the DeviceClass exists,
+// ResourceSlices have been published, and (when enabled) the webhook is
+// serving. The DaemonSet check ties readiness to the current install so
+// stale cluster state can't false-positive.
 func waitForDriverReady(ctx context.Context, cfg DriverConfig) {
 	GinkgoHelper()
 
 	Eventually(func(g Gomega, ctx context.Context) {
-		_, err := clientset.ResourceV1().DeviceClasses().Get(ctx, cfg.DriverName, metav1.GetOptions{})
+		dsList, err := clientset.AppsV1().DaemonSets(cfg.Namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: driverPodSelector,
+		})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to list driver DaemonSets in %s", cfg.Namespace)
+		g.Expect(dsList.Items).NotTo(BeEmpty(),
+			"No driver DaemonSet yet in %s", cfg.Namespace)
+		for _, ds := range dsList.Items {
+			g.Expect(ds.Status.NumberReady).To(BeNumerically(">=", 1),
+				"DaemonSet %s/%s has %d ready pods, want >=1",
+				ds.Namespace, ds.Name, ds.Status.NumberReady)
+			g.Expect(ds.Status.NumberReady).To(Equal(ds.Status.DesiredNumberScheduled),
+				"DaemonSet %s/%s only %d of %d pods ready",
+				ds.Namespace, ds.Name, ds.Status.NumberReady, ds.Status.DesiredNumberScheduled)
+		}
+
+		_, err = clientset.ResourceV1().DeviceClasses().Get(ctx, cfg.DriverName, metav1.GetOptions{})
 		g.Expect(err).NotTo(HaveOccurred(),
 			"DeviceClass %s not yet created", cfg.DriverName)
 
@@ -262,20 +332,20 @@ func waitForDriverReady(ctx context.Context, cfg DriverConfig) {
 	}
 }
 
-// resolveChartPath returns HELM_CHART_PATH (local path or "oci://..." URL)
-// when set, otherwise the in-repo chart path.
-func resolveChartPath() string {
-	if p := os.Getenv(chartPathEnvVar); p != "" {
-		return p
-	}
-	return filepath.Join(rootDir, "deployments", "helm", "dra-example-driver")
-}
-
-// runHelm executes a helm subcommand and returns its combined output.
-func runHelm(ctx context.Context, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "helm", args...)
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+// newHelmActionConfig initializes a Helm action.Configuration scoped to the
+// given install namespace. registryClient is required for OCI chart pulls and
+// may be nil for actions (e.g. uninstall) that operate only on existing releases.
+func newHelmActionConfig(namespace string, registryClient *registry.Client) *action.Configuration {
+	GinkgoHelper()
+	settings := cli.New()
+	settings.SetNamespace(namespace)
+	cfg := &action.Configuration{RegistryClient: registryClient}
+	err := cfg.Init(settings.RESTClientGetter(), namespace, "secret",
+		func(format string, v ...any) {
+			fmt.Fprintf(GinkgoWriter, "[helm] "+format+"\n", v...)
+		})
+	Expect(err).NotTo(HaveOccurred(), "Failed to init helm action config")
+	return cfg
 }
 
 // verifyWebhook waits until the validating webhook is serving for the given

@@ -254,10 +254,8 @@ var _ = Describe("Test GPU allocation", func() {
 	// Webhook tests share one driver pinned to "gpu.example.com" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
-		var drv DriverConfig
-
 		BeforeAll(func(ctx SpecContext) {
-			drv = installDriver(ctx, DriverConfig{
+			installDriver(ctx, DriverConfig{
 				ReleaseName:    "webhook",
 				DriverName:     defaultDeviceClassName,
 				WebhookEnabled: true,
@@ -275,7 +273,6 @@ var _ = Describe("Test GPU allocation", func() {
 
 		for _, testCase := range tests {
 			It("should reject invalid "+testCase.name, func(ctx SpecContext) {
-				_ = drv
 				manifestPath := filepath.Join(currentDir, "testdata", "webhooks", testCase.fileName)
 
 				err := createManifestWithDryRun(ctx, dynamicClient, manifestPath)

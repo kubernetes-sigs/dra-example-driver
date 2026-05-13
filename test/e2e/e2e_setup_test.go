@@ -211,7 +211,7 @@ func parseManifests(data string) ([]*unstructured.Unstructured, error) {
 	return objects, nil
 }
 
-// getGVRForObject returns the GroupVersionResource for an unstructured object
+// getGVRForObject returns the GroupVersionResource for an unstructured object.
 func getGVRForObject(obj *unstructured.Unstructured) (schema.GroupVersionResource, error) {
 	gvk := obj.GroupVersionKind()
 
@@ -224,7 +224,7 @@ func getGVRForObject(obj *unstructured.Unstructured) (schema.GroupVersionResourc
 	return mapping.Resource, nil
 }
 
-// createObjects creates a list of unstructured objects using the dynamic client
+// createObjects creates a list of unstructured objects using the dynamic client.
 func createObjects(ctx context.Context, dynamicClient dynamic.Interface, objects []*unstructured.Unstructured, dryRun bool) error {
 	GinkgoHelper()
 	for _, obj := range objects {
@@ -313,7 +313,7 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 	}
 }
 
-// createManifestWithDryRun creates objects from a manifest with dry-run mode
+// createManifestWithDryRun creates objects from a manifest with dry-run mode.
 func createManifestWithDryRun(ctx context.Context, dynamicClient dynamic.Interface, manifestPath string) error {
 	GinkgoHelper()
 	data, err := os.ReadFile(manifestPath)
@@ -406,7 +406,7 @@ func getGPUID(gpu string) string {
 }
 
 // verifyGPUAllocation checks that a pod/container has the expected number of GPUs
-// and tracks them in observedGPUs to ensure no GPU is claimed twice within a test
+// and tracks them in observedGPUs to ensure no GPU is claimed twice within a test.
 func verifyGPUAllocation(ctx context.Context, namespace, podName, containerName string, expectedGPUCount int, observedGPUs map[string]string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -421,7 +421,7 @@ func verifyGPUAllocation(ctx context.Context, namespace, podName, containerName 
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
-// verifyDRAAdminAccess verifies that DRA_ADMIN_ACCESS is set to the expected value
+// verifyDRAAdminAccess verifies that DRA_ADMIN_ACCESS is set to the expected value.
 func verifyDRAAdminAccess(ctx context.Context, namespace, podName, containerName, expectedValue string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -469,7 +469,7 @@ func verifyExtendedResourceClaimStatus(ctx context.Context, namespace, podName, 
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
-// claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs
+// claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs.
 func claimNewGPU(g Gomega, observedGPUs map[string]string, gpu, namespace, podName, containerName string) {
 	GinkgoHelper()
 	claimedBy, alreadySeen := observedGPUs[gpu]
@@ -481,7 +481,7 @@ func claimNewGPU(g Gomega, observedGPUs map[string]string, gpu, namespace, podNa
 		namespace, podName, containerName, gpu)
 }
 
-// verifyGPUCount verifies that a container has the expected number of GPUs
+// verifyGPUCount verifies that a container has the expected number of GPUs.
 func verifyGPUCount(g Gomega, gpus []string, expectedGPUCount int, namespace, podName, containerName string) {
 	GinkgoHelper()
 	g.Expect(gpus).To(HaveLen(expectedGPUCount),
@@ -489,7 +489,7 @@ func verifyGPUCount(g Gomega, gpus []string, expectedGPUCount int, namespace, po
 			namespace, podName, containerName, expectedGPUCount, len(gpus), gpus))
 }
 
-// verifyGPUProperties verifies GPU sharing strategy and an optional additional property
+// verifyGPUProperties verifies GPU sharing strategy and an optional additional property.
 func verifyGPUProperties(g Gomega, logs, namespace, podName, containerName string, gpus []string, expectedSharingStrategy, expectedProperty, expectedPropertyValue string) {
 	GinkgoHelper()
 	sharingStrategy := extractGPUProperty(logs, getGPUID(gpus[0]), "SHARING_STRATEGY")
