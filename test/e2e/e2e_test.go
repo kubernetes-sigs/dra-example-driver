@@ -246,6 +246,7 @@ var _ = Describe("Test GPU allocation", func() {
 				"--set", "kubeletPlugin.numDevices=12",
 				"--set", "kubeletPlugin.gpuPartitions=0",
 			)
+			waitForDriverReady(ctx)
 		})
 		waitForDriverReady(ctx)
 
@@ -259,6 +260,30 @@ var _ = Describe("Test GPU allocation", func() {
 
 		observedGPUs := make(map[string]string)
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+	})
+
+	It("should report device health status in pod allocatedResourcesStatus", func(ctx SpecContext) {
+		namespace := "health-reporting"
+		pods := []string{"pod0"}
+
+		deployManifest(ctx, namespace, "health-reporting.yaml")
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+	})
+
+	It("should transition device health via pod annotation override", Serial, func(ctx SpecContext) {
+		namespace := "health-reporting"
+		deployManifest(ctx, namespace, "health-reporting.yaml")
+		checkPodsReadyAndRunning(ctx, namespace, []string{"pod0"})
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+
+		driverPod := getDriverPodName(ctx)
+		annotateDriverPod(ctx, driverPod, "health.example.com/gpu-0=unhealthy")
+		DeferCleanup(func(ctx SpecContext) {
+			annotateDriverPod(ctx, driverPod, "health.example.com/gpu-0-")
+		})
+
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnhealthy)
 	})
 
 	Context("Webhooks", func() {
