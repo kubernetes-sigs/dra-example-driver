@@ -1,0 +1,78 @@
+# Example: Native (Node-Allocatable) Resource Accounting via DRA
+#
+# One pod, one container.
+# The container claims one GPU through DRA and also requests a small standard
+# CPU/memory footprint. When the chart is installed with
+# `kubeletPlugin.gpuNodeAllocatableResources.enabled=true`, each GPU device
+# the driver publishes carries a `NodeAllocatableResourceMappings` entry. The
+# scheduler adds those quantities to the pod's effective request, so the
+# node's standard CPU/memory cannot be oversubscribed by DRA-allocated GPUs.
+#
+# Helm install (required before running this demo):
+#   helm upgrade -i \
+#     --create-namespace \
+#     --namespace dra-example-driver \
+#     --set kubeletPlugin.gpuNodeAllocatableResources.enabled=true \
+#     dra-example-driver \
+#     deployments/helm/dra-example-driver
+#
+# Expected: pod0 gets one GPU and the scheduler records the node-allocatable
+# accounting in pod.status. Check with:
+#   kubectl logs -n native-resource-request pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl get pod -n native-resource-request pod0 \
+#     -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'
+# The `resourceClaimName` in that status is the template-generated concrete
+# claim name, not the pod-local name `gpu`.
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 1
+#   Helm values: kubeletPlugin.gpuNodeAllocatableResources.enabled=true
+#
+# Cluster requirements:
+#   Kubernetes 1.36+
+#   Feature gate: DRANodeAllocatableResources
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: native-resource-request
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: native-resource-request
+  name: single-gpu-native
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: native-resource-request
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu-native

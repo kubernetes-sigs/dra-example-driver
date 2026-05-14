@@ -27,6 +27,7 @@ import (
 
 	"github.com/urfave/cli/v2"
 
+	"k8s.io/apimachinery/pkg/api/resource"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
@@ -54,6 +55,9 @@ type Flags struct {
 	driverName                    string
 	podUID                        string
 	gpuPartitions                 int
+	gpuNodeAllocatableResources   bool
+	gpuNodeAllocatableCPU         string
+	gpuNodeAllocatableMemory      string
 }
 
 type Config struct {
@@ -64,10 +68,54 @@ type Config struct {
 	profile profiles.Profile
 }
 
-var validProfiles = map[string]func(flags Flags) profiles.Profile{
-	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions)
+var validProfiles = map[string]func(flags Flags) (profiles.Profile, error){
+	gpu.ProfileName: func(flags Flags) (profiles.Profile, error) {
+		nodeAllocatable, err := buildNodeAllocatableResources(flags)
+		if err != nil {
+			return nil, err
+		}
+		if flags.gpuPartitions > 0 && nodeAllocatable.Enabled() {
+			return nil, fmt.Errorf("--gpu-partitions cannot be combined with --gpu-node-allocatable-resources: native node-allocatable mappings are only emitted on standalone GPU devices")
+		}
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, nodeAllocatable), nil
 	},
+}
+
+// buildNodeAllocatableResources parses the --gpu-node-allocatable-* flags. It
+// returns a zero value (Enabled() == false) when the feature is disabled.
+func buildNodeAllocatableResources(flags Flags) (gpu.NodeAllocatableResources, error) {
+	if !flags.gpuNodeAllocatableResources {
+		return gpu.NodeAllocatableResources{}, nil
+	}
+	cpu, err := parseNodeAllocatableQuantity("--gpu-node-allocatable-cpu", flags.gpuNodeAllocatableCPU)
+	if err != nil {
+		return gpu.NodeAllocatableResources{}, err
+	}
+	memory, err := parseNodeAllocatableQuantity("--gpu-node-allocatable-memory", flags.gpuNodeAllocatableMemory)
+	if err != nil {
+		return gpu.NodeAllocatableResources{}, err
+	}
+	if cpu == nil && memory == nil {
+		return gpu.NodeAllocatableResources{}, fmt.Errorf("--gpu-node-allocatable-resources is enabled but both --gpu-node-allocatable-cpu and --gpu-node-allocatable-memory are empty")
+	}
+	return gpu.NodeAllocatableResources{CPU: cpu, Memory: memory}, nil
+}
+
+// parseNodeAllocatableQuantity parses a node-allocatable resource quantity
+// flag. An empty string disables the mapping for that resource; a zero or
+// negative quantity is rejected.
+func parseNodeAllocatableQuantity(flagName, value string) (*resource.Quantity, error) {
+	if value == "" {
+		return nil, nil
+	}
+	q, err := resource.ParseQuantity(value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid value for %s %q: %w", flagName, value, err)
+	}
+	if q.Sign() <= 0 {
+		return nil, fmt.Errorf("invalid value for %s %q: must be a positive quantity", flagName, value)
+	}
+	return &q, nil
 }
 
 var validProfileNames = func() []string {
@@ -162,6 +210,26 @@ func newApp() *cli.App {
 			Destination: &flags.gpuPartitions,
 			EnvVars:     []string{"GPU_PARTITIONS"},
 		},
+		&cli.BoolFlag{
+			Name:        "gpu-node-allocatable-resources",
+			Usage:       "When set, every GPU device is published with NodeAllocatableResourceMappings so the scheduler charges --gpu-node-allocatable-cpu / --gpu-node-allocatable-memory against the node's standard CPU/memory (feature gate DRANodeAllocatableResources). Mutually exclusive with --gpu-partitions.",
+			Destination: &flags.gpuNodeAllocatableResources,
+			EnvVars:     []string{"GPU_NODE_ALLOCATABLE_RESOURCES"},
+		},
+		&cli.StringFlag{
+			Name:        "gpu-node-allocatable-cpu",
+			Usage:       "Per-GPU CPU quantity charged on the node when --gpu-node-allocatable-resources is enabled.",
+			Value:       "2",
+			Destination: &flags.gpuNodeAllocatableCPU,
+			EnvVars:     []string{"GPU_NODE_ALLOCATABLE_CPU"},
+		},
+		&cli.StringFlag{
+			Name:        "gpu-node-allocatable-memory",
+			Usage:       "Per-GPU memory quantity charged on the node when --gpu-node-allocatable-resources is enabled.",
+			Value:       "4Gi",
+			Destination: &flags.gpuNodeAllocatableMemory,
+			EnvVars:     []string{"GPU_NODE_ALLOCATABLE_MEMORY"},
+		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
 	cliFlags = append(cliFlags, flags.loggingConfig.Flags()...)
@@ -194,10 +262,15 @@ func newApp() *cli.App {
 				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfileNames)
 			}
 
+			profile, err := newProfile(*flags)
+			if err != nil {
+				return err
+			}
+
 			config := &Config{
 				flags:      flags,
 				coreclient: clientSets.Core,
-				profile:    newProfile(*flags),
+				profile:    profile,
 			}
 
 			return RunPlugin(ctx, config)

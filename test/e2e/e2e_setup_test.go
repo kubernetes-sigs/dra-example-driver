@@ -28,6 +28,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -525,6 +526,86 @@ func verifyExtendedResourceClaimStatus(ctx context.Context, namespace, podName, 
 		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has extendedResourceClaimStatus mapping %s -> %s\n",
 			namespace, podName, containerName, expectedResourceName, matched.RequestName)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
+// verifyNodeAllocatableResourceClaimStatus verifies that the pod's
+// nodeAllocatableResourceClaimStatuses contains the expected per-resource
+// quantities for the (template-generated) ResourceClaim of podLocalClaimName.
+func verifyNodeAllocatableResourceClaimStatus(ctx context.Context, namespace, podName, podLocalClaimName, containerName string, expectedResources v1.ResourceList) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		generatedClaimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		statusIdx := slices.IndexFunc(pod.Status.NodeAllocatableResourceClaimStatuses, func(s v1.NodeAllocatableResourceClaimStatus) bool {
+			return s.ResourceClaimName == generatedClaimName
+		})
+		g.Expect(statusIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no nodeAllocatableResourceClaimStatuses entry for claim %q; status: %+v",
+			namespace, podName, generatedClaimName, pod.Status.NodeAllocatableResourceClaimStatuses)
+		matched := &pod.Status.NodeAllocatableResourceClaimStatuses[statusIdx]
+
+		g.Expect(matched.Containers).To(ContainElement(containerName),
+			"Pod %s/%s nodeAllocatableResourceClaimStatuses entry for claim %q does not list container %q (got %v)",
+			namespace, podName, generatedClaimName, containerName, matched.Containers)
+
+		for resourceName, expected := range expectedResources {
+			actual, ok := matched.Resources[resourceName]
+			g.Expect(ok).To(BeTrue(),
+				"Pod %s/%s nodeAllocatableResourceClaimStatuses entry for claim %q has no %s resource: %+v",
+				namespace, podName, generatedClaimName, resourceName, matched.Resources)
+			g.Expect(actual.Cmp(expected)).To(BeZero(),
+				"Pod %s/%s claim %q resource %s: got %s, want %s",
+				namespace, podName, generatedClaimName, resourceName, actual.String(), expected.String())
+		}
+
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s claim %q has nodeAllocatableResourceClaimStatus %+v for container %s\n",
+			namespace, podName, generatedClaimName, matched.Resources, containerName)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
+// waitForResourceSlicesWithNodeAllocatableMappings waits until every device
+// published by driverName carries NodeAllocatableResourceMappings matching
+// expected. Used to synchronize with the kubelet plugin restart after a
+// helm upgrade flips the feature on.
+func waitForResourceSlicesWithNodeAllocatableMappings(ctx context.Context, driverName string, expected v1.ResourceList) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		slices, err := clientset.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list ResourceSlices")
+
+		var matched int
+		for _, slice := range slices.Items {
+			if slice.Spec.Driver != driverName {
+				continue
+			}
+			for _, device := range slice.Spec.Devices {
+				mappings := device.NodeAllocatableResourceMappings
+				g.Expect(mappings).NotTo(BeNil(),
+					"device %q in slice %q has no NodeAllocatableResourceMappings", device.Name, slice.Name)
+
+				for resourceName, expectedQty := range expected {
+					m, ok := mappings[resourceName]
+					g.Expect(ok).To(BeTrue(), "device %q missing %s mapping", device.Name, resourceName)
+					g.Expect(m.AllocationMultiplier).NotTo(BeNil(), "device %q %s mapping has no AllocationMultiplier", device.Name, resourceName)
+					g.Expect(m.AllocationMultiplier.Cmp(expectedQty)).To(BeZero(),
+						"device %q %s multiplier = %s, want %s", device.Name, resourceName, m.AllocationMultiplier.String(), expectedQty.String())
+				}
+				matched++
+			}
+		}
+		g.Expect(matched).To(BeNumerically(">", 0),
+			"no devices for driver %q advertise NodeAllocatableResourceMappings yet", driverName)
+	}, "60s", "2s").Should(Succeed())
 }
 
 // claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs

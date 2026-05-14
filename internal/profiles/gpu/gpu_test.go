@@ -21,20 +21,22 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4, 0)
+	profile := NewProfile("test-node", 4, 0, NodeAllocatableResources{})
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numGPUs)
 	assert.Equal(t, 0, profile.partitionsPerGPU)
+	assert.False(t, profile.nodeAllocatableResources.Enabled())
 }
 
 func TestNewProfile_WithPartitions(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+	profile := NewProfile("test-node", 2, 4, NodeAllocatableResources{})
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 2, profile.numGPUs)
@@ -42,7 +44,7 @@ func TestNewProfile_WithPartitions(t *testing.T) {
 }
 
 func TestEnumerateDevices_Standard(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0)
+	profile := NewProfile("test-node", 2, 0, NodeAllocatableResources{})
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -85,7 +87,7 @@ func TestEnumerateDevices_Standard(t *testing.T) {
 }
 
 func TestEnumerateDevices_Partitionable(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+	profile := NewProfile("test-node", 2, 4, NodeAllocatableResources{})
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -131,7 +133,7 @@ func TestEnumerateDevices_Partitionable(t *testing.T) {
 }
 
 func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2)
+	profile := NewProfile("test-node", 1, 2, NodeAllocatableResources{})
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -184,8 +186,8 @@ func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
 
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2, 0)
-	profile2 := NewProfile("test-node", 2, 0)
+	profile1 := NewProfile("test-node", 2, 0, NodeAllocatableResources{})
+	profile2 := NewProfile("test-node", 2, 0, NodeAllocatableResources{})
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -203,8 +205,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1, 0)
-	profile2 := NewProfile("node-2", 1, 0)
+	profile1 := NewProfile("node-1", 1, 0, NodeAllocatableResources{})
+	profile2 := NewProfile("node-2", 1, 0, NodeAllocatableResources{})
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -215,4 +217,93 @@ func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
 	uuid2 := *resources2.Pools["node-2"].Slices[0].Devices[0].Attributes["uuid"].StringValue
 
 	assert.NotEqual(t, uuid1, uuid2, "Different nodes should have different UUIDs")
+}
+
+// quantityEqual reports whether two quantities are numerically equal.
+func quantityEqual(a, b resource.Quantity) bool {
+	return a.Cmp(b) == 0
+}
+
+func TestEnumerateDevices_NoNodeAllocatableByDefault(t *testing.T) {
+	profile := NewProfile("test-node", 2, 0, NodeAllocatableResources{})
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	slice := resources.Pools["test-node"].Slices[0]
+	require.Len(t, slice.Devices, 2)
+
+	for _, device := range slice.Devices {
+		assert.Nil(t, device.NodeAllocatableResourceMappings,
+			"device %q should have no NodeAllocatableResourceMappings when no quantities are configured", device.Name)
+	}
+}
+
+func TestEnumerateDevices_NodeAllocatableCPUAndMemory(t *testing.T) {
+	cpu := resource.MustParse("2")
+	memory := resource.MustParse("4Gi")
+	profile := NewProfile("test-node", 3, 0, NodeAllocatableResources{CPU: &cpu, Memory: &memory})
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	slice := resources.Pools["test-node"].Slices[0]
+	require.Len(t, slice.Devices, 3)
+
+	for _, device := range slice.Devices {
+		require.Len(t, device.NodeAllocatableResourceMappings, 2,
+			"device %q should have CPU and memory mappings", device.Name)
+
+		cpuMapping, ok := device.NodeAllocatableResourceMappings[corev1.ResourceCPU]
+		require.True(t, ok, "device %q missing CPU mapping", device.Name)
+		require.Nil(t, cpuMapping.CapacityKey, "CPU mapping should not set CapacityKey for the per-device multiplier use case")
+		require.NotNil(t, cpuMapping.AllocationMultiplier)
+		assert.True(t, quantityEqual(*cpuMapping.AllocationMultiplier, cpu),
+			"device %q CPU multiplier = %s, want %s", device.Name, cpuMapping.AllocationMultiplier.String(), cpu.String())
+
+		memMapping, ok := device.NodeAllocatableResourceMappings[corev1.ResourceMemory]
+		require.True(t, ok, "device %q missing memory mapping", device.Name)
+		require.Nil(t, memMapping.CapacityKey)
+		require.NotNil(t, memMapping.AllocationMultiplier)
+		assert.True(t, quantityEqual(*memMapping.AllocationMultiplier, memory),
+			"device %q memory multiplier = %s, want %s", device.Name, memMapping.AllocationMultiplier.String(), memory.String())
+	}
+}
+
+func TestEnumerateDevices_NodeAllocatableOnlyCPU(t *testing.T) {
+	cpu := resource.MustParse("250m")
+	profile := NewProfile("test-node", 1, 0, NodeAllocatableResources{CPU: &cpu})
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	device := resources.Pools["test-node"].Slices[0].Devices[0]
+	require.Len(t, device.NodeAllocatableResourceMappings, 1)
+
+	cpuMapping, ok := device.NodeAllocatableResourceMappings[corev1.ResourceCPU]
+	require.True(t, ok)
+	require.NotNil(t, cpuMapping.AllocationMultiplier)
+	assert.True(t, quantityEqual(*cpuMapping.AllocationMultiplier, cpu))
+
+	_, hasMemory := device.NodeAllocatableResourceMappings[corev1.ResourceMemory]
+	assert.False(t, hasMemory, "memory mapping should not be emitted when memory is nil")
+}
+
+func TestEnumerateDevices_NodeAllocatableOnlyMemory(t *testing.T) {
+	memory := resource.MustParse("1Gi")
+	profile := NewProfile("test-node", 1, 0, NodeAllocatableResources{Memory: &memory})
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	device := resources.Pools["test-node"].Slices[0].Devices[0]
+	require.Len(t, device.NodeAllocatableResourceMappings, 1)
+
+	memMapping, ok := device.NodeAllocatableResourceMappings[corev1.ResourceMemory]
+	require.True(t, ok)
+	require.NotNil(t, memMapping.AllocationMultiplier)
+	assert.True(t, quantityEqual(*memMapping.AllocationMultiplier, memory))
+
+	_, hasCPU := device.NodeAllocatableResourceMappings[corev1.ResourceCPU]
+	assert.False(t, hasCPU, "CPU mapping should not be emitted when CPU is nil")
 }
