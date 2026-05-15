@@ -78,8 +78,14 @@ assert-fmt:
 ineffassign:
 	ineffassign $(MODULE)/...
 
+.PHONY: lint lint-root lint-test
 lint:
+	@$(MAKE) -k lint-root lint-test
+
+lint-root:
 	golangci-lint run ./...
+
+lint-test:
 	cd test && golangci-lint run --build-tags=e2e ./...
 
 misspell:
@@ -127,7 +133,7 @@ setup-e2e:
 	test/e2e/setup-e2e.sh
 
 test-e2e:
-	cd test && go run github.com/onsi/ginkgo/v2/ginkgo --tags=e2e -p ./e2e/...
+	go -C test run github.com/onsi/ginkgo/v2/ginkgo --tags=e2e -p ./e2e/...
 
 teardown-e2e:
 	test/e2e/teardown-e2e.sh
