@@ -78,15 +78,9 @@ assert-fmt:
 ineffassign:
 	ineffassign $(MODULE)/...
 
-.PHONY: lint lint-root lint-test
+.PHONY: lint
 lint:
-	@$(MAKE) -k lint-root lint-test
-
-lint-root:
-	golangci-lint run ./...
-
-lint-test:
-	cd test && golangci-lint run --build-tags=e2e ./...
+	golangci-lint run --build-tags=e2e ./... ./test/...
 
 misspell:
 	misspell $(MODULE)/...

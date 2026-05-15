@@ -2,8 +2,6 @@ module sigs.k8s.io/dra-example-driver/test
 
 go 1.26.0
 
-replace sigs.k8s.io/dra-example-driver => ../
-
 require (
 	github.com/onsi/ginkgo/v2 v2.28.3
 	github.com/onsi/gomega v1.40.0
@@ -11,7 +9,7 @@ require (
 	k8s.io/api v0.36.0
 	k8s.io/apimachinery v0.36.0
 	k8s.io/client-go v0.36.0
-	sigs.k8s.io/dra-example-driver v0.0.0
+	sigs.k8s.io/dra-example-driver v0.2.1
 )
 
 require (
