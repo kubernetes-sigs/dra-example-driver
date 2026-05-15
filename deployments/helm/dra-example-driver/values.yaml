@@ -52,6 +52,15 @@ kubeletPlugin:
   # greater than 0, GPUs are exposed with shared counters allowing flexible
   # partitioning (DRAPartitionableDevices feature). 0 disables partitioning.
   gpuPartitions: 0
+  # gpuNodeAllocatableResources advertises per-GPU native node-allocatable
+  # resource accounting. When enabled, every GPU device the driver publishes
+  # carries NodeAllocatableResourceMappings so kube-scheduler charges the
+  # listed CPU/memory against the node's allocatable resources for every
+  # allocated GPU. Mutually exclusive with gpuPartitions > 0.
+  gpuNodeAllocatableResources:
+    enabled: false
+    cpu: "2"
+    memory: "4Gi"
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate

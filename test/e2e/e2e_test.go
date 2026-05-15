@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
@@ -259,6 +260,43 @@ var _ = Describe("Test GPU allocation", func() {
 
 		observedGPUs := make(map[string]string)
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+	})
+
+	It("should account for per-GPU native node-allocatable resources", Serial, func(ctx SpecContext) {
+		const (
+			cpuStr     = "2"
+			memoryStr  = "4Gi"
+			driverName = "gpu.example.com"
+		)
+		expected := corev1.ResourceList{
+			corev1.ResourceCPU:    resource.MustParse(cpuStr),
+			corev1.ResourceMemory: resource.MustParse(memoryStr),
+		}
+
+		helmUpgradeDriver(
+			"--set", "kubeletPlugin.gpuNodeAllocatableResources.enabled=true",
+			"--set-string", "kubeletPlugin.gpuNodeAllocatableResources.cpu="+cpuStr,
+			"--set-string", "kubeletPlugin.gpuNodeAllocatableResources.memory="+memoryStr,
+		)
+		DeferCleanup(func(ctx SpecContext) {
+			helmUpgradeDriver(
+				"--set", "kubeletPlugin.gpuNodeAllocatableResources.enabled=false",
+			)
+		})
+		waitForDriverReady(ctx)
+		waitForResourceSlicesWithNodeAllocatableMappings(ctx, driverName, expected)
+
+		namespace := "native-resource-request"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		deployManifest(ctx, namespace, "native-resource-request.yaml")
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+		verifyNodeAllocatableResourceClaimStatus(ctx, namespace, pods[0], "gpu", containerName, expected)
 	})
 
 	Context("Webhooks", func() {

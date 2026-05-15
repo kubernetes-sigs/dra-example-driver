@@ -86,6 +86,12 @@ spec:
         {{- end }}
         - name: GPU_PARTITIONS
           value: {{ .Values.kubeletPlugin.gpuPartitions | quote }}
+        - name: GPU_NODE_ALLOCATABLE_RESOURCES
+          value: {{ .Values.kubeletPlugin.gpuNodeAllocatableResources.enabled | quote }}
+        - name: GPU_NODE_ALLOCATABLE_CPU
+          value: {{ .Values.kubeletPlugin.gpuNodeAllocatableResources.cpu | quote }}
+        - name: GPU_NODE_ALLOCATABLE_MEMORY
+          value: {{ .Values.kubeletPlugin.gpuNodeAllocatableResources.memory | quote }}
         - name: POD_UID
           valueFrom:
             fieldRef:

@@ -23,6 +23,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -38,16 +39,31 @@ import (
 const ProfileName = "gpu"
 
 type Profile struct {
-	nodeName         string
-	numGPUs          int
-	partitionsPerGPU int
+	nodeName                 string
+	numGPUs                  int
+	partitionsPerGPU         int
+	nodeAllocatableResources NodeAllocatableResources
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int) Profile {
+// NodeAllocatableResources configures the per-GPU
+// [resourceapi.Device.NodeAllocatableResourceMappings] the profile publishes.
+// A nil pointer leaves that resource's mapping unset.
+type NodeAllocatableResources struct {
+	CPU    *resource.Quantity
+	Memory *resource.Quantity
+}
+
+// Enabled reports whether any mapping should be emitted.
+func (n NodeAllocatableResources) Enabled() bool {
+	return n.CPU != nil || n.Memory != nil
+}
+
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, nodeAllocatableResources NodeAllocatableResources) Profile {
 	return Profile{
-		nodeName:         nodeName,
-		numGPUs:          numGPUs,
-		partitionsPerGPU: partitionsPerGPU,
+		nodeName:                 nodeName,
+		numGPUs:                  numGPUs,
+		partitionsPerGPU:         partitionsPerGPU,
+		nodeAllocatableResources: nodeAllocatableResources,
 	}
 }
 
@@ -162,6 +178,10 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 						Value: memoryPerGPU,
 					},
 				},
+				// Charge the node's CPU/memory budget per GPU. Mappings are
+				// only emitted on standalone GPUs; partitions represent
+				// fractional GPUs and would skew accounting.
+				NodeAllocatableResourceMappings: p.nodeAllocatableResourceMappings(),
 			})
 		}
 	}
@@ -183,6 +203,23 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 	}
 
 	return resources, nil
+}
+
+// nodeAllocatableResourceMappings returns the
+// [resourceapi.Device.NodeAllocatableResourceMappings] for the profile's
+// configured quantities, or nil when none are configured.
+func (p Profile) nodeAllocatableResourceMappings() map[corev1.ResourceName]resourceapi.NodeAllocatableResourceMapping {
+	if !p.nodeAllocatableResources.Enabled() {
+		return nil
+	}
+	mappings := map[corev1.ResourceName]resourceapi.NodeAllocatableResourceMapping{}
+	if cpu := p.nodeAllocatableResources.CPU; cpu != nil {
+		mappings[corev1.ResourceCPU] = resourceapi.NodeAllocatableResourceMapping{AllocationMultiplier: cpu}
+	}
+	if memory := p.nodeAllocatableResources.Memory; memory != nil {
+		mappings[corev1.ResourceMemory] = resourceapi.NodeAllocatableResourceMapping{AllocationMultiplier: memory}
+	}
+	return mappings
 }
 
 func generateUUIDs(seed string, count int) []string {
