@@ -1,0 +1,38 @@
+{{- if .Values.controller.plugins }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dra-example-driver.fullname" . }}-controller
+  namespace: {{ include "dra-example-driver.namespace" . }}
+  labels:
+    {{- include "dra-example-driver.labels" . | nindent 4 }}
+    app.kubernetes.io/component: controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "dra-example-driver.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: controller
+  template:
+    metadata:
+      labels:
+        {{- include "dra-example-driver.templateLabels" . | nindent 8 }}
+        app.kubernetes.io/component: controller
+    spec:
+      priorityClassName: system-cluster-critical
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "dra-example-driver.serviceAccountName" . }}
+      containers:
+      - name: controller
+        image: {{ include "dra-example-driver.fullimage" . }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["dra-example-controller"]
+        args:
+          - --driver-name={{ include "dra-example-driver.driverName" . }}
+          {{- range .Values.controller.plugins }}
+          - --enable-plugin={{ . }}
+          {{- end }}
+{{- end }}
