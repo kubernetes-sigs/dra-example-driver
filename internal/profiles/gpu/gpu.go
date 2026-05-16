@@ -38,16 +38,18 @@ import (
 const ProfileName = "gpu"
 
 type Profile struct {
-	nodeName         string
-	numGPUs          int
-	partitionsPerGPU int
+	nodeName          string
+	numGPUs           int
+	partitionsPerGPU  int
+	bindingConditions bool
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, bindingConditions bool) Profile {
 	return Profile{
-		nodeName:         nodeName,
-		numGPUs:          numGPUs,
-		partitionsPerGPU: partitionsPerGPU,
+		nodeName:          nodeName,
+		numGPUs:           numGPUs,
+		partitionsPerGPU:  partitionsPerGPU,
+		bindingConditions: bindingConditions,
 	}
 }
 
@@ -163,6 +165,13 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 					},
 				},
 			})
+		}
+	}
+
+	if p.bindingConditions {
+		for i := range devices {
+			devices[i].BindingConditions = []string{profiles.BindingConditions}
+			devices[i].BindingFailureConditions = []string{profiles.BindingFailureConditions}
 		}
 	}
 

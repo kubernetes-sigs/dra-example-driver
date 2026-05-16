@@ -21,6 +21,13 @@ set -e
 # Example: HELM_CHART_PATH="oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver" make setup-e2e
 HELM_CHART_PATH="${HELM_CHART_PATH:-deployments/helm/dra-example-driver}"
 
+# Enable BindingConditions controller plugin and kubelet plugin flag when requested.
+# Usage: BINDING_CONDITIONS=true make setup-e2e
+BINDING_CONDITIONS_OPTS=""
+if [[ "${BINDING_CONDITIONS:-false}" == "true" ]]; then
+	BINDING_CONDITIONS_OPTS="--set kubeletPlugin.bindingConditions=true --set controller.plugins={BindingConditions}"
+fi
+
 # Skip building local driver image if using OCI registry chart
 if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
 	bash demo/build-driver.sh
@@ -43,5 +50,6 @@ helm upgrade -i \
   --set webhook.enabled=true \
   --set kubeletPlugin.numDevices=14 \
   --set deviceClass.extendedResourceName=example.com/gpu \
+  ${BINDING_CONDITIONS_OPTS} \
   dra-example-driver \
   ${HELM_CHART_PATH}

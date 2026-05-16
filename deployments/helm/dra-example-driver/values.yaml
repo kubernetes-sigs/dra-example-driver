@@ -67,6 +67,8 @@ kubeletPlugin:
   affinity: {}
   kubeletRegistrarDirectoryPath: /var/lib/kubelet/plugins_registry
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
+  # bindingConditions enables or disables binding conditions processing in the DRA driver
+  bindingConditions: false
   containers:
     init:
       securityContext: {}
@@ -78,6 +80,12 @@ kubeletPlugin:
       # Port running a gRPC health service checked by a livenessProbe.
       # Set to a negative value to disable the service and the probe.
       healthcheckPort: 51515
+
+controller:
+  # plugins is a list of plugins to enable in the controller.
+  # When non-empty, the controller Deployment is created.
+  # Available plugins: ["BindingConditions"]
+  plugins: []
 
 webhook:
   enabled: false

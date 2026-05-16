@@ -21,6 +21,7 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -283,5 +284,30 @@ var _ = Describe("Test GPU allocation", func() {
 					"Webhook did not reject %s invalid GpuConfig with the expected message. Got error: %v", testCase.name, err)
 			})
 		}
+	})
+
+	Context("BindingConditions", func() {
+		BeforeEach(func() {
+			if os.Getenv("BINDING_CONDITIONS") != "true" {
+				Skip("BINDING_CONDITIONS is not enabled; skipping binding conditions tests")
+			}
+		})
+
+		It("should publish bindingConditions on devices in ResourceSlices", func(ctx SpecContext) {
+			verifyResourceSliceBindingConditions(ctx)
+		})
+
+		It("should allocate a GPU and make the pod Running with binding conditions", func(ctx SpecContext) {
+			namespace := "binding-conditions"
+			pods := []string{"pod0"}
+			containerName := "ctr0"
+			expectedGPUCount := 1
+
+			deployManifest(ctx, namespace, "binding-conditions/binding-conditions.yaml")
+			checkPodsReadyAndRunning(ctx, namespace, pods)
+
+			observedGPUs := make(map[string]string)
+			verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+		})
 	})
 })

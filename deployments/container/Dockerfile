@@ -35,4 +35,5 @@ LABEL summary="Example DRA resource driver for Kubernetes"
 LABEL description="See summary"
 
 COPY --from=build /artifacts/dra-example-kubeletplugin /usr/bin/dra-example-kubeletplugin
+COPY --from=build /artifacts/dra-example-controller    /usr/bin/dra-example-controller
 COPY --from=build /artifacts/dra-example-webhook       /usr/bin/dra-example-webhook

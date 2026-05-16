@@ -401,7 +401,8 @@ kubectl delete --wait=false --filename=demo/basic-resourceclaimtemplate.yaml \
   --filename=demo/basic-shared-claim-across-containers.yaml \
   --filename=demo/basic-shared-claim-across-pods.yaml \
   --filename=demo/basic-resourceclaim-opaque-config.yaml \
-  --filename=demo/admin-access.yaml
+  --filename=demo/admin-access.yaml \
+  --filename=demo/binding-conditions/binding-conditions.yaml
 ```
 
 And wait for them to terminate:
@@ -417,6 +418,7 @@ basic-shared-claim-across-containers   pod1   1/1     Terminating   0          3
 basic-shared-claim-across-pods         pod0   1/1     Terminating   0          31m
 basic-resourceclaim-opaque-config      pod0   4/4     Terminating   0          31m
 admin-access                           pod0   1/1     Terminating   0          31m
+binding-conditions                     pod0   1/1     Terminating   0          31m
 ...
 ```
 

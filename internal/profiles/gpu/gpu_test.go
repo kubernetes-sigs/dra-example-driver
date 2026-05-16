@@ -26,23 +26,25 @@ import (
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4, 0)
+	profile := NewProfile("test-node", 4, 0, false)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numGPUs)
 	assert.Equal(t, 0, profile.partitionsPerGPU)
+	assert.Equal(t, false, profile.bindingConditions)
 }
 
-func TestNewProfile_WithPartitions(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+func TestNewProfile_WithAllOptions(t *testing.T) {
+	profile := NewProfile("test-node", 2, 4, true)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 2, profile.numGPUs)
 	assert.Equal(t, 4, profile.partitionsPerGPU)
+	assert.Equal(t, true, profile.bindingConditions)
 }
 
 func TestEnumerateDevices_Standard(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0)
+	profile := NewProfile("test-node", 2, 0, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -85,7 +87,7 @@ func TestEnumerateDevices_Standard(t *testing.T) {
 }
 
 func TestEnumerateDevices_Partitionable(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+	profile := NewProfile("test-node", 2, 4, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -131,7 +133,7 @@ func TestEnumerateDevices_Partitionable(t *testing.T) {
 }
 
 func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2)
+	profile := NewProfile("test-node", 1, 2, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -184,8 +186,8 @@ func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
 
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2, 0)
-	profile2 := NewProfile("test-node", 2, 0)
+	profile1 := NewProfile("test-node", 2, 0, false)
+	profile2 := NewProfile("test-node", 2, 0, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -203,8 +205,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1, 0)
-	profile2 := NewProfile("node-2", 1, 0)
+	profile1 := NewProfile("node-1", 1, 0, false)
+	profile2 := NewProfile("node-2", 1, 0, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
