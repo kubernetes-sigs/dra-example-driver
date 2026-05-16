@@ -40,17 +40,13 @@ func init() {
 	utilruntime.Must(resourceapi.AddToScheme(scheme))
 }
 
-const (
-	PluginBindingConditions = "BindingConditions"
-)
-
 // PluginFactory creates a Plugin for the given driver name.
 type PluginFactory func(driverName string) Plugin
 
 // pluginRegistry maps plugin names to their factory functions.
 // Add new plugins here.
 var pluginRegistry = map[string]PluginFactory{
-	PluginBindingConditions: func(driverName string) Plugin {
+	plugins.BindingConditions: func(driverName string) Plugin {
 		return plugins.NewBindingConditionsPlugin(driverName)
 	},
 }
