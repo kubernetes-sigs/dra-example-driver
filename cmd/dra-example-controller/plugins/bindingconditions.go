@@ -36,6 +36,10 @@ func NewBindingConditionsPlugin(driverName string) *BindingConditionsPlugin {
 	return &BindingConditionsPlugin{driverName: driverName}
 }
 
+func (p *BindingConditionsPlugin) Name() string {
+	return BindingConditions
+}
+
 func (p *BindingConditionsPlugin) Reconcile(ctx context.Context, c client.Client, claim *resourceapi.ResourceClaim) error {
 	if claim.Status.Allocation == nil {
 		return nil

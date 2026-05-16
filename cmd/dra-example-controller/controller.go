@@ -19,6 +19,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -31,6 +32,8 @@ import (
 // New functionality can be added by implementing this interface and
 // registering the plugin in main().
 type Plugin interface {
+	// Name returns the name of the plugin.
+	Name() string
 	Reconcile(ctx context.Context, c client.Client, claim *resourceapi.ResourceClaim) error
 }
 
@@ -69,10 +72,29 @@ func (r *ClaimReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl
 		return ctrl.Result{}, nil
 	}
 
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(r.plugins))
+
 	for _, p := range r.plugins {
-		if err := p.Reconcile(ctx, r.client, &claim); err != nil {
-			return ctrl.Result{}, fmt.Errorf("plugin failed: %w", err)
-		}
+		wg.Add(1)
+		go func(plugin Plugin) {
+			defer wg.Done()
+			if err := plugin.Reconcile(ctx, r.client, &claim); err != nil {
+				errChan <- fmt.Errorf("%s: %w", plugin.Name(), err)
+			}
+		}(p)
+	}
+
+	wg.Wait()
+	close(errChan)
+
+	var errs []error
+	for err := range errChan {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return ctrl.Result{}, fmt.Errorf("plugins failed: %v", errs)
 	}
 
 	return ctrl.Result{}, nil
