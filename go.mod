@@ -10,13 +10,13 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/urfave/cli/v2 v2.27.7
 	google.golang.org/grpc v1.81.0
-	k8s.io/api v0.36.0
-	k8s.io/apimachinery v0.36.0
-	k8s.io/client-go v0.36.0
-	k8s.io/component-base v0.36.0
-	k8s.io/dynamic-resource-allocation v0.36.0
+	k8s.io/api v0.36.1
+	k8s.io/apimachinery v0.36.1
+	k8s.io/client-go v0.36.1
+	k8s.io/component-base v0.36.1
+	k8s.io/dynamic-resource-allocation v0.36.1
 	k8s.io/klog/v2 v2.140.0
-	k8s.io/kubelet v0.36.0
+	k8s.io/kubelet v0.36.1
 	k8s.io/utils v0.0.0-20260210185600-b8788abfbbc2
 	tags.cncf.io/container-device-interface v1.1.0
 	tags.cncf.io/container-device-interface/specs-go v1.1.0
