@@ -1,0 +1,95 @@
+# Example: DRA Resource Availability Visibility (ResourcePoolStatusRequest)
+#
+# Demonstrates the
+# [DRA resource pool status](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#resource-pool-status)
+# feature.
+# For more information see
+# [KEP-5677](https://github.com/kubernetes/enhancements/issues/5677).
+#
+# This manifest is self-contained: it creates one Pod that consumes 1 GPU and a
+# cluster-scoped `ResourcePoolStatusRequest` that asks
+# `kube-controller-manager` to publish a one-shot snapshot of every pool served
+# by the example driver. The snapshot lists total / allocated / available /
+# unavailable device counts per pool.
+#
+# `ResourcePoolStatusRequest` is particularly useful for non-admin users:
+# `ResourceClaim`s are namespaced, so a user cannot ordinarily inspect claims
+# in other namespaces. A cluster-scoped `ResourcePoolStatusRequest` lets them
+# see aggregate consumption without that visibility. The driver itself needs
+# no code changes; the aggregation is computed entirely by
+# `kube-controller-manager` from existing `ResourceSlice`s and
+# `ResourceClaim`s.
+#
+# Expected: once the controller reconciles the request, `.status` reports
+# `allocatedDevices: 1` for the pool backing the consumer Pod. Inspect with:
+#   kubectl wait --for=condition=Complete \
+#     resourcepoolstatusrequest/gpu-pool-status --timeout=30s
+#   kubectl get resourcepoolstatusrequest/gpu-pool-status -o yaml
+#
+# `ResourcePoolStatusRequest` is one-shot. To refresh the snapshot after
+# launching or tearing down workloads, delete and re-create the request:
+#   kubectl delete resourcepoolstatusrequest/gpu-pool-status
+#   kubectl apply --filename=demo/resource-pool-status.yaml
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 1
+#
+# Cluster requirements:
+#   Kubernetes 1.36+
+#   Feature gate: DRAResourcePoolStatus (on kube-apiserver and
+#     kube-controller-manager)
+#   API enabled: resource.k8s.io/v1alpha3
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: resource-pool-status
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: resource-pool-status
+  name: single-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: resource-pool-status
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu
+
+---
+apiVersion: resource.k8s.io/v1alpha3
+kind: ResourcePoolStatusRequest
+metadata:
+  name: gpu-pool-status
+spec:
+  driver: gpu.example.com
+  # Optional: filter to a specific pool (typically the node name).
+  # poolName: dra-example-driver-cluster-worker
+  # Optional: cap the number of pools returned. Defaults to 100, max 1000.
+  # limit: 10
