@@ -20,25 +20,28 @@ package e2e
 
 import (
 	"context"
-	"fmt"
-	"path/filepath"
+	"encoding/json"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	resourcev1 "k8s.io/api/resource/v1"
+	resourcev1beta1 "k8s.io/api/resource/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 
 	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 )
 
 var _ = Describe("Test GPU allocation", func() {
 	It("should allocate 1 distinct GPU per pod", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-resourceclaimtemplate"
 		pods := []string{"pod0", "pod1"}
 		containerName := "ctr0"
 		expectedGPUCount := 1
 
-		deployManifest(ctx, namespace, "basic-resourceclaimtemplate.yaml")
+		deployManifest(ctx, namespace, "basic-resourceclaimtemplate.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		observedGPUs := make(map[string]string)
@@ -48,12 +51,13 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should allocate 2 distinct GPUs to a single container", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-multiple-requests"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 		expectedGPUCount := 2
 
-		deployManifest(ctx, namespace, "basic-multiple-requests.yaml")
+		deployManifest(ctx, namespace, "basic-multiple-requests.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		observedGPUs := make(map[string]string)
@@ -61,10 +65,11 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should share 1 GPU between containers with TimeSlicing default interval", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-shared-claim-across-containers"
 		pods := []string{"pod0"}
 
-		deployManifest(ctx, namespace, "basic-shared-claim-across-containers.yaml")
+		deployManifest(ctx, namespace, "basic-shared-claim-across-containers.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		verifySharedGPUGroup(ctx, namespace, sharingGroup{
@@ -79,10 +84,11 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should share 1 GPU between pods with TimeSlicing default interval", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-shared-claim-across-pods"
 		pods := []string{"pod0", "pod1"}
 
-		deployManifest(ctx, namespace, "basic-shared-claim-across-pods.yaml")
+		deployManifest(ctx, namespace, "basic-shared-claim-across-pods.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		verifySharedGPUGroup(ctx, namespace, sharingGroup{
@@ -97,10 +103,11 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should share GPUs with TimeSlicing and SpacePartitioning", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-resourceclaim-opaque-config"
 		pods := []string{"pod0"}
 
-		deployManifest(ctx, namespace, "basic-resourceclaim-opaque-config.yaml")
+		deployManifest(ctx, namespace, "basic-resourceclaim-opaque-config.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		verifySharedGPUGroup(ctx, namespace, sharingGroup{
@@ -125,10 +132,11 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should share 1 GPU between init container and regular container", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "initcontainer-shared-gpu"
 		pods := []string{"pod0"}
 
-		deployManifest(ctx, namespace, "initcontainer-shared-gpu.yaml")
+		deployManifest(ctx, namespace, "initcontainer-shared-gpu.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		verifySharedGPUGroup(ctx, namespace, sharingGroup{
@@ -143,26 +151,32 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should have DRA_ADMIN_ACCESS set to true", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "admin-access"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 
-		deployManifest(ctx, namespace, "admin-access.yaml")
+		deployManifest(ctx, namespace, "admin-access.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 		verifyDRAAdminAccess(ctx, namespace, pods[0], containerName, "true")
 	})
 
 	It("should allocate 1 GPU per pod for extended resource requests", func(ctx SpecContext) {
+		// Each parallel test must advertise its DeviceClass under a unique
+		// extended resource name so KEP-5004 reservations don't collide.
+		drv := installDriver(ctx, DriverConfig{
+			ExtendedResourceName: "example.com/gpu-ext-resource",
+		})
 		namespace := "extended-resource-request"
 		pods := []string{"pod0", "pod1"}
 		containerName := "ctr0"
 		expectedGPUCount := 1
 		expectedResourceNames := map[string]string{
-			"pod0": "deviceclass.resource.kubernetes.io/gpu.example.com",
-			"pod1": "example.com/gpu",
+			"pod0": "deviceclass.resource.kubernetes.io/" + drv.DriverName,
+			"pod1": drv.ExtendedResourceName,
 		}
 
-		deployManifest(ctx, namespace, "extended-resource-request.yaml")
+		deployManifest(ctx, namespace, "extended-resource-request.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		observedGPUs := make(map[string]string)
@@ -173,12 +187,13 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("should allocate 1 GPU selected using CEL expression", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "cel-selector"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 		expectedGPUCount := 1
 
-		deployManifest(ctx, namespace, "cel-selector.yaml")
+		deployManifest(ctx, namespace, "cel-selector.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		observedGPUs := make(map[string]string)
@@ -186,11 +201,12 @@ var _ = Describe("Test GPU allocation", func() {
 	})
 
 	It("Should share 1 GPU among the Pods in each of 2 PodGroups", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
 		namespace := "podgroup-resourceclaimtemplate"
 		containerName := "ctr0"
 		expectedGPUCount := 1
 
-		deployManifest(ctx, namespace, "podgroup-resourceclaimtemplate.yaml")
+		deployManifest(ctx, namespace, "podgroup-resourceclaimtemplate.yaml", drv)
 
 		Eventually(ctx, func(g Gomega, ctx context.Context) {
 			deployments, err := clientset.AppsV1().Deployments(namespace).List(ctx, metav1.ListOptions{})
@@ -236,52 +252,135 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
-	It("should allocate partition devices from shared GPU counters", Serial, func(ctx SpecContext) {
-		helmUpgradeDriver(
-			"--set", "kubeletPlugin.gpuPartitions=4",
-			"--set", "kubeletPlugin.numDevices=2",
-		)
-		DeferCleanup(func(ctx SpecContext) {
-			helmUpgradeDriver(
-				"--set", "kubeletPlugin.numDevices=12",
-				"--set", "kubeletPlugin.gpuPartitions=0",
-			)
+	It("should allocate partition devices from shared GPU counters", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{
+			ExtraValues: map[string]string{
+				"kubeletPlugin.gpuPartitions": "4",
+			},
 		})
-		waitForDriverReady(ctx)
-
 		namespace := "partitionable-devices"
 		pods := []string{"pod0"}
 		containerName := "ctr0"
 		expectedGPUCount := 2
 
-		deployManifest(ctx, namespace, "partitionable-devices.yaml")
+		deployManifest(ctx, namespace, "partitionable-devices.yaml", drv)
 		checkPodsReadyAndRunning(ctx, namespace, pods)
 
 		observedGPUs := make(map[string]string)
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
 	})
 
-	Context("Webhooks", func() {
-		tests := []struct {
-			name     string
-			fileName string
-		}{
-			{name: "v1 ResourceClaim", fileName: "invalid_rc_v1.yaml"},
-			{name: "v1beta1 ResourceClaim", fileName: "invalid_rc_v1beta1.yaml"},
-			{name: "v1 ResourceClaimTemplate", fileName: "invalid_rc_template.yaml"},
-		}
-
-		for _, testCase := range tests {
-			It("should reject invalid "+testCase.name, func(ctx SpecContext) {
-				manifestPath := filepath.Join(currentDir, "testdata", "webhooks", testCase.fileName)
-
-				err := createManifestWithDryRun(ctx, dynamicClient, manifestPath)
-				fmt.Fprintf(GinkgoWriter, "Error from create: %v\n", err)
-				Expect(err).To(HaveOccurred(),
-					"Expected webhook to reject %s, but it was accepted", testCase.fileName)
-				Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"),
-					"Webhook did not reject %s invalid GpuConfig with the expected message. Got error: %v", testCase.name, err)
+	// Webhook tests share one driver pinned to "gpu.example.com" so their
+	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
+	Context("Webhooks", Ordered, Serial, func() {
+		BeforeAll(func(ctx SpecContext) {
+			installDriver(ctx, DriverConfig{
+				DriverName:     defaultDeviceClassName,
+				WebhookEnabled: true,
 			})
+		})
+
+		// invalidGpuConfig marshals to an opaque GpuConfig parameter with an
+		// unknown time-slice interval value that the webhook should reject.
+		invalidGpuConfig := func() runtime.RawExtension {
+			cfg := gpuv1alpha1.GpuConfig{
+				TypeMeta: metav1.TypeMeta{
+					APIVersion: gpuv1alpha1.SchemeGroupVersion.String(),
+					Kind:       gpuv1alpha1.GpuConfigKind,
+				},
+				Sharing: &gpuv1alpha1.GpuSharing{
+					Strategy: gpuv1alpha1.TimeSlicingStrategy,
+					TimeSlicingConfig: &gpuv1alpha1.TimeSlicingConfig{
+						Interval: "InvalidInterval",
+					},
+				},
+			}
+			raw, err := json.Marshal(cfg)
+			Expect(err).NotTo(HaveOccurred())
+			return runtime.RawExtension{Raw: raw}
 		}
+
+		It("should reject invalid v1 ResourceClaim", func(ctx SpecContext) {
+			claim := &resourcev1.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "webhook-test", Namespace: "default"},
+				Spec: resourcev1.ResourceClaimSpec{
+					Devices: resourcev1.DeviceClaim{
+						Requests: []resourcev1.DeviceRequest{{
+							Name:    "ts-gpu",
+							Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultDeviceClassName},
+						}},
+						Config: []resourcev1.DeviceClaimConfiguration{{
+							Requests: []string{"ts-gpu"},
+							DeviceConfiguration: resourcev1.DeviceConfiguration{
+								Opaque: &resourcev1.OpaqueDeviceConfiguration{
+									Driver:     defaultDeviceClassName,
+									Parameters: invalidGpuConfig(),
+								},
+							},
+						}},
+					},
+				},
+			}
+			_, err := clientset.ResourceV1().ResourceClaims(claim.Namespace).Create(
+				ctx, claim, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+			Expect(err).To(HaveOccurred(), "Expected webhook to reject invalid v1 ResourceClaim")
+			Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"))
+		})
+
+		It("should reject invalid v1beta1 ResourceClaim", func(ctx SpecContext) {
+			claim := &resourcev1beta1.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{Name: "webhook-test-v1beta1", Namespace: "default"},
+				Spec: resourcev1beta1.ResourceClaimSpec{
+					Devices: resourcev1beta1.DeviceClaim{
+						Requests: []resourcev1beta1.DeviceRequest{{
+							Name:            "ts-gpu",
+							DeviceClassName: defaultDeviceClassName,
+						}},
+						Config: []resourcev1beta1.DeviceClaimConfiguration{{
+							Requests: []string{"ts-gpu"},
+							DeviceConfiguration: resourcev1beta1.DeviceConfiguration{
+								Opaque: &resourcev1beta1.OpaqueDeviceConfiguration{
+									Driver:     defaultDeviceClassName,
+									Parameters: invalidGpuConfig(),
+								},
+							},
+						}},
+					},
+				},
+			}
+			_, err := clientset.ResourceV1beta1().ResourceClaims(claim.Namespace).Create(
+				ctx, claim, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+			Expect(err).To(HaveOccurred(), "Expected webhook to reject invalid v1beta1 ResourceClaim")
+			Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"))
+		})
+
+		It("should reject invalid v1 ResourceClaimTemplate", func(ctx SpecContext) {
+			template := &resourcev1.ResourceClaimTemplate{
+				ObjectMeta: metav1.ObjectMeta{Name: "webhook-test", Namespace: "default"},
+				Spec: resourcev1.ResourceClaimTemplateSpec{
+					Spec: resourcev1.ResourceClaimSpec{
+						Devices: resourcev1.DeviceClaim{
+							Requests: []resourcev1.DeviceRequest{{
+								Name:    "ts-gpu",
+								Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultDeviceClassName},
+							}},
+							Config: []resourcev1.DeviceClaimConfiguration{{
+								Requests: []string{"ts-gpu"},
+								DeviceConfiguration: resourcev1.DeviceConfiguration{
+									Opaque: &resourcev1.OpaqueDeviceConfiguration{
+										Driver:     defaultDeviceClassName,
+										Parameters: invalidGpuConfig(),
+									},
+								},
+							}},
+						},
+					},
+				},
+			}
+			_, err := clientset.ResourceV1().ResourceClaimTemplates(template.Namespace).Create(
+				ctx, template, metav1.CreateOptions{DryRun: []string{metav1.DryRunAll}})
+			Expect(err).To(HaveOccurred(), "Expected webhook to reject invalid v1 ResourceClaimTemplate")
+			Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"))
+		})
 	})
 })

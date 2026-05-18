@@ -19,7 +19,10 @@ set -e
 
 # Use local Helm chart by default, or from OCI registry if HELM_CHART_PATH is set
 # Example: HELM_CHART_PATH="oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver" make setup-e2e
+# The same env var is honored by the e2e tests themselves, which install a
+# per-test driver release at runtime.
 HELM_CHART_PATH="${HELM_CHART_PATH:-deployments/helm/dra-example-driver}"
+export HELM_CHART_PATH
 
 # Skip building local driver image if using OCI registry chart
 if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
@@ -37,11 +40,3 @@ helm upgrade -i \
   cert-manager \
   cert-manager
 
-helm upgrade -i \
-  --create-namespace \
-  --namespace dra-example-driver \
-  --set webhook.enabled=true \
-  --set kubeletPlugin.numDevices=14 \
-  --set deviceClass.extendedResourceName=example.com/gpu \
-  dra-example-driver \
-  ${HELM_CHART_PATH}
