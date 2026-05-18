@@ -28,7 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/gpu/v1alpha1"
 )
 
 var _ = Describe("Test GPU allocation", func() {
@@ -158,8 +158,8 @@ var _ = Describe("Test GPU allocation", func() {
 		containerName := "ctr0"
 		expectedGPUCount := 1
 		expectedResourceNames := map[string]string{
-			"pod0": "deviceclass.resource.kubernetes.io/gpu.example.com",
-			"pod1": "example.com/gpu",
+			"pod0": "deviceclass.resource.kubernetes.io/gpu.dra-example-driver.sigs.k8s.io",
+			"pod1": "dra-example-driver.sigs.k8s.io/gpu",
 		}
 
 		deployManifest(ctx, namespace, "extended-resource-request.yaml")

@@ -45,7 +45,7 @@ spec:
       requests:
       - name: admin-gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           allocationMode: All
           adminAccess: true
 

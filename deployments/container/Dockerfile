@@ -26,7 +26,7 @@ FROM ${BASE_IMAGE}
 
 LABEL io.k8s.display-name="Example Resource Driver for Dynamic Resource Allocation (DRA)"
 LABEL name="Example Resource Driver for Dynamic Resource Allocation (DRA)"
-LABEL vendor="example.com"
+LABEL vendor="dra-example-driver.sigs.k8s.io"
 ARG VERSION="N/A"
 LABEL version=${VERSION}
 ARG RELEASE="N/A"

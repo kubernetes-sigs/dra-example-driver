@@ -48,7 +48,7 @@ spec:
       requests:
       - name: gpu-partition
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           count: 2
 ---
 apiVersion: v1

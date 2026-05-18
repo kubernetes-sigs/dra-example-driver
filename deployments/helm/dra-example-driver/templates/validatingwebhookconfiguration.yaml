@@ -9,7 +9,7 @@ metadata:
   annotations:
     cert-manager.io/inject-ca-from: "{{ include "dra-example-driver.namespace" . }}/{{ include "dra-example-driver.fullname" . }}-webhook-cert"
 webhooks:
-- name: "dra.example.com"
+- name: "webhook.dra-example-driver.sigs.k8s.io"
   rules:
   - apiGroups:   ["resource.k8s.io"]
     apiVersions: ["v1beta1", "v1beta2", "v1"]

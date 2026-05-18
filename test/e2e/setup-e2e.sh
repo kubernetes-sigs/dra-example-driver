@@ -42,6 +42,6 @@ helm upgrade -i \
   --namespace dra-example-driver \
   --set webhook.enabled=true \
   --set kubeletPlugin.numDevices=14 \
-  --set deviceClass.extendedResourceName=example.com/gpu \
+  --set deviceClass.extendedResourceName=dra-example-driver.sigs.k8s.io/gpu \
   dra-example-driver \
   ${HELM_CHART_PATH}

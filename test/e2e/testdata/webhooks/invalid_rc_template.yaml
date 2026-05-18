@@ -8,16 +8,16 @@ spec:
       requests:
       - name: ts-gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
       - name: sp-gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
       config:
       - requests: ["ts-gpu"]
         opaque:
-          driver: gpu.example.com
+          driver: gpu.dra-example-driver.sigs.k8s.io
           parameters:
-            apiVersion: gpu.resource.example.com/v1alpha1
+            apiVersion: gpu.resource.dra-example-driver.sigs.k8s.io/v1alpha1
             kind: GpuConfig
             sharing:
               strategy: TimeSlicing

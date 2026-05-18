@@ -124,7 +124,7 @@ func newApp() *cli.App {
 			}
 
 			if flags.driverName == "" {
-				flags.driverName = flags.profile + ".example.com"
+				flags.driverName = flags.profile + ".dra-example-driver.sigs.k8s.io"
 			}
 
 			mux, err := newMux(configHandler, flags.driverName)

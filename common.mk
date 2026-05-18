@@ -20,13 +20,13 @@ MODULE := sigs.k8s.io/$(DRIVER_NAME)
 VERSION  ?=
 vVERSION := v$(VERSION:v%=%)
 
-VENDOR := example.com
+VENDOR := dra-example-driver.sigs.k8s.io
 APIS := $(CURDIR)/api/$(VENDOR)/resource/gpu/v1alpha1 $(CURDIR)/internal/api/checkpoint $(CURDIR)/internal/api/checkpoint/v1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters
 PLURAL_EXCEPTIONS += GpuClaimParameters:GpuClaimParameters
 
 ifeq ($(IMAGE_NAME),)
-REGISTRY ?= registry.example.com
+REGISTRY ?= registry.dra-example-driver.sigs.k8s.io
 IMAGE_NAME = $(REGISTRY)/$(DRIVER_NAME)
 endif

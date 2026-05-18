@@ -122,7 +122,7 @@ func verifyWebhook(ctx context.Context) {
 					{
 						Name: "gpu",
 						Exactly: &resourceapi.ExactDeviceRequest{
-							DeviceClassName: "gpu.example.com",
+							DeviceClassName: "gpu.dra-example-driver.sigs.k8s.io",
 						},
 					},
 				},

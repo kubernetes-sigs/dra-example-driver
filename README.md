@@ -112,9 +112,9 @@ items:
   kind: ResourceSlice
   metadata:
     creationTimestamp: "2024-12-09T16:17:09Z"
-    generateName: dra-example-driver-cluster-worker-gpu.example.com-
+    generateName: dra-example-driver-cluster-worker-gpu.dra-example-driver.sigs.k8s.io-
     generation: 1
-    name: dra-example-driver-cluster-worker-gpu.example.com-rf2f7
+    name: dra-example-driver-cluster-worker-gpu.dra-example-driver.sigs.k8s.io-rf2f7
     ownerReferences:
     - apiVersion: v1
       controller: true
@@ -124,7 +124,7 @@ items:
     resourceVersion: "530"
     uid: d13fd8bd-0a71-43e1-ba79-ebd2fae4847a
   spec:
-    driver: gpu.example.com
+    driver: gpu.dra-example-driver.sigs.k8s.io
     nodeName: dra-example-driver-cluster-worker
     pool:
       generation: 0
@@ -370,7 +370,7 @@ spec:
       requests:
       - name: admin-gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           allocationMode: All
           adminAccess: true
 ```

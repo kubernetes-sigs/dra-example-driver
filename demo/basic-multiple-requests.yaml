@@ -32,10 +32,10 @@ spec:
       requests:
       - name: gpu-1
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
       - name: gpu-2
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
 
 ---
 apiVersion: v1

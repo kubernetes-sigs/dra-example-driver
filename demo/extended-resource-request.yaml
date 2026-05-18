@@ -7,8 +7,8 @@
 #
 # pod0 uses the implicit name `deviceclass.resource.kubernetes.io/<className>`
 # and works against the default chart install.
-# pod1 uses an explicit name (`example.com/gpu`) and requires the chart to be
-# installed with `--set deviceClass.extendedResourceName=example.com/gpu`.
+# pod1 uses an explicit name (`dra-example-driver.sigs.k8s.io/gpu`) and requires the chart to be
+# installed with `--set deviceClass.extendedResourceName=dra-example-driver.sigs.k8s.io/gpu`.
 # Without that, pod1 stays Pending while pod0 still runs.
 #
 # Expected: each pod gets one GPU. Check with:
@@ -49,11 +49,11 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       limits:
-        deviceclass.resource.kubernetes.io/gpu.example.com: 1
+        deviceclass.resource.kubernetes.io/gpu.dra-example-driver.sigs.k8s.io: 1
 
 ---
 # pod1: explicit extended-resource name. Requires the chart installed with
-# `--set deviceClass.extendedResourceName=example.com/gpu`, otherwise Pending.
+# `--set deviceClass.extendedResourceName=dra-example-driver.sigs.k8s.io/gpu`, otherwise Pending.
 apiVersion: v1
 kind: Pod
 metadata:
@@ -69,4 +69,4 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       limits:
-        example.com/gpu: 1
+        dra-example-driver.sigs.k8s.io/gpu: 1
