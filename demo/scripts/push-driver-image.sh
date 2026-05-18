@@ -20,12 +20,21 @@ CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 set -ex
 set -o pipefail
 
+
 source "${CURRENT_DIR}/common.sh"
+check_demo_config || exit 1
+
+cd "${CURRENT_DIR}/../.."
 
 # Set build variables
+: "${PLATFORMS:=linux/amd64,linux/arm64,linux/ppc64le}"
 export REGISTRY="${DRIVER_IMAGE_REGISTRY}"
 export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
+export PLATFORMS
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
+
+# Regenerate CRDs/deepcopy in the repo's devel container (root Makefile docker-% target).
+make docker-generate
 
 make -f deployments/container/Makefile push

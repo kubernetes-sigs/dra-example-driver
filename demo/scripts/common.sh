@@ -29,7 +29,18 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 : ${DRIVER_IMAGE_REGISTRY:="registry.k8s.io/dra-example-driver"}
 : ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
 : ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
-: ${DRIVER_IMAGE_PLATFORM:="ubuntu22.04"}
+# Use DRIVER_IMAGE_OS as the canonical variable name.
+# DRIVER_IMAGE_PLATFORM is a deprecated compatibility fallback.
+if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -z "${DRIVER_IMAGE_OS:-}" ]]; then
+    DRIVER_IMAGE_OS="${DRIVER_IMAGE_PLATFORM}"
+fi
+: ${DRIVER_IMAGE_OS:="ubuntu22.04"}
+
+# Use PLATFORMS as the canonical variable name.
+# DRIVER_IMAGE_PLATFORMS is a deprecated compatibility fallback.
+if [[ -z "${PLATFORMS:-}" && -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
+    PLATFORMS="${DRIVER_IMAGE_PLATFORMS}"
+fi
 
 # The kubernetes repo to build the kind cluster from
 : ${KIND_K8S_REPO:="https://github.com/kubernetes/kubernetes.git"}
@@ -65,3 +76,23 @@ if [[ -z "${CONTAINER_TOOL}" ]]; then
 fi
 
 : ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
+
+# check_demo_config validates image-build env (DRIVER_IMAGE_OS/PLATFORM and
+# explicit PLATFORMS settings). Call from image build/push scripts only, after
+# sourcing this file.
+check_demo_config() {
+    if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -n "${DRIVER_IMAGE_OS:-}" && "${DRIVER_IMAGE_PLATFORM}" != "${DRIVER_IMAGE_OS}" ]]; then
+        echo "Both DRIVER_IMAGE_PLATFORM and DRIVER_IMAGE_OS are set with different values."
+        echo "Use DRIVER_IMAGE_OS only, or set both to the same value."
+        return 1
+    fi
+    if [[ -n "${PLATFORMS:-}" && -n "${DRIVER_IMAGE_PLATFORMS:-}" ]]; then
+        echo "Both PLATFORMS and DRIVER_IMAGE_PLATFORMS are set."
+        echo "Use PLATFORMS only. DRIVER_IMAGE_PLATFORMS is deprecated."
+        return 1
+    fi
+    if [[ -z "${CONTAINER_TOOL}" ]]; then
+        echo "No container tool detected. Please install Docker or Podman."
+        return 1
+    fi
+}
