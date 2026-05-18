@@ -565,6 +565,49 @@ func getClaimDeviceShares(ctx context.Context, namespace, podName, podLocalClaim
 	return shares
 }
 
+// verifyChosenSubrequest verifies that the ResourceClaim generated for the
+// pod-local claim podLocalClaimName was satisfied by the expected subrequest of
+// a DeviceRequest using the firstAvailable field (KEP-4816). The scheduler
+// records the selected subrequest in
+// claim.status.allocation.devices.results[].request using the "<main>/<sub>"
+// format, so expectedRequest should be given in that form.
+func verifyChosenSubrequest(ctx context.Context, namespace, podName, podLocalClaimName, driverName, expectedRequest string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		claimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get ResourceClaim %s/%s", namespace, claimName)
+		g.Expect(claim.Status.Allocation).NotTo(BeNil(),
+			"ResourceClaim %s/%s is not yet allocated", namespace, claimName)
+
+		var driverResults []resourceapi.DeviceRequestAllocationResult
+		for _, r := range claim.Status.Allocation.Devices.Results {
+			if r.Driver == driverName {
+				driverResults = append(driverResults, r)
+			}
+		}
+		g.Expect(driverResults).To(HaveLen(1),
+			"ResourceClaim %s/%s should have exactly one allocation result for driver %q, got %+v",
+			namespace, claimName, driverName, claim.Status.Allocation.Devices.Results)
+		g.Expect(driverResults[0].Request).To(Equal(expectedRequest),
+			"ResourceClaim %s/%s was satisfied by request %q, expected %q",
+			namespace, claimName, driverResults[0].Request, expectedRequest)
+
+		fmt.Fprintf(GinkgoWriter, "ResourceClaim %s/%s satisfied by request %q\n",
+			namespace, claimName, driverResults[0].Request)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
 // expectedMapping describes the asserted shape of a single
 // NodeAllocatableResourceMapping. Exactly one of AllocationMultiplier and
 // CapacityKey should be set; whichever is set is what the helper asserts.
