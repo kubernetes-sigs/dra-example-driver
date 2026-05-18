@@ -35,6 +35,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -53,6 +54,7 @@ type validator func(runtime.Object) error
 
 var validProfiles = map[string]profiles.ConfigHandler{
 	gpu.ProfileName: gpu.Profile{},
+	cpu.ProfileName: cpu.Profile{},
 }
 
 func main() {

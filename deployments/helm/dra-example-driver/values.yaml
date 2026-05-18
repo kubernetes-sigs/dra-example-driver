@@ -49,13 +49,20 @@ serviceAccount:
   name: ""
 
 kubeletPlugin:
-  # numDevices describes how many GPUs to advertise on each node when the "gpu"
-  # deviceProfile is used. Not relevant for other profiles.
+  # numDevices is the number of top-level devices to advertise on each node.
+  # For the "gpu" profile this is the GPU count. For the "cpu" profile it is
+  # the number of fake NUMA-node devices (see cpu.cpusPerNUMANode below).
   numDevices: 8
   # gpuPartitions sets the number of partitions per GPU. When set to a value
   # greater than 0, GPUs are exposed with shared counters allowing flexible
   # partitioning (DRAPartitionableDevices feature). 0 disables partitioning.
   gpuPartitions: 0
+  # cpu groups options specific to the "cpu" device profile.
+  cpu:
+    # cpusPerNUMANode is the amount of CPU capacity each fake NUMA-node device
+    # advertises. With AllowMultipleAllocations enabled, multiple claims can
+    # share a NUMA device until its capacity is exhausted.
+    cpusPerNUMANode: 4
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate

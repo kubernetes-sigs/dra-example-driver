@@ -27,6 +27,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
 	resourcev1beta1 "k8s.io/api/resource/v1beta1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
@@ -273,12 +274,38 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
 	})
 
+	It("should account for native CPU resources via DRA", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{
+			NumDevices: 1, // one fake NUMA node
+			ExtraValues: map[string]string{
+				"deviceProfile":                     "cpu",
+				"kubeletPlugin.cpu.cpusPerNUMANode": "4",
+			},
+		})
+		// The driver derives its capacity key from its own name, so each
+		// per-test install advertises a distinct key.
+		cpuKey := resourcev1.QualifiedName(drv.DriverName + "/cpu")
+		waitForResourceSlicesWithNodeAllocatableMappings(ctx, drv.DriverName,
+			map[corev1.ResourceName]expectedMapping{
+				corev1.ResourceCPU: {CapacityKey: &cpuKey},
+			},
+		)
+
+		namespace := "native-resource-request"
+		deployManifest(ctx, namespace, "native-resource-request.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, []string{"pod0"})
+
+		verifyNodeAllocatableResourceClaimStatus(ctx, namespace, "pod0", "cpus", "ctr0",
+			corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+		)
+	})
+
 	// Webhook tests share one driver pinned to "gpu.example.com" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
 		BeforeAll(func(ctx SpecContext) {
 			installDriver(ctx, DriverConfig{
-				DriverName:     defaultDeviceClassName,
+				DriverName:     defaultGPUDeviceClassName,
 				WebhookEnabled: true,
 			})
 		})
@@ -310,13 +337,13 @@ var _ = Describe("Test GPU allocation", func() {
 					Devices: resourcev1.DeviceClaim{
 						Requests: []resourcev1.DeviceRequest{{
 							Name:    "ts-gpu",
-							Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultDeviceClassName},
+							Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultGPUDeviceClassName},
 						}},
 						Config: []resourcev1.DeviceClaimConfiguration{{
 							Requests: []string{"ts-gpu"},
 							DeviceConfiguration: resourcev1.DeviceConfiguration{
 								Opaque: &resourcev1.OpaqueDeviceConfiguration{
-									Driver:     defaultDeviceClassName,
+									Driver:     defaultGPUDeviceClassName,
 									Parameters: invalidGpuConfig(),
 								},
 							},
@@ -337,13 +364,13 @@ var _ = Describe("Test GPU allocation", func() {
 					Devices: resourcev1beta1.DeviceClaim{
 						Requests: []resourcev1beta1.DeviceRequest{{
 							Name:            "ts-gpu",
-							DeviceClassName: defaultDeviceClassName,
+							DeviceClassName: defaultGPUDeviceClassName,
 						}},
 						Config: []resourcev1beta1.DeviceClaimConfiguration{{
 							Requests: []string{"ts-gpu"},
 							DeviceConfiguration: resourcev1beta1.DeviceConfiguration{
 								Opaque: &resourcev1beta1.OpaqueDeviceConfiguration{
-									Driver:     defaultDeviceClassName,
+									Driver:     defaultGPUDeviceClassName,
 									Parameters: invalidGpuConfig(),
 								},
 							},
@@ -365,13 +392,13 @@ var _ = Describe("Test GPU allocation", func() {
 						Devices: resourcev1.DeviceClaim{
 							Requests: []resourcev1.DeviceRequest{{
 								Name:    "ts-gpu",
-								Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultDeviceClassName},
+								Exactly: &resourcev1.ExactDeviceRequest{DeviceClassName: defaultGPUDeviceClassName},
 							}},
 							Config: []resourcev1.DeviceClaimConfiguration{{
 								Requests: []string{"ts-gpu"},
 								DeviceConfiguration: resourcev1.DeviceConfiguration{
 									Opaque: &resourcev1.OpaqueDeviceConfiguration{
-										Driver:     defaultDeviceClassName,
+										Driver:     defaultGPUDeviceClassName,
 										Parameters: invalidGpuConfig(),
 									},
 								},

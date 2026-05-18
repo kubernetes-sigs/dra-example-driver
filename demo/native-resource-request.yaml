@@ -1,0 +1,91 @@
+# Example: Native (Node-Allocatable) Resource Requests via DRA
+#
+# One pod, one container.
+# The driver publishes one device per fake NUMA node, each exposing its CPU
+# count as consumable capacity. The container claims 2 CPUs of that capacity
+# through DRA. Because every NUMA device carries a `NodeAllocatableResourceMappings`
+# entry, kube-scheduler also debits 2 CPUs from the node's standard allocatable
+# budget for this pod — preventing oversubscription when CPUs are managed
+# through DRA alongside the classic resource request API.
+#
+# Because the NUMA device sets `AllowMultipleAllocations: true`, several pods
+# can claim CPUs from the same NUMA node until its capacity is exhausted.
+#
+# This example uses the `cpu` device profile rather than the default `gpu`
+# profile. It is intended to be installed as a separate driver release; it
+# does not replace an existing `gpu` install.
+#
+# Helm install (required before running this demo):
+#   helm upgrade -i \
+#     --create-namespace \
+#     --namespace dra-example-driver-cpu \
+#     --set deviceProfile=cpu \
+#     --set kubeletPlugin.numDevices=2 \
+#     --set kubeletPlugin.cpu.cpusPerNUMANode=4 \
+#     dra-example-driver-cpu \
+#     deployments/helm/dra-example-driver
+#
+# `kubeletPlugin.numDevices` here means the number of fake NUMA-node devices
+# the driver advertises. `kubeletPlugin.cpu.cpusPerNUMANode` controls how much
+# CPU capacity each NUMA device exposes.
+#
+# Expected: pod0 gets 2 CPUs of capacity from one NUMA device and the
+# scheduler records the native-resource accounting in pod.status. Check with:
+#   kubectl logs -n native-resource-request pod0 -c ctr0 | grep CPU_DEVICE
+#   kubectl get pod -n native-resource-request pod0 \
+#     -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'
+# The status should include cpu: "2" for the generated claim. The
+# `resourceClaimName` in that status is the template-generated concrete claim
+# name, not the pod-local name `cpus`.
+#
+# Driver requirements:
+#   Profile: cpu
+#   NUMA nodes: >= 1, each with >= 2 CPUs of capacity
+#
+# Cluster requirements:
+#   Kubernetes 1.36+
+#   Feature gates: DRANodeAllocatableResources, DRAConsumableCapacity
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: native-resource-request
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: native-resource-request
+  name: two-cpus
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpus
+        exactly:
+          deviceClassName: cpu.example.com
+          capacity:
+            requests:
+              cpu.example.com/cpu: "2"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: native-resource-request
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: cpus
+  resourceClaims:
+  - name: cpus
+    resourceClaimTemplateName: two-cpus
