@@ -5,6 +5,9 @@
 # This demo shows the DRA admin access feature with DRA_ADMIN_ACCESS
 # environment variable.
 #
+# For more information about admin access in DRA, see
+# https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access
+#
 # Key requirements:
 #   - The namespace must have the label:
 #       resource.kubernetes.io/admin-access: "true"

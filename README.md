@@ -353,51 +353,6 @@ You can use the IDs of the GPUs as well as the GPU sharing settings set in
 these environment variables to verify that they were handed out in a way
 consistent with the semantics shown in the figure above.
 
-### Demo DRA Admin Access Feature
-This example driver includes support for the [DRA AdminAccess feature](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#admin-access), which allows administrators to gain privileged access to devices already in use by other users. This example demonstrates the end-to-end flow by setting the `DRA_ADMIN_ACCESS` environment variable. A driver managing real devices could use this to expose host hardware information.
-
-#### Usage Example
-
-See `demo/admin-access.yaml` for a complete example. Key points:
-
-1. **Namespace**: Must have the `resource.kubernetes.io/admin-access` label set to create ResourceClaimTemplate and ResourceClaim with `adminAccess: true` for Kubernetes v1.34+.
-```yaml
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: admin-access
-  labels:
-    resource.kubernetes.io/admin-access: "true"
-```
-
-2. **Resource Claim Template**: Request must have `adminAccess: true`. The `allocationMode: All` is used to demonstrate accessing all available devices with admin privileges.
-```yaml
-spec:
-  spec:
-    devices:
-      requests:
-      - name: admin-gpu
-        exactly:
-          deviceClassName: gpu.example.com
-          allocationMode: All
-          adminAccess: true
-```
-
-3. **Container**: Will receive elevated privileges from the driver, represented here as environment variables
-```bash
-echo "DRA Admin Access: $DRA_ADMIN_ACCESS"
-# Output examples:
-# DRA Admin Access: true
-```
-
-#### Testing
-
-To run this demo:
-```bash
-./demo/test-admin-access.sh
-```
-
-This demonstration shows the end-to-end flow of the DRA AdminAccess feature. In a production environment, drivers could use this admin access indication to provide additional privileged capabilities or information to authorized workloads.
 
 ### Cleanup
 
@@ -408,8 +363,7 @@ kubectl delete --wait=false --filename=demo/basic-resourceclaimtemplate.yaml \
   --filename=demo/basic-multiple-requests.yaml \
   --filename=demo/basic-shared-claim-across-containers.yaml \
   --filename=demo/basic-shared-claim-across-pods.yaml \
-  --filename=demo/basic-resourceclaim-opaque-config.yaml \
-  --filename=demo/admin-access.yaml
+  --filename=demo/basic-resourceclaim-opaque-config.yaml
 ```
 
 And wait for them to terminate:
@@ -424,7 +378,6 @@ basic-shared-claim-across-containers   pod0   1/1     Terminating   0          3
 basic-shared-claim-across-containers   pod1   1/1     Terminating   0          31m
 basic-shared-claim-across-pods         pod0   1/1     Terminating   0          31m
 basic-resourceclaim-opaque-config      pod0   4/4     Terminating   0          31m
-admin-access                           pod0   1/1     Terminating   0          31m
 ...
 ```
 
