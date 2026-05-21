@@ -37,7 +37,11 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
 
-const ProfileName = "gpu"
+const (
+	ProfileName              = "gpu"
+	BindingConditions        = "BindingConditions"
+	BindingFailureConditions = "BindingFailureConditions"
+)
 
 type Profile struct {
 	nodeName           string
@@ -174,8 +178,8 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 
 	if p.bindingConditions {
 		for i := range devices {
-			devices[i].BindingConditions = []string{profiles.BindingConditions}
-			devices[i].BindingFailureConditions = []string{profiles.BindingFailureConditions}
+			devices[i].BindingConditions = []string{BindingConditions}
+			devices[i].BindingFailureConditions = []string{BindingFailureConditions}
 		}
 	}
 
