@@ -1,25 +1,4 @@
 # Example: GPU Sharing Strategies (TimeSlicing + SpacePartitioning)
-#
-# One pod, four containers, two GPUs with custom GpuConfig:
-#
-#   - ts-gpu: Configured with TimeSlicing (interval: Long). Two containers
-#     (ts-ctr0, ts-ctr1) share this GPU by taking turns.
-#
-#   - sp-gpu: Configured with SpacePartitioning (partitionCount: 10). Two
-#     containers (sp-ctr0, sp-ctr1) each get a partition of this GPU.
-#
-# Expected: ts-ctr0 and ts-ctr1 share one GPU with SHARING_STRATEGY=TimeSlicing
-# and TIMESLICE_INTERVAL=Long. sp-ctr0 and sp-ctr1 share a different GPU with
-# SHARING_STRATEGY=SpacePartitioning and PARTITION_COUNT=10. Check with:
-#   kubectl logs -n basic-resourceclaim-opaque-config pod0 -c ts-ctr0 | grep GPU_DEVICE
-#   kubectl logs -n basic-resourceclaim-opaque-config pod0 -c sp-ctr0 | grep GPU_DEVICE
-#
-# Driver requirements:
-#   Profile: gpu
-#   GPUs: 2
-#
-# Cluster requirements:
-#   Kubernetes 1.34+
 
 ---
 apiVersion: v1

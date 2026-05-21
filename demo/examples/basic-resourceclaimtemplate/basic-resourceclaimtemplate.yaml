@@ -1,19 +1,4 @@
-# Example: Two Pods, One GPU Each
-#
-# Two pods, one container each.
-# Each container asking for 1 distinct GPU.
-#
-# Expected: Each pod gets a different GPU. Check with:
-#   kubectl logs -n basic-resourceclaimtemplate pod0 -c ctr0 | grep GPU_DEVICE
-#   kubectl logs -n basic-resourceclaimtemplate pod1 -c ctr0 | grep GPU_DEVICE
-# Each container should have 1 GPU_DEVICE env var with a distinct GPU ID.
-#
-# Driver requirements:
-#   Profile: gpu
-#   GPUs: 2
-#
-# Cluster requirements:
-#   Kubernetes 1.34+
+# Example: Two Pods, One Container each, One GPU Each
 
 ---
 apiVersion: v1
