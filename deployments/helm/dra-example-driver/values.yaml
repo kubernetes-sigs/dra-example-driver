@@ -28,6 +28,10 @@ deviceClass:
   # `deviceclass.resource.kubernetes.io/<deviceClassName>` is always available.
   extendedResourceName: ""
 
+# add allocated device attributes (e.g. model, uuid, driverVersion)
+# into ResourceClaim.status.devices[].data via server-side apply.
+gpuDeviceStatus: false
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver
