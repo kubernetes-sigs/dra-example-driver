@@ -67,7 +67,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus)
 	},
 }
 

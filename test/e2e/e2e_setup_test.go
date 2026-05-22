@@ -21,6 +21,7 @@ package e2e
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -34,6 +35,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	v1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -534,4 +536,58 @@ func verifySharedGPUGroup(ctx context.Context, namespace string, group sharingGr
 				group.expectedStrategy, group.expectedProperty, group.expectedPropValue)
 		}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 	}
+}
+
+// verifyResourceClaimDeviceStatus verifies that the ResourceClaim(s) associated
+// with the given pod expose per-device data.
+func verifyResourceClaimDeviceStatus(ctx context.Context, namespace, podName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to get pod %s/%s", namespace, podName)
+		g.Expect(pod.Status.ResourceClaimStatuses).NotTo(BeEmpty(),
+			"Pod %s/%s has no ResourceClaimStatuses", namespace, podName)
+
+		seenClaimWithData := false
+		for _, rcs := range pod.Status.ResourceClaimStatuses {
+			g.Expect(rcs.ResourceClaimName).NotTo(BeNil(),
+				"Pod %s/%s ResourceClaimStatus %q has no resourceClaimName", namespace, podName, rcs.Name)
+			claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, *rcs.ResourceClaimName, metav1.GetOptions{})
+			g.Expect(err).NotTo(HaveOccurred(),
+				"Failed to get ResourceClaim %s/%s", namespace, *rcs.ResourceClaimName)
+			g.Expect(claim.Status.Devices).NotTo(BeEmpty(),
+				"ResourceClaim %s/%s has no status.devices entries", namespace, *rcs.ResourceClaimName)
+
+			for _, d := range claim.Status.Devices {
+				g.Expect(d.Data).NotTo(BeNil(),
+					"ResourceClaim %s/%s device %s has no status.data", namespace, *rcs.ResourceClaimName, d.Device)
+				var data map[string]resourceapi.DeviceAttribute
+				g.Expect(json.Unmarshal(d.Data.Raw, &data)).To(Succeed(),
+					"ResourceClaim %s/%s device %s has unparseable status.data", namespace, *rcs.ResourceClaimName, d.Device)
+
+				g.Expect(data).To(HaveKey("uuid"),
+					"ResourceClaim %s/%s device %s status.data is missing uuid: %v", namespace, *rcs.ResourceClaimName, d.Device, data)
+				g.Expect(data["uuid"].StringValue).NotTo(BeNil())
+				g.Expect(*data["uuid"].StringValue).NotTo(BeEmpty())
+
+				g.Expect(data).To(HaveKey("model"),
+					"ResourceClaim %s/%s device %s status.data is missing model: %v", namespace, *rcs.ResourceClaimName, d.Device, data)
+				g.Expect(data["model"].StringValue).NotTo(BeNil())
+				g.Expect(*data["model"].StringValue).NotTo(BeEmpty())
+
+				g.Expect(data).To(HaveKey("driverVersion"),
+					"ResourceClaim %s/%s device %s status.data is missing driverVersion: %v", namespace, *rcs.ResourceClaimName, d.Device, data)
+				g.Expect(data["driverVersion"].VersionValue).NotTo(BeNil())
+				g.Expect(*data["driverVersion"].VersionValue).NotTo(BeEmpty())
+
+				fmt.Fprintf(GinkgoWriter, "ResourceClaim %s/%s device %s has status.data: uuid=%s model=%s driverVersion=%s\n",
+					namespace, *rcs.ResourceClaimName, d.Device,
+					*data["uuid"].StringValue, *data["model"].StringValue, *data["driverVersion"].VersionValue)
+				seenClaimWithData = true
+			}
+		}
+		g.Expect(seenClaimWithData).To(BeTrue(),
+			"Pod %s/%s: no ResourceClaim observed with non-empty status.devices[].data", namespace, podName)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }

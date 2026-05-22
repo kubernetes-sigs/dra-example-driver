@@ -17,6 +17,7 @@
 package gpu
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"math/rand"
@@ -27,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
+	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
@@ -38,16 +40,18 @@ import (
 const ProfileName = "gpu"
 
 type Profile struct {
-	nodeName         string
-	numGPUs          int
-	partitionsPerGPU int
+	nodeName           string
+	numGPUs            int
+	partitionsPerGPU   int
+	enableDeviceStatus bool
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool) Profile {
 	return Profile{
-		nodeName:         nodeName,
-		numGPUs:          numGPUs,
-		partitionsPerGPU: partitionsPerGPU,
+		nodeName:           nodeName,
+		numGPUs:            numGPUs,
+		partitionsPerGPU:   partitionsPerGPU,
+		enableDeviceStatus: enableDeviceStatus,
 	}
 }
 
@@ -289,4 +293,43 @@ func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRe
 	}
 
 	return perDeviceEdits, nil
+}
+
+// BuildDeviceStatus implements [profiles.DeviceStatusBuilder]. It returns an
+// [resourceapi.AllocatedDeviceStatus] populated with a subset of the device's
+// attributes (uuid, model, driverVersion) to publish into
+// ResourceClaim.status.devices[].data.
+func (p Profile) BuildDeviceStatus(allocatable map[string]resourceapi.Device, result *resourceapi.DeviceRequestAllocationResult) *resourceapi.AllocatedDeviceStatus {
+	if !p.enableDeviceStatus {
+		return nil
+	}
+
+	deviceInfo := make(map[string]resourceapi.DeviceAttribute)
+	if d, ok := allocatable[result.Device]; ok {
+		for _, name := range []resourceapi.QualifiedName{"uuid", "model", "driverVersion"} {
+			if v, ok := d.Attributes[name]; ok {
+				deviceInfo[string(name)] = v
+			}
+		}
+	}
+
+	jsonBytes, err := json.Marshal(deviceInfo)
+	if err != nil {
+		klog.Errorf("Failed to marshal device data for %s: %v", result.Device, err)
+		jsonBytes = []byte("{}")
+	}
+
+	// Data records per-allocation metadata used for monitoring and debugging:
+	//   - Pod->GPU mapping: makes it easier to see which GPU a given pod is
+	//     using, which is not readily available elsewhere.
+	//   - Device attributes (e.g. UUID, model, driverVersion): remain available
+	//     even if the device is later removed from a ResourceSlice (for
+	//     example, because it becomes unhealthy), so past allocations can
+	//     still be correlated with later health or scheduling issues.
+	return &resourceapi.AllocatedDeviceStatus{
+		Device: result.Device,
+		Driver: result.Driver,
+		Pool:   result.Pool,
+		Data:   &runtime.RawExtension{Raw: jsonBytes},
+	}
 }

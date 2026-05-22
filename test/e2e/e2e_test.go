@@ -35,7 +35,9 @@ import (
 
 var _ = Describe("Test GPU allocation", func() {
 	It("should allocate 1 distinct GPU per pod", func(ctx SpecContext) {
-		drv := installDriver(ctx, DriverConfig{})
+		drv := installDriver(ctx, DriverConfig{
+			GPUDeviceStatus: true,
+		})
 		namespace := "basic-resourceclaimtemplate"
 		pods := []string{"pod0", "pod1"}
 		containerName := "ctr0"
@@ -47,6 +49,7 @@ var _ = Describe("Test GPU allocation", func() {
 		observedGPUs := make(map[string]string)
 		for _, podName := range pods {
 			verifyGPUAllocation(ctx, namespace, podName, containerName, expectedGPUCount, observedGPUs)
+			verifyResourceClaimDeviceStatus(ctx, namespace, podName)
 		}
 	})
 

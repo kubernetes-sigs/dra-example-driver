@@ -17,24 +17,29 @@
 package gpu
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/utils/ptr"
+
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4, 0)
+	profile := NewProfile("test-node", 4, 0, false)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numGPUs)
 	assert.Equal(t, 0, profile.partitionsPerGPU)
+	assert.False(t, profile.enableDeviceStatus)
 }
 
 func TestNewProfile_WithPartitions(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+	profile := NewProfile("test-node", 2, 4, false)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 2, profile.numGPUs)
@@ -42,7 +47,7 @@ func TestNewProfile_WithPartitions(t *testing.T) {
 }
 
 func TestEnumerateDevices_Standard(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0)
+	profile := NewProfile("test-node", 2, 0, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -85,7 +90,7 @@ func TestEnumerateDevices_Standard(t *testing.T) {
 }
 
 func TestEnumerateDevices_Partitionable(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4)
+	profile := NewProfile("test-node", 2, 4, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -131,7 +136,7 @@ func TestEnumerateDevices_Partitionable(t *testing.T) {
 }
 
 func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2)
+	profile := NewProfile("test-node", 1, 2, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -184,8 +189,8 @@ func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
 
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2, 0)
-	profile2 := NewProfile("test-node", 2, 0)
+	profile1 := NewProfile("test-node", 2, 0, false)
+	profile2 := NewProfile("test-node", 2, 0, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -203,8 +208,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1, 0)
-	profile2 := NewProfile("node-2", 1, 0)
+	profile1 := NewProfile("node-1", 1, 0, false)
+	profile2 := NewProfile("node-2", 1, 0, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -215,4 +220,76 @@ func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
 	uuid2 := *resources2.Pools["node-2"].Slices[0].Devices[0].Attributes["uuid"].StringValue
 
 	assert.NotEqual(t, uuid1, uuid2, "Different nodes should have different UUIDs")
+}
+
+func TestBuildDeviceStatus_Disabled(t *testing.T) {
+	var _ profiles.DeviceStatusBuilder = NewProfile("test-node", 1, 0, true)
+
+	profile := NewProfile("test-node", 1, 0, false)
+	allocatable := map[string]resourceapi.Device{
+		"gpu-0": {Name: "gpu-0"},
+	}
+	result := &resourceapi.DeviceRequestAllocationResult{
+		Device: "gpu-0",
+		Driver: "gpu.example.com",
+		Pool:   "test-node",
+	}
+
+	got := profile.BuildDeviceStatus(allocatable, result)
+	assert.Nil(t, got, "BuildDeviceStatus must return nil when device status is disabled")
+}
+
+func TestBuildDeviceStatus_Enabled(t *testing.T) {
+	profile := NewProfile("test-node", 1, 0, true)
+	allocatable := map[string]resourceapi.Device{
+		"gpu-0": {
+			Name: "gpu-0",
+			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+				"uuid":          {StringValue: ptr.To("gpu-abc")},
+				"model":         {StringValue: ptr.To("LATEST-GPU-MODEL")},
+				"driverVersion": {VersionValue: ptr.To("1.0.0")},
+				// "index" must NOT be included in published status.
+				"index": {IntValue: ptr.To(int64(0))},
+			},
+		},
+	}
+	result := &resourceapi.DeviceRequestAllocationResult{
+		Device: "gpu-0",
+		Driver: "gpu.example.com",
+		Pool:   "test-node",
+	}
+
+	got := profile.BuildDeviceStatus(allocatable, result)
+	require.NotNil(t, got)
+	assert.Equal(t, "gpu-0", got.Device)
+	assert.Equal(t, "gpu.example.com", got.Driver)
+	assert.Equal(t, "test-node", got.Pool)
+	require.NotNil(t, got.Data)
+
+	var data map[string]resourceapi.DeviceAttribute
+	require.NoError(t, json.Unmarshal(got.Data.Raw, &data))
+	assert.Contains(t, data, "uuid")
+	assert.Contains(t, data, "model")
+	assert.Contains(t, data, "driverVersion")
+	assert.NotContains(t, data, "index", "only uuid/model/driverVersion should be published")
+	assert.Equal(t, "gpu-abc", *data["uuid"].StringValue)
+}
+
+func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
+	profile := NewProfile("test-node", 1, 0, true)
+	result := &resourceapi.DeviceRequestAllocationResult{
+		Device: "gpu-0",
+		Driver: "gpu.example.com",
+		Pool:   "test-node",
+	}
+
+	// No matching entry in allocatable; we should still return a status object
+	// (Driver/Pool/Device are stamped) with an empty data map.
+	got := profile.BuildDeviceStatus(map[string]resourceapi.Device{}, result)
+	require.NotNil(t, got)
+	require.NotNil(t, got.Data)
+
+	var data map[string]resourceapi.DeviceAttribute
+	require.NoError(t, json.Unmarshal(got.Data.Raw, &data))
+	assert.Empty(t, data)
 }
