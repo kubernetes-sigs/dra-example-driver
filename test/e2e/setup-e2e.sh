@@ -39,4 +39,3 @@ helm upgrade -i \
   --set crds.enabled=true \
   cert-manager \
   cert-manager
-

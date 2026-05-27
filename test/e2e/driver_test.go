@@ -82,6 +82,11 @@ type DriverConfig struct {
 
 	// ExtraValues are dot-notation helm overrides applied after the defaults above.
 	ExtraValues map[string]string
+
+	// GPUDeviceStatus, when true, instructs the driver to publish per-device
+	// attributes (e.g. uuid, model, driverVersion) into
+	// ResourceClaim.status.devices[].data.
+	GPUDeviceStatus bool
 }
 
 // installedDriver is what installDriver returns: the identity bits downstream
@@ -154,6 +159,7 @@ func buildHelmValues(cfg DriverConfig, namespace string) map[string]any {
 	values := map[string]any{
 		"driverName":        cfg.DriverName,
 		"namespaceOverride": namespace,
+		"gpuDeviceStatus":   cfg.GPUDeviceStatus,
 		"kubeletPlugin": map[string]any{
 			"numDevices": cfg.NumDevices,
 		},

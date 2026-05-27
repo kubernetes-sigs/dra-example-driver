@@ -17,17 +17,25 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"path/filepath"
 	"slices"
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+
 	"k8s.io/apimachinery/pkg/types"
+	coreclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
+	draclient "k8s.io/dynamic-resource-allocation/client"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
+
+	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 
@@ -71,6 +79,9 @@ type DeviceState struct {
 	checkpointPath    string
 	checkpointDecoder runtime.Decoder
 	checkpointEncoder runtime.Encoder
+
+	coreClient      coreclientset.Interface
+	gpuDeviceStatus bool
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -134,12 +145,14 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointPath:    filepath.Join(config.DriverPluginPath(), DriverPluginCheckpointFile),
 		checkpointDecoder: checkpointDecoder,
 		checkpointEncoder: checkpointEncoder,
+		coreClient:        config.coreclient,
+		gpuDeviceStatus:   config.flags.gpuDeviceStatus,
 	}
 
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
+func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -155,7 +168,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 		return restoredDevices.GetDevices(), nil
 	}
 
-	preparedDevices, err := s.prepareDevices(claim)
+	preparedDevices, err := s.prepareDevices(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
@@ -202,8 +215,43 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 
 // prepareDevices performs one-time setup for the devices allocated to a
 // ResourceClaim before being consumed by a Pod.
-func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
-	return s.computeDeviceConfig(claim)
+func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
+	preparedDevices, err := s.computeDeviceConfig(claim)
+	if err != nil {
+		return nil, err
+	}
+
+	// Publish per-device status (e.g. uuid, model, driverVersion) into
+	// ResourceClaim.status.devices[].data when the profile implements
+	// [profiles.DeviceStatusBuilder]. This is a side-effect on the API server
+	// and therefore lives in prepareDevices (rather than computeDeviceConfig,
+	// which must be deterministic and side-effect free).
+	builder, ok := s.configHandler.(profiles.DeviceStatusBuilder)
+	if !ok {
+		return preparedDevices, nil
+	}
+
+	var deviceStatuses []resourceapi.AllocatedDeviceStatus
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		if result.Driver != s.driverName {
+			continue
+		}
+		if status := builder.BuildDeviceStatus(s.allocatable, &result); status != nil {
+			deviceStatuses = append(deviceStatuses, *status)
+		}
+	}
+	if len(deviceStatuses) > 0 {
+		klog.FromContext(ctx).Info("Publishing device status to ResourceClaim",
+			"namespace", claim.Namespace, "name", claim.Name, "devices", len(deviceStatuses))
+		if err := s.updateDeviceStatus(ctx, claim.Namespace, claim.Name, deviceStatuses...); err != nil {
+			// A failure to publish status is non-fatal: the device is still
+			// prepared and the claim status will simply be missing the data.
+			klog.FromContext(ctx).Error(err, "Failed to update device status on ResourceClaim",
+				"namespace", claim.Namespace, "name", claim.Name)
+		}
+	}
+
+	return preparedDevices, nil
 }
 
 // unprepareDevices undoes any side-effects produced by
@@ -251,6 +299,7 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 		if _, exists := s.allocatable[result.Device]; !exists {
 			return nil, fmt.Errorf("requested device is not allocatable: %v", result.Device)
 		}
+
 		for _, c := range slices.Backward(configs) {
 			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {
 				configResultsMap[c.Config] = append(configResultsMap[c.Config], &result)
@@ -421,4 +470,25 @@ func GetOpaqueDeviceConfigs(
 	}
 
 	return resultConfigs, nil
+}
+
+func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, devices ...resourceapi.AllocatedDeviceStatus) error {
+	// Converting wrapper to use latest API types,
+	// converts to/from server-supported version.
+	c := draclient.New(s.coreClient)
+	rc := c.ResourceClaims(ns)
+
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		claim, err := rc.Get(ctx, name, metav1.GetOptions{})
+		if err != nil {
+			return err
+		}
+
+		// copy the object and update only status.devices
+		claim = claim.DeepCopy()
+		claim.Status.Devices = devices
+
+		_, err = rc.UpdateStatus(ctx, claim, metav1.UpdateOptions{})
+		return err
+	})
 }

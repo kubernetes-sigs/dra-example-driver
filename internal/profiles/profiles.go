@@ -66,3 +66,10 @@ func (n NoopConfigHandler) SchemeBuilder() runtime.SchemeBuilder {
 func (n NoopConfigHandler) Validate(config runtime.Object) error {
 	return errors.New("configuration not allowed")
 }
+
+// DeviceStatusBuilder is an optional interface that a [Profile] may implement
+// to publish per-device status (e.g. uuid, model, driverVersion) into
+// ResourceClaim.status.devices[].data.
+type DeviceStatusBuilder interface {
+	BuildDeviceStatus(allocatable map[string]resourceapi.Device, result *resourceapi.DeviceRequestAllocationResult) *resourceapi.AllocatedDeviceStatus
+}

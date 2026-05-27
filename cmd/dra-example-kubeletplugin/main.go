@@ -54,6 +54,7 @@ type Flags struct {
 	driverName                    string
 	podUID                        string
 	gpuPartitions                 int
+	gpuDeviceStatus               bool
 }
 
 type Config struct {
@@ -66,7 +67,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus)
 	},
 }
 
@@ -161,6 +162,12 @@ func newApp() *cli.App {
 			Value:       0,
 			Destination: &flags.gpuPartitions,
 			EnvVars:     []string{"GPU_PARTITIONS"},
+		},
+		&cli.BoolFlag{
+			Name:        "gpu-device-status",
+			Usage:       "Enable adding allocated device attributes (e.g., model, uuid, driverVersion) into ResourceClaim.status.devices[].data. Disabled by default.",
+			Destination: &flags.gpuDeviceStatus,
+			EnvVars:     []string{"GPU_DEVICE_STATUS"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
