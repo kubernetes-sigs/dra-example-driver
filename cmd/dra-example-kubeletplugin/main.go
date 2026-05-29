@@ -56,6 +56,7 @@ type Flags struct {
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
 	bindingConditions             bool
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -176,6 +177,13 @@ func newApp() *cli.App {
 			Value:       false,
 			Destination: &flags.bindingConditions,
 			EnvVars:     []string{"BINDING_CONDITIONS"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
