@@ -64,6 +64,7 @@ type Flags struct {
 	gpuAllowMultipleAllocations   bool
 	cpuNUMANodes                  int
 	cpusPerNUMANode               int
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -217,6 +218,13 @@ func newApp() *cli.App {
 			Value:       4,
 			Destination: &flags.cpusPerNUMANode,
 			EnvVars:     []string{"CPUS_PER_NUMA_NODE"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
