@@ -54,6 +54,23 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
+	It("should mount DRA device metadata into the workload container", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{
+			DeviceMetadata: true,
+		})
+		namespace := "basic-resourceclaimtemplate"
+		pods := []string{"pod0"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		deployManifest(ctx, namespace, "basic-resourceclaimtemplate.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+		verifyDeviceMetadata(ctx, namespace, pods[0], containerName, drv)
+	})
+
 	It("should allocate 2 distinct GPUs to a single container", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{})
 		namespace := "basic-multiple-requests"
