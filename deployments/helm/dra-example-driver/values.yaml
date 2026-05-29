@@ -81,6 +81,7 @@ kubeletPlugin:
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
   # bindingConditions enables or disables binding conditions processing in the DRA driver
   bindingConditions: false
+  enableDeviceMetadata: false
   containers:
     init:
       securityContext: {}
