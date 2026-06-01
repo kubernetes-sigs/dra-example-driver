@@ -6,3 +6,6 @@ vendor/
 
 driver_image.tar
 *.tgz
+
+# Ignore config telemetry files
+.config/
