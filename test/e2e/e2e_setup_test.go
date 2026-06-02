@@ -457,6 +457,55 @@ func verifyExtendedResourceClaimStatus(ctx context.Context, namespace, podName, 
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
+// resourcePoolStatusRequestGVR identifies the v1alpha3 cluster-scoped resource
+var resourcePoolStatusRequestGVR = schema.GroupVersionResource{
+	Group:    "resource.k8s.io",
+	Version:  "v1alpha3",
+	Resource: "resourcepoolstatusrequests",
+}
+
+// verifyResourcePoolStatusComplete waits for the named ResourcePoolStatusRequest
+// to reach the Complete condition and asserts its first pool entry references
+// the expected driver name.
+func verifyResourcePoolStatusComplete(ctx context.Context, name, expectedDriverName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		rpsr, err := dynamicClient.Resource(resourcePoolStatusRequestGVR).Get(ctx, name, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to get ResourcePoolStatusRequest %s", name)
+
+		conditions, _, err := unstructured.NestedSlice(rpsr.Object, "status", "conditions")
+		g.Expect(err).NotTo(HaveOccurred())
+		var complete bool
+		for _, c := range conditions {
+			cm, ok := c.(map[string]any)
+			if !ok {
+				continue
+			}
+			if cm["type"] == "Complete" && cm["status"] == "True" {
+				complete = true
+				break
+			}
+		}
+		g.Expect(complete).To(BeTrue(),
+			"ResourcePoolStatusRequest %s has no Complete=True condition; conditions: %v",
+			name, conditions)
+
+		pools, _, err := unstructured.NestedSlice(rpsr.Object, "status", "pools")
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(pools).NotTo(BeEmpty(),
+			"ResourcePoolStatusRequest %s reported no pools for driver %s",
+			name, expectedDriverName)
+
+		pool, ok := pools[0].(map[string]any)
+		g.Expect(ok).To(BeTrue(), "pool entry is not a map: %T", pools[0])
+		g.Expect(pool["driver"]).To(Equal(expectedDriverName),
+			"ResourcePoolStatusRequest %s pool driver mismatch", name)
+		g.Expect(pool["poolName"]).NotTo(BeEmpty(),
+			"ResourcePoolStatusRequest %s pool has empty poolName", name)
+	}).WithContext(ctx).WithTimeout(30 * time.Second).WithPolling(2 * time.Second).Should(Succeed())
+}
+
 // claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs.
 func claimNewGPU(g Gomega, observedGPUs map[string]string, gpu, namespace, podName, containerName string) {
 	GinkgoHelper()

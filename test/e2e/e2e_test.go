@@ -164,6 +164,15 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyDRAAdminAccess(ctx, namespace, pods[0], containerName, "true")
 	})
 
+	It("should publish a ResourcePoolStatusRequest snapshot for the driver", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
+		namespace := "resource-pool-status"
+
+		deployManifest(ctx, namespace, "resource-pool-status.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, []string{"pod0"})
+		verifyResourcePoolStatusComplete(ctx, "gpu-pool-status", drv.DriverName)
+	})
+
 	It("should allocate 1 GPU per pod for extended resource requests", func(ctx SpecContext) {
 		// Each parallel test must advertise its DeviceClass under a unique
 		// extended resource name so KEP-5004 reservations don't collide.
