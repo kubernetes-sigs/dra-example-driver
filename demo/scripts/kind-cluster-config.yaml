@@ -7,6 +7,9 @@ featureGates:
   GangScheduling: true
   GenericWorkload: true
   DRAExtendedResource: true
+runtimeConfig:
+  resource.k8s.io/v1beta1: "true"
+  scheduling.k8s.io/v1alpha2: "true"
 containerdConfigPatches:
 # Enable CDI as described in
 # https://tags.cncf.io/container-device-interface#containerd-configuration
@@ -18,9 +21,6 @@ nodes:
   kubeadmConfigPatches:
   - |
     kind: ClusterConfiguration
-    apiServer:
-      extraArgs:
-        runtime-config: "resource.k8s.io/v1beta1=true,scheduling.k8s.io/v1alpha2=true"
     scheduler:
       extraArgs:
         v: "1"
