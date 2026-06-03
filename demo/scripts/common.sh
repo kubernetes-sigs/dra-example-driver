@@ -36,7 +36,7 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
 # The kubernetes tag to build the kind cluster from
 # From ${KIND_K8S_REPO}/tags
-: ${KIND_K8S_TAG:="v1.36.0"}
+: ${KIND_K8S_TAG:="v1.36.1"}
 
 # The name of the kind cluster to create
 : ${KIND_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
