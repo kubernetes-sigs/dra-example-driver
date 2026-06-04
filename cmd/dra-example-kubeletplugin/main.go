@@ -34,6 +34,7 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	vfiogpu "sigs.k8s.io/dra-example-driver/internal/profiles/vfio-gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -76,6 +77,9 @@ var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	},
 	cpu.ProfileName: func(flags Flags) profiles.Profile {
 		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode)
+	},
+	vfiogpu.ProfileName: func(flags Flags) profiles.Profile {
+		return vfiogpu.NewProfile(flags.nodeName, flags.driverName)
 	},
 }
 

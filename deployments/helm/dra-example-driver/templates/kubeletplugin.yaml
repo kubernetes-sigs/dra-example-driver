@@ -109,6 +109,16 @@ spec:
           mountPath: {{ .Values.kubeletPlugin.kubeletPluginsDirectoryPath | quote }}
         - name: cdi
           mountPath: /var/run/cdi
+        {{- if eq .Values.deviceProfile "vfio-gpu" }}
+        - name: host-pci-bus
+          mountPath: /sys/bus/pci
+          readOnly: true
+        - name: host-pci-devices
+          mountPath: /sys/devices
+          readOnly: true
+        - name: dev-vfio
+          mountPath: /dev/vfio
+        {{- end }}
       volumes:
       - name: plugins-registry
         hostPath:
@@ -119,6 +129,17 @@ spec:
       - name: cdi
         hostPath:
           path: /var/run/cdi
+      {{- if eq .Values.deviceProfile "vfio-gpu" }}
+      - name: host-pci-bus
+        hostPath:
+          path: /sys/bus/pci
+      - name: host-pci-devices
+        hostPath:
+          path: /sys/devices
+      - name: dev-vfio
+        hostPath:
+          path: /dev/vfio
+      {{- end }}
       {{- with .Values.kubeletPlugin.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
