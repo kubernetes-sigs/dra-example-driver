@@ -328,7 +328,7 @@ func (p Profile) BuildDeviceStatus(allocatable map[string]resourceapi.Device, re
 
 	jsonBytes, err := json.Marshal(deviceInfo)
 	if err != nil {
-		klog.Errorf("Failed to marshal device data for %s: %v", result.Device, err)
+		klog.Background().Error(err, "Failed to marshal device data", "device", result.Device)
 		jsonBytes = []byte("{}")
 	}
 
