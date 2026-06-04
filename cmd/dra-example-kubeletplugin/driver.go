@@ -127,7 +127,7 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 			ShareID:      preparedDevice.ShareID,
 		}
 
-		if allocDev, ok := d.state.allocatable[preparedPB.GetDeviceName()]; ok && len(allocDev.Attributes) > 0 {
+		if allocDev, ok := d.state.allocatable[preparedDevice.GetDeviceName()]; ok && len(allocDev.Attributes) > 0 {
 			attrs := make(map[string]resourceapi.DeviceAttribute, len(allocDev.Attributes))
 			for k, v := range allocDev.Attributes {
 				attrs[string(k)] = v
