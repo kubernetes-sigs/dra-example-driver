@@ -26,6 +26,7 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/scripts/common.sh"
+check_demo_config || exit 1
 
 # Build the example driver image
 ${SCRIPTS_DIR}/build-driver-image.sh

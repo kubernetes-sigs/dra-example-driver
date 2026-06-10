@@ -26,6 +26,7 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
+check_demo_config || exit 1
 
 # Create a temorary directory to hold all the artifacts we need for building the image
 TMP_DIR="$(mktemp -d)"
@@ -43,6 +44,7 @@ export IMAGE="${DRIVER_IMAGE_NAME}"
 export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-# Regenerate the CRDs and build the container image
+# Regenerate the CRDs and build the container image locally (demo / kind workflow).
 make docker-generate
-make -f deployments/container/Makefile "${DRIVER_IMAGE_PLATFORM}"
+
+make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"

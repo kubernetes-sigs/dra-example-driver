@@ -50,6 +50,84 @@ From here we will build the image for the example resource driver:
 ./demo/build-driver.sh
 ```
 
+### Container image make recipes
+
+The image build logic lives in `deployments/container/Makefile`.
+If variables are not provided, defaults are:
+
+- `IMAGE_NAME=registry.example.com/dra-example-driver`
+- `VERSION=latest`
+- `PLATFORMS=<current host platform>` (for example `linux/amd64`, `linux/arm64`, or `linux/ppc64le`) when `PLATFORMS` is **unset**
+- `CONTAINER_TOOL=docker`
+
+For demo scripts, `PLATFORMS` is the canonical variable and `DRIVER_IMAGE_PLATFORMS`
+is only a backward compatible fallback. Setting both is treated as an error.
+
+`cloudbuild.yaml` and `demo/scripts/push-driver-image.sh` may provide different
+`PLATFORMS` defaults depending on the workflow:
+
+1. **If `PLATFORMS` is set (e.g. by `cloudbuild.yaml`)**, the Makefile uses it as-is.
+2. **If `PLATFORMS` is unset**, `demo/scripts/push-driver-image.sh` fills a fallback
+   (currently `linux/amd64,linux/arm64,linux/ppc64le`) and `deployments/container/Makefile`
+   falls back to the host platform.
+3. **If `PLATFORMS` is set to an empty string**, `deployments/container/Makefile` fails
+   with a clear error (to avoid confusing silent buildx behavior).
+
+- Build a single-arch image with the standard Docker/Podman build flow:
+  ```bash
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name|registry/name> CONTAINER_TOOL=<docker|podman>
+  ```
+- Build for specific platform(s):
+  ```bash
+  make -f deployments/container/Makefile build VERSION=<tag> IMAGE_NAME=<name|registry/name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
+  ```
+- Push for current platform:
+  ```bash
+  make -f deployments/container/Makefile push VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=<docker|podman>
+  ```
+- Push for specific platform(s):
+  ```bash
+  make -f deployments/container/Makefile push VERSION=<tag> IMAGE_NAME=<registry/name> CONTAINER_TOOL=docker PLATFORMS='linux/amd64,linux/arm64'
+  ```
+
+For Docker, `build` with multiple platforms performs a Buildx build without loading an image into the local Docker daemon; use `push` to publish multi-arch images.
+
+#### Multi-platform builds on Linux (amd64)
+
+Building for a platform other than your host CPU (for example `linux/arm64` on an
+`x86_64` machine) requires Docker Buildx to **run** container steps for that
+architecture during the image build. That needs either native hardware or
+userspace emulation via [QEMU and `binfmt_misc`](https://docs.docker.com/build/building/multi-platform/#qemu).
+
+- **Docker Desktop** (macOS/Windows) and many CI images ship with this enabled.
+- **Linux on amd64** often does not. The same applies to an explicit single
+  platform that does not match the host (for example `PLATFORMS=linux/arm64` on
+  x86_64): the Makefile uses buildx for that case. If a build fails with
+  `exec format error` on an `linux/arm64` step, install emulation support:
+
+  ```bash
+  docker run --privileged --rm tonistiigi/binfmt --install all
+  ```
+
+  Then create or bootstrap a buildx builder (`build` and `push` do this
+  automatically via `ensure-buildx-builder` for multi-platform or cross-platform
+  single-platform builds):
+
+  ```bash
+  make -f deployments/container/Makefile ensure-buildx-builder
+  ```
+
+  Verify with:
+
+  ```bash
+  docker run --rm --platform linux/arm64 alpine uname -m
+  ```
+
+  The output should be `aarch64`.
+
+On Apple Silicon, single-arch `linux/arm64` builds work natively; building
+`linux/amd64` uses emulation the same way.
+
 And create a `kind` cluster to run it in:
 ```bash
 ./demo/clusters/kind/create-cluster.sh
