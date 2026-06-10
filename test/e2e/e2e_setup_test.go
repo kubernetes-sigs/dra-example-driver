@@ -44,11 +44,17 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
+	"k8s.io/dynamic-resource-allocation/api/metadata"
+	"k8s.io/dynamic-resource-allocation/devicemetadata"
 )
 
 var rootDir, demoManifestsDir string
+var restConfig *rest.Config
 var clientset *kubernetes.Clientset
 var dynamicClient dynamic.Interface
 var restMapper meta.RESTMapper
@@ -94,6 +100,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(loadingRules, configOverrides)
 	config, err := kubeConfig.ClientConfig()
 	Expect(err).NotTo(HaveOccurred())
+	restConfig = config
 
 	clientset, err = kubernetes.NewForConfig(config)
 	Expect(err).NotTo(HaveOccurred())
@@ -406,6 +413,97 @@ func verifyGPUAllocation(ctx context.Context, namespace, podName, containerName 
 		for _, gpu := range gpus {
 			claimNewGPU(g, observedGPUs, gpu, namespace, podName, containerName)
 		}
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
+// execInPod runs a command in a pod container and returns stdout.
+func execInPod(ctx context.Context, namespace, podName, containerName string, command []string) ([]byte, error) {
+	GinkgoHelper()
+	req := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Name(podName).
+		Namespace(namespace).
+		SubResource("exec").
+		VersionedParams(&v1.PodExecOptions{
+			Container: containerName,
+			Command:   command,
+			Stdout:    true,
+			Stderr:    true,
+		}, scheme.ParameterCodec)
+
+	executor, err := remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL())
+	if err != nil {
+		return nil, fmt.Errorf("create pod exec for %s/%s container %s: %w",
+			namespace, podName, containerName, err)
+	}
+
+	var stdout, stderr bytes.Buffer
+	err = executor.StreamWithContext(ctx, remotecommand.StreamOptions{
+		Stdout: &stdout,
+		Stderr: &stderr,
+	})
+	if err != nil {
+		return stdout.Bytes(), fmt.Errorf("exec %q in %s/%s container %s failed: %w; stderr: %s",
+			strings.Join(command, " "), namespace, podName, containerName, err, stderr.String())
+	}
+	return stdout.Bytes(), nil
+}
+
+// verifyDeviceMetadata verifies the DRA device metadata file mounted into the
+// workload container for a ResourceClaimTemplate-backed claim.
+func verifyDeviceMetadata(ctx context.Context, namespace, podName, containerName string, drv installedDriver) {
+	GinkgoHelper()
+	metadataFile := metadata.ResourceClaimTemplateFilePath(drv.DriverName, "gpu", "gpu")
+	Eventually(func(g Gomega) {
+		data, err := execInPod(ctx, namespace, podName, containerName, []string{"cat", metadataFile})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to read DRA device metadata file %s from pod %s/%s container %s",
+			metadataFile, namespace, podName, containerName)
+
+		var md metadata.DeviceMetadata
+		g.Expect(devicemetadata.DecodeMetadataFromStream(json.NewDecoder(bytes.NewReader(data)), &md)).To(Succeed(),
+			"Failed to decode DRA device metadata file %s from pod %s/%s container %s",
+			metadataFile, namespace, podName, containerName)
+
+		g.Expect(md.PodClaimName).NotTo(BeNil(),
+			"Device metadata file %s has no podClaimName", metadataFile)
+		g.Expect(*md.PodClaimName).To(Equal("gpu"),
+			"Device metadata file %s has unexpected podClaimName", metadataFile)
+		g.Expect(md.Requests).To(HaveLen(1),
+			"Device metadata file %s should have exactly one request", metadataFile)
+
+		request := md.Requests[0]
+		g.Expect(request.Name).To(Equal("gpu"),
+			"Device metadata file %s has unexpected request name", metadataFile)
+		g.Expect(request.Devices).To(HaveLen(1),
+			"Device metadata file %s request %s should have exactly one device",
+			metadataFile, request.Name)
+
+		device := request.Devices[0]
+		g.Expect(device.Driver).To(Equal(drv.DriverName),
+			"Device metadata file %s has unexpected device driver", metadataFile)
+		g.Expect(device.Pool).NotTo(BeEmpty(),
+			"Device metadata file %s has empty device pool", metadataFile)
+		g.Expect(device.Name).NotTo(BeEmpty(),
+			"Device metadata file %s has empty device name", metadataFile)
+		g.Expect(device.Attributes).To(HaveKey(resourceapi.QualifiedName("uuid")),
+			"Device metadata file %s device attributes are missing uuid: %v", metadataFile, device.Attributes)
+		g.Expect(device.Attributes["uuid"].StringValue).NotTo(BeNil())
+		g.Expect(*device.Attributes["uuid"].StringValue).NotTo(BeEmpty())
+		g.Expect(device.Attributes).To(HaveKey(resourceapi.QualifiedName("model")),
+			"Device metadata file %s device attributes are missing model: %v", metadataFile, device.Attributes)
+		g.Expect(device.Attributes["model"].StringValue).NotTo(BeNil())
+		g.Expect(*device.Attributes["model"].StringValue).To(Equal("LATEST-GPU-MODEL"))
+		g.Expect(device.Attributes).To(HaveKey(resourceapi.QualifiedName("driverVersion")),
+			"Device metadata file %s device attributes are missing driverVersion: %v", metadataFile, device.Attributes)
+		g.Expect(device.Attributes["driverVersion"].VersionValue).NotTo(BeNil())
+		g.Expect(*device.Attributes["driverVersion"].VersionValue).NotTo(BeEmpty())
+
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has DRA device metadata at %s: device=%s/%s attrs uuid=%s model=%s driverVersion=%s\n",
+			namespace, podName, containerName, metadataFile, device.Pool, device.Name,
+			*device.Attributes["uuid"].StringValue,
+			*device.Attributes["model"].StringValue,
+			*device.Attributes["driverVersion"].VersionValue)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 

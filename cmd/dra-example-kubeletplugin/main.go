@@ -55,6 +55,7 @@ type Flags struct {
 	podUID                        string
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -168,6 +169,13 @@ func newApp() *cli.App {
 			Usage:       "Enable adding allocated device attributes (e.g., model, uuid, driverVersion) into ResourceClaim.status.devices[].data. Disabled by default.",
 			Destination: &flags.gpuDeviceStatus,
 			EnvVars:     []string{"GPU_DEVICE_STATUS"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

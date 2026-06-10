@@ -87,6 +87,10 @@ type DriverConfig struct {
 	// attributes (e.g. uuid, model, driverVersion) into
 	// ResourceClaim.status.devices[].data.
 	GPUDeviceStatus bool
+
+	// DeviceMetadata, when true, instructs the kubelet plugin to mount
+	// per-device metadata files into containers.
+	DeviceMetadata bool
 }
 
 // installedDriver is what installDriver returns: the identity bits downstream
@@ -161,7 +165,8 @@ func buildHelmValues(cfg DriverConfig, namespace string) map[string]any {
 		"namespaceOverride": namespace,
 		"gpuDeviceStatus":   cfg.GPUDeviceStatus,
 		"kubeletPlugin": map[string]any{
-			"numDevices": cfg.NumDevices,
+			"numDevices":           cfg.NumDevices,
+			"enableDeviceMetadata": cfg.DeviceMetadata,
 		},
 		"webhook": map[string]any{
 			"enabled": cfg.WebhookEnabled,
