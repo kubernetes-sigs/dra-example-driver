@@ -27,7 +27,7 @@ graph TD
 
     style NS stroke:#ff6b6b,stroke-width:3px
     style Pod1 stroke:#326ce5,stroke-width:2px
-    style C1 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style C1 fill:#d4edda,color:#000, stroke:#28a745,stroke-width:2px
     style G1 fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:3px
 ```
 

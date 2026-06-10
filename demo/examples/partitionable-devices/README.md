@@ -34,15 +34,18 @@ graph TD
     P1 --- C1
     P2 --- C1
     
-    style Node fill:#f9f9f9,stroke:#333,stroke-width:2px
-    style GPU1 fill:#e8f4f8,stroke:#326ce5,stroke-width:2px
-    style SC1 fill:#fff3cd,stroke:#856404,stroke-width:2px
+    style Node fill:#e3f2fd,stroke:#333,stroke-width:2px,color:#000
+    style GPU1 fill:#e8f4f8,stroke:#326ce5,stroke-width:2px,color:#000
+    style SC1 fill:#fff3cd,color:#000,stroke:#856404,stroke-width:2px
     style P1 fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:2px
     style P2 fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:2px
     style P3 fill:#95a5a6,color:#fff,stroke:#7f8c8d,stroke-width:2px
     style P4 fill:#95a5a6,color:#fff,stroke:#7f8c8d,stroke-width:2px
-    style Pod stroke:#326ce5,stroke-width:2px
-    style C1 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style Pod stroke:#326ce5,stroke-width:2px,color:#fff
+    style C1 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
+    
+    linkStyle 0,1,2,3 stroke:#333,stroke-width:2px
+    linkStyle 4,5 stroke:#333,stroke-width:2px
 ```
 
 ## Requirements

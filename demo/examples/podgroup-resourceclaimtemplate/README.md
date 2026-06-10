@@ -28,10 +28,10 @@ graph TD
 
     style PG1 stroke:#326ce5,stroke-width:3px
     style PG2 stroke:#326ce5,stroke-width:3px
-    style P1 fill:#d4edda,stroke:#28a745,stroke-width:2px
-    style P2 fill:#d4edda,stroke:#28a745,stroke-width:2px
-    style P3 fill:#d4edda,stroke:#28a745,stroke-width:2px
-    style P4 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style P1 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
+    style P2 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
+    style P3 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
+    style P4 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
     style G1 fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:3px
     style G2 fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:3px
 ```

@@ -19,7 +19,7 @@ graph TD
     C1 --- G2
 
     style Pod1 stroke:#326ce5,stroke-width:2px
-    style C1 fill:#d4edda,stroke:#28a745,stroke-width:2px
+    style C1 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
     style G1 fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:3px
     style G2 fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:3px
 ```

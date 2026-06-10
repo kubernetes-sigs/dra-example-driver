@@ -41,10 +41,10 @@ graph TD
     style Pod stroke:#326ce5
     style G1 fill:#9b59b6,color:#fff,stroke:#8e44ad,stroke-width:3px
     style G2 fill:#3498db,color:#fff,stroke:#2980b9,stroke-width:3px
-    style TS0 fill:#e8daef
-    style TS1 fill:#e8daef
-    style SP0 fill:#d6eaf8
-    style SP1 fill:#d6eaf8
+    style TS0 fill:#e8daef,color:#000,stroke:#8e44ad,stroke-width:2px
+    style TS1 fill:#e8daef,color:#000,stroke:#8e44ad,stroke-width:2px
+    style SP0 fill:#d6eaf8,color:#000,stroke:#2980b9,stroke-width:2px
+    style SP1 fill:#d6eaf8,color:#000,stroke:#2980b9,stroke-width:2px
 ```
 
 ## Requirements
