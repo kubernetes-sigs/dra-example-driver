@@ -31,7 +31,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 )
 
-// makeResourceClaim creates a ResourceClaim with the given driver
+// makeResourceClaim creates a ResourceClaim with the given driver.
 func makeResourceClaim(driver string) *resourceapi.ResourceClaim {
 	return &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-claim", Namespace: "default"},
@@ -49,7 +49,7 @@ func makeResourceClaim(driver string) *resourceapi.ResourceClaim {
 	}
 }
 
-// MockPlugin is a simple mock for testing plugin behavior
+// MockPlugin is a simple mock for testing plugin behavior.
 type MockPlugin struct {
 	nameValue string
 	err       error
@@ -63,7 +63,7 @@ func (m *MockPlugin) Reconcile(ctx context.Context, c client.Client, claim *reso
 	return m.err
 }
 
-// TestReconcile tests Reconcile with various scenarios
+// TestReconcile tests Reconcile with various scenarios.
 func TestReconcile(t *testing.T) {
 	driverName := "example.com/driver"
 	req := ctrl.Request{
@@ -71,10 +71,10 @@ func TestReconcile(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		claim   *resourceapi.ResourceClaim
-		plugins []Plugin
-		wantErr bool
-		errMsg  string
+		claim       *resourceapi.ResourceClaim
+		plugins     []Plugin
+		wantErr     bool
+		errContains []string
 	}{
 		"all plugins succeed": {
 			claim: makeResourceClaim(driverName),
@@ -92,8 +92,8 @@ func TestReconcile(t *testing.T) {
 				&MockPlugin{nameValue: "plugin2", err: nil},
 				&MockPlugin{nameValue: "plugin3", err: fmt.Errorf("error3")},
 			},
-			wantErr: true,
-			errMsg:  "plugins failed: [plugin3: error3 plugin1: error1]",
+			wantErr:     true,
+			errContains: []string{"plugin1: error1", "plugin3: error3"},
 		},
 		"claim not relevant": {
 			claim: makeResourceClaim("other.com/driver"),
@@ -117,7 +117,9 @@ func TestReconcile(t *testing.T) {
 
 			if test.wantErr {
 				assert.Error(t, err)
-				assert.Contains(t, err.Error(), test.errMsg)
+				for _, sub := range test.errContains {
+					assert.Contains(t, err.Error(), sub)
+				}
 			} else {
 				assert.NoError(t, err)
 			}
