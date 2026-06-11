@@ -25,6 +25,8 @@ import (
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
+
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 const cdiCommonDeviceName = "common"
@@ -107,7 +109,7 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices PreparedDevi
 		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{
-			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
+			Name:           fmt.Sprintf("%s-%s", claimUID, helpers.GetCDIDeviceID(device.DeviceName, (*string)(device.ShareID))),
 			ContainerEdits: *claimEdits.ContainerEdits,
 		}
 

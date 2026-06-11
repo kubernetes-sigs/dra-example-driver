@@ -43,6 +43,7 @@ import (
 	checkpointinstall "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/install"
 	checkpointv1alpha1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
@@ -57,6 +58,9 @@ type PreparedDevice struct {
 	drapbv1.Device
 	ContainerEdits *cdiapi.ContainerEdits
 	AdminAccess    bool
+	// ShareID distinguishes one allocation of a device shared via consumable
+	// capacity; it is nil for exclusively allocated devices.
+	ShareID *types.UID
 }
 
 func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
@@ -152,7 +156,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
+func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -165,7 +169,7 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		return nil, fmt.Errorf("unable to restore from checkpoint: %v", err)
 	}
 	if restoredDevices != nil {
-		return restoredDevices.GetDevices(), nil
+		return restoredDevices, nil
 	}
 
 	preparedDevices, err := s.prepareDevices(ctx, claim)
@@ -182,7 +186,7 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
-	return preparedDevices.GetDevices(), nil
+	return preparedDevices, nil
 }
 
 func (s *DeviceState) Unprepare(claimUID types.UID) error {
@@ -330,15 +334,17 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 	var preparedDevices PreparedDevices
 	for _, results := range configResultsMap {
 		for _, result := range results {
+			deviceID := helpers.GetCDIDeviceID(result.Device, (*string)(result.ShareID))
 			device := &PreparedDevice{
 				Device: drapbv1.Device{
 					RequestNames: []string{result.Request},
 					PoolName:     result.Pool,
 					DeviceName:   result.Device,
-					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
+					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{deviceID}),
 				},
-				ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+				ContainerEdits: perDeviceCDIContainerEdits[deviceID],
 				AdminAccess:    hasAdminAccess,
+				ShareID:        result.ShareID,
 			}
 			preparedDevices = append(preparedDevices, device)
 		}

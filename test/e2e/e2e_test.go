@@ -274,30 +274,46 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
 	})
 
-	It("should account for native CPU resources via DRA", func(ctx SpecContext) {
-		drv := installDriver(ctx, DriverConfig{
-			NumDevices: 1, // one fake NUMA node
+	// Run Serial with a single cpu driver: the cpu pod's capacity is charged
+	// against the node's allocatable cpu (so it shouldn't compete with the
+	// parallel gpu specs), and the kubelet attributes that node resource to
+	// only one cpu driver at a time.
+	It("should account for native CPU resources and share a NUMA device across requests", Serial, func(ctx SpecContext) {
+		cpuDriver := installDriver(ctx, DriverConfig{
 			ExtraValues: map[string]string{
 				"deviceProfile":                     "cpu",
-				"kubeletPlugin.cpu.cpusPerNUMANode": "4",
+				"kubeletPlugin.cpu.numaNodes":       "1",
+				"kubeletPlugin.cpu.cpusPerNUMANode": "2",
 			},
 		})
-		// The driver derives its capacity key from its own name, so each
-		// per-test install advertises a distinct key.
-		cpuKey := resourcev1.QualifiedName(drv.DriverName + "/cpu")
-		waitForResourceSlicesWithNodeAllocatableMappings(ctx, drv.DriverName,
+		cpuKey := resourcev1.QualifiedName(cpuDriver.DriverName + "/cpu")
+		waitForResourceSlicesWithNodeAllocatableMappings(ctx, cpuDriver.DriverName,
 			map[corev1.ResourceName]expectedMapping{
 				corev1.ResourceCPU: {CapacityKey: &cpuKey},
 			},
 		)
 
+		// The claim makes two 1-CPU requests; with one NUMA node both resolve to
+		// the same device, so the driver must keep the two shares distinct (via
+		// ShareID) to prepare them. The pod only runs if that works.
 		namespace := "native-resource-request"
-		deployManifest(ctx, namespace, "native-resource-request.yaml", drv)
+		deployManifest(ctx, namespace, "native-resource-request.yaml", cpuDriver)
 		checkPodsReadyAndRunning(ctx, namespace, []string{"pod0"})
 
+		// The scheduler debits both requests (2 CPUs total) from the node's
+		// allocatable budget for the pod.
 		verifyNodeAllocatableResourceClaimStatus(ctx, namespace, "pod0", "cpus", "ctr0",
 			corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
 		)
+
+		// Both requests resolve to the same device but must carry distinct,
+		// non-empty ShareIDs so the two shares are tracked separately.
+		shares := getClaimDeviceShares(ctx, namespace, "pod0", "cpus")
+		Expect(shares).To(HaveLen(2), "claim should have two allocation results")
+		Expect(shares[0].device).To(Equal(shares[1].device), "both requests should share the same NUMA device")
+		Expect(shares[0].shareID).NotTo(BeEmpty(), "first allocation should have a ShareID")
+		Expect(shares[1].shareID).NotTo(BeEmpty(), "second allocation should have a ShareID")
+		Expect(shares[0].shareID).NotTo(Equal(shares[1].shareID), "shared allocations must have distinct ShareIDs")
 	})
 
 	// Webhook tests share one driver pinned to "gpu.example.com" so their

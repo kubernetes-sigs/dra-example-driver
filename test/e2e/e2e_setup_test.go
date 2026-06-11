@@ -520,6 +520,51 @@ func verifyNodeAllocatableResourceClaimStatus(ctx context.Context, namespace, po
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
+// deviceShare is one allocation result's device name and ShareID.
+type deviceShare struct {
+	device  string
+	shareID string
+}
+
+// getClaimDeviceShares returns the device name and ShareID for every allocation
+// result of the (template-generated) ResourceClaim referenced by
+// podLocalClaimName. ShareID is the empty string when an allocation has none.
+// It retries until the claim exists and is allocated.
+func getClaimDeviceShares(ctx context.Context, namespace, podName, podLocalClaimName string) []deviceShare {
+	GinkgoHelper()
+	var shares []deviceShare
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		claimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get ResourceClaim %s/%s", namespace, claimName)
+		g.Expect(claim.Status.Allocation).NotTo(BeNil(),
+			"ResourceClaim %s/%s is not yet allocated", namespace, claimName)
+		g.Expect(claim.Status.Allocation.Devices.Results).NotTo(BeEmpty(),
+			"ResourceClaim %s/%s has no allocated devices", namespace, claimName)
+
+		results := claim.Status.Allocation.Devices.Results
+		shares = make([]deviceShare, 0, len(results))
+		for _, result := range results {
+			share := deviceShare{device: result.Device}
+			if result.ShareID != nil {
+				share.shareID = string(*result.ShareID)
+			}
+			shares = append(shares, share)
+		}
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+	return shares
+}
+
 // expectedMapping describes the asserted shape of a single
 // NodeAllocatableResourceMapping. Exactly one of AllocationMultiplier and
 // CapacityKey should be set; whichever is set is what the helper asserts.

@@ -30,6 +30,7 @@ import (
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 const ProfileName = "cpu"
@@ -123,7 +124,11 @@ func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.Devic
 		if cpu, ok := result.ConsumedCapacity[capacityKey]; ok {
 			envs = append(envs, fmt.Sprintf("CPU_DEVICE_%s_CONSUMED_CPU=%s", envID, cpu.String()))
 		}
-		edits[result.Device] = &cdiapi.ContainerEdits{ContainerEdits: &cdispec.ContainerEdits{
+		// Key edits by the share-aware device id so that multiple shares of one
+		// NUMA device (consumable capacity) keep their own edits instead of
+		// overwriting each other.
+		deviceID := helpers.GetCDIDeviceID(result.Device, (*string)(result.ShareID))
+		edits[deviceID] = &cdiapi.ContainerEdits{ContainerEdits: &cdispec.ContainerEdits{
 			Env: envs,
 		}}
 	}
