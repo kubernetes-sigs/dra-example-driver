@@ -1,18 +1,4 @@
 # Example: PodGroup ResourceClaimTemplate
-#
-# Two gang-scheduled PodGroups. All of the Pods in each PodGroup share the same
-# GPU. Each PodGroup receives a separate GPU:
-#   kubectl logs -n podgroup-resourceclaimtemplate --tail=-1 -l app=group-1 | grep GPU_DEVICE
-#   kubectl logs -n podgroup-resourceclaimtemplate --tail=-1 -l app=group-2 | grep GPU_DEVICE
-#
-# Driver Requirements:
-#   Profile: gpu
-#   GPUs: 2
-#
-# Cluster Requirements:
-#   Kubernetes 1.36+
-#   scheduling.k8s.io/v1alpha2 API enabled
-#   GenericWorkload, GangScheduling, and DRAWorkloadResourceClaims features enabled
 
 ---
 apiVersion: v1

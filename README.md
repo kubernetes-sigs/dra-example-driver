@@ -330,11 +330,12 @@ Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
 select and configure resources in various ways:
 ```bash
-kubectl apply --filename=demo/basic-resourceclaimtemplate.yaml \
-  --filename=demo/basic-multiple-requests.yaml \
-  --filename=demo/basic-shared-claim-across-containers.yaml \
-  --filename=demo/basic-shared-claim-across-pods.yaml \
-  --filename=demo/basic-resourceclaim-opaque-config.yaml
+cd demo/examples
+kubectl apply --filename=basic-resourceclaimtemplate/basic-resourceclaimtemplate.yaml \
+  --filename=basic-multiple-requests/basic-multiple-requests.yaml \
+  --filename=basic-shared-claim-across-containers/basic-shared-claim-across-containers.yaml \
+  --filename=basic-shared-claim-across-pods/basic-shared-claim-across-pods.yaml \
+  --filename=basic-resourceclaim-opaque-config/basic-resourceclaim-opaque-config.yaml
 ```
 
 And verify that they are coming up successfully:
@@ -437,11 +438,12 @@ consistent with the semantics shown in the figure above.
 Once you have verified everything is running correctly, delete all of the
 example apps:
 ```bash
-kubectl delete --wait=false --filename=demo/basic-resourceclaimtemplate.yaml \
-  --filename=demo/basic-multiple-requests.yaml \
-  --filename=demo/basic-shared-claim-across-containers.yaml \
-  --filename=demo/basic-shared-claim-across-pods.yaml \
-  --filename=demo/basic-resourceclaim-opaque-config.yaml
+cd demo/examples
+kubectl delete --wait=false --filename=basic-resourceclaimtemplate/basic-resourceclaimtemplate.yaml \
+  --filename=basic-multiple-requests/basic-multiple-requests.yaml \
+  --filename=basic-shared-claim-across-containers/basic-shared-claim-across-containers.yaml \
+  --filename=basic-shared-claim-across-pods/basic-shared-claim-across-pods.yaml \
+  --filename=basic-resourceclaim-opaque-config/basic-resourceclaim-opaque-config.yaml
 ```
 
 And wait for them to terminate:
