@@ -88,6 +88,10 @@ spec:
         {{- end }}
         - name: GPU_PARTITIONS
           value: {{ .Values.kubeletPlugin.gpuPartitions | quote }}
+        - name: CPU_NUMA_NODES
+          value: {{ .Values.kubeletPlugin.cpu.numaNodes | quote }}
+        - name: CPUS_PER_NUMA_NODE
+          value: {{ .Values.kubeletPlugin.cpu.cpusPerNUMANode | quote }}
         - name: POD_UID
           valueFrom:
             fieldRef:

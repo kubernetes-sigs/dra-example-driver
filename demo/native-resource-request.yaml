@@ -1,0 +1,106 @@
+# Example: Native (Node-Allocatable) CPU Resources via DRA, with Sharing
+#
+# One pod, one ResourceClaim with two requests. The driver publishes one device
+# per fake NUMA node, each exposing its CPU count as consumable capacity. The
+# claim makes two requests of 1 CPU each; with a single NUMA node both requests
+# are satisfied by the *same* device.
+#
+# Native resource accounting: every NUMA device carries a
+# `NodeAllocatableResourceMappings` entry, so kube-scheduler also debits the
+# claimed CPUs (2 here) from the node's standard allocatable budget, preventing
+# oversubscription when CPUs are managed through DRA alongside the classic
+# resource request API.
+#
+# Consumable-capacity sharing: the NUMA device sets
+# `AllowMultipleAllocations: true`, so its CPU capacity is split across the two
+# requests. The scheduler assigns each allocation a distinct ShareID, and the
+# driver uses the ShareID to expose the two shares of the one device as separate
+# CDI devices.
+#
+# This example uses the `cpu` device profile rather than the default `gpu`
+# profile. Install it as a separate driver release; it does not replace an
+# existing `gpu` install.
+#
+# Helm install (required before running this demo):
+#   helm upgrade -i \
+#     --create-namespace \
+#     --namespace dra-example-driver-cpu \
+#     --set deviceProfile=cpu \
+#     --set kubeletPlugin.cpu.numaNodes=1 \
+#     --set kubeletPlugin.cpu.cpusPerNUMANode=2 \
+#     dra-example-driver-cpu \
+#     deployments/helm/dra-example-driver
+#
+# `kubeletPlugin.cpu.numaNodes` is the number of fake NUMA-node devices the
+# driver advertises; `kubeletPlugin.cpu.cpusPerNUMANode` is the CPU capacity
+# each one exposes. A single 2-CPU NUMA node satisfies both requests from one
+# device.
+#
+# Expected: pod0 runs with both requests served by one NUMA device. Check with:
+#   kubectl get pods -n native-resource-request
+#   kubectl get pod -n native-resource-request pod0 \
+#     -o jsonpath='{.status.nodeAllocatableResourceClaimStatuses}'
+#   kubectl get resourceclaims -n native-resource-request \
+#     -o jsonpath='{range .items[*].status.allocation.devices.results[*]}{.device}{" "}{.shareID}{"\n"}{end}'
+# The status should include cpu: "2" for the generated claim, and the two
+# allocation results should reference the same device with different ShareIDs.
+# The `resourceClaimName` in the status is the template-generated concrete claim
+# name, not the pod-local name `cpus`.
+#
+# Driver requirements:
+#   Profile: cpu
+#   NUMA nodes: 1, with >= 2 CPUs of capacity
+#
+# Cluster requirements:
+#   Kubernetes 1.36+
+#   Feature gates: DRANodeAllocatableResources, DRAConsumableCapacity
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: native-resource-request
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: native-resource-request
+  name: two-cpus
+spec:
+  spec:
+    devices:
+      requests:
+      - name: cpu0
+        exactly:
+          deviceClassName: cpu.example.com
+          capacity:
+            requests:
+              cpu.example.com/cpu: "1"
+      - name: cpu1
+        exactly:
+          deviceClassName: cpu.example.com
+          capacity:
+            requests:
+              cpu.example.com/cpu: "1"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: native-resource-request
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: cpus
+  resourceClaims:
+  - name: cpus
+    resourceClaimTemplateName: two-cpus

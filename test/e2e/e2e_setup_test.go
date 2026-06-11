@@ -28,6 +28,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -38,6 +39,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -56,9 +58,20 @@ var restMapper meta.RESTMapper
 // driverPodSelector finds kubelet plugin Pods within an installed driver's release namespace.
 const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
 
-// defaultDeviceClassName is the driver name baked into demo manifests and
-// webhook testdata; deployManifest substitutes it for the per-test driver name.
-const defaultDeviceClassName = "gpu.example.com"
+// defaultGPUDeviceClassName is the driver name baked into demo manifests
+// and webhook testdata; deployManifest substitutes it for the per-test
+// driver name, and the webhook tests pin their installed driver to it so
+// their static testdata stays valid.
+const defaultGPUDeviceClassName = "gpu.example.com"
+
+// defaultCPUDeviceClassName is the driver name baked into demo manifests
+// using the cpu profile; deployManifest substitutes it for the per-test
+// driver name.
+const defaultCPUDeviceClassName = "cpu.example.com"
+
+// defaultDeviceClassNames are the driver names baked into demo manifests as
+// placeholders; deployManifest substitutes each for the per-test driver name.
+var defaultDeviceClassNames = []string{defaultGPUDeviceClassName, defaultCPUDeviceClassName}
 
 // defaultExtendedResourceName is the extended resource name baked into demo
 // manifests; deployManifest substitutes it when ExtendedResourceName is set.
@@ -110,7 +123,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 // deployManifest reads a demo manifest file, substitutes per-test driver
 // identifiers, creates the resulting objects, and registers cleanup and
 // failure diagnostics via DeferCleanup. Substitution rules:
-//   - "gpu.example.com" -> drv.DriverName (always applied)
+//   - any name in defaultDeviceClassNames -> drv.DriverName (always applied)
 //   - "example.com/gpu" -> drv.ExtendedResourceName (only when set)
 func deployManifest(ctx context.Context, namespace, manifestFile string, drv installedDriver) {
 	GinkgoHelper()
@@ -137,14 +150,19 @@ func deployManifest(ctx context.Context, namespace, manifestFile string, drv ins
 // with the per-test driver name and (when set) extended resource name.
 func substituteDriverIdentifiers(raw string, drv installedDriver) string {
 	GinkgoHelper()
-	out := strings.ReplaceAll(raw, defaultDeviceClassName, drv.DriverName)
+	out := raw
+	for _, placeholder := range defaultDeviceClassNames {
+		out = strings.ReplaceAll(out, placeholder, drv.DriverName)
+	}
 	if drv.ExtendedResourceName != "" {
 		out = strings.ReplaceAll(out, defaultExtendedResourceName, drv.ExtendedResourceName)
 	}
 	// Guard against demo manifests that drift from convention.
-	Expect(out).NotTo(ContainSubstring(defaultDeviceClassName),
-		"Manifest still references %q after substitution; deployManifest must replace every occurrence",
-		defaultDeviceClassName)
+	for _, placeholder := range defaultDeviceClassNames {
+		Expect(out).NotTo(ContainSubstring(placeholder),
+			"Manifest still references %q after substitution; deployManifest must replace every occurrence",
+			placeholder)
+	}
 	return out
 }
 
@@ -455,6 +473,148 @@ func verifyExtendedResourceClaimStatus(ctx context.Context, namespace, podName, 
 		fmt.Fprintf(GinkgoWriter, "Pod %s/%s, container %s has extendedResourceClaimStatus mapping %s -> %s\n",
 			namespace, podName, containerName, expectedResourceName, matched.RequestName)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
+// verifyNodeAllocatableResourceClaimStatus verifies that the pod's
+// nodeAllocatableResourceClaimStatuses contains the expected per-resource
+// quantities for the (template-generated) ResourceClaim of podLocalClaimName.
+func verifyNodeAllocatableResourceClaimStatus(ctx context.Context, namespace, podName, podLocalClaimName, containerName string, expectedResources v1.ResourceList) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		generatedClaimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		statusIdx := slices.IndexFunc(pod.Status.NodeAllocatableResourceClaimStatuses, func(s v1.NodeAllocatableResourceClaimStatus) bool {
+			return s.ResourceClaimName == generatedClaimName
+		})
+		g.Expect(statusIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no nodeAllocatableResourceClaimStatuses entry for claim %q; status: %+v",
+			namespace, podName, generatedClaimName, pod.Status.NodeAllocatableResourceClaimStatuses)
+		matched := &pod.Status.NodeAllocatableResourceClaimStatuses[statusIdx]
+
+		g.Expect(matched.Containers).To(ContainElement(containerName),
+			"Pod %s/%s nodeAllocatableResourceClaimStatuses entry for claim %q does not list container %q (got %v)",
+			namespace, podName, generatedClaimName, containerName, matched.Containers)
+
+		for resourceName, expected := range expectedResources {
+			actual, ok := matched.Resources[resourceName]
+			g.Expect(ok).To(BeTrue(),
+				"Pod %s/%s nodeAllocatableResourceClaimStatuses entry for claim %q has no %s resource: %+v",
+				namespace, podName, generatedClaimName, resourceName, matched.Resources)
+			g.Expect(actual.Cmp(expected)).To(BeZero(),
+				"Pod %s/%s claim %q resource %s: got %s, want %s",
+				namespace, podName, generatedClaimName, resourceName, actual.String(), expected.String())
+		}
+
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s claim %q has nodeAllocatableResourceClaimStatus %+v for container %s\n",
+			namespace, podName, generatedClaimName, matched.Resources, containerName)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
+// deviceShare is one allocation result's device name and ShareID.
+type deviceShare struct {
+	device  string
+	shareID string
+}
+
+// getClaimDeviceShares returns the device name and ShareID for every allocation
+// result of the (template-generated) ResourceClaim referenced by
+// podLocalClaimName. ShareID is the empty string when an allocation has none.
+// It retries until the claim exists and is allocated.
+func getClaimDeviceShares(ctx context.Context, namespace, podName, podLocalClaimName string) []deviceShare {
+	GinkgoHelper()
+	var shares []deviceShare
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		claimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get ResourceClaim %s/%s", namespace, claimName)
+		g.Expect(claim.Status.Allocation).NotTo(BeNil(),
+			"ResourceClaim %s/%s is not yet allocated", namespace, claimName)
+		g.Expect(claim.Status.Allocation.Devices.Results).NotTo(BeEmpty(),
+			"ResourceClaim %s/%s has no allocated devices", namespace, claimName)
+
+		results := claim.Status.Allocation.Devices.Results
+		shares = make([]deviceShare, 0, len(results))
+		for _, result := range results {
+			share := deviceShare{device: result.Device}
+			if result.ShareID != nil {
+				share.shareID = string(*result.ShareID)
+			}
+			shares = append(shares, share)
+		}
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+	return shares
+}
+
+// expectedMapping describes the asserted shape of a single
+// NodeAllocatableResourceMapping. Exactly one of AllocationMultiplier and
+// CapacityKey should be set; whichever is set is what the helper asserts.
+type expectedMapping struct {
+	AllocationMultiplier *resource.Quantity
+	CapacityKey          *resourceapi.QualifiedName
+}
+
+// waitForResourceSlicesWithNodeAllocatableMappings waits until every device
+// published by driverName carries NodeAllocatableResourceMappings matching
+// expected. Closes the race between driver install and ResourceSlice publication.
+func waitForResourceSlicesWithNodeAllocatableMappings(ctx context.Context, driverName string, expected map[v1.ResourceName]expectedMapping) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		slices, err := clientset.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.driver=" + driverName,
+		})
+		g.Expect(err).NotTo(HaveOccurred(), "failed to list ResourceSlices")
+		g.Expect(slices.Items).NotTo(BeEmpty(),
+			"no ResourceSlices yet published for driver %q", driverName)
+
+		var matched int
+		for _, slice := range slices.Items {
+			for _, device := range slice.Spec.Devices {
+				mappings := device.NodeAllocatableResourceMappings
+				g.Expect(mappings).NotTo(BeNil(),
+					"device %q in slice %q has no NodeAllocatableResourceMappings", device.Name, slice.Name)
+
+				for resourceName, exp := range expected {
+					m, ok := mappings[resourceName]
+					g.Expect(ok).To(BeTrue(), "device %q missing %s mapping", device.Name, resourceName)
+					switch {
+					case exp.AllocationMultiplier != nil:
+						g.Expect(m.AllocationMultiplier).NotTo(BeNil(), "device %q %s mapping has no AllocationMultiplier", device.Name, resourceName)
+						g.Expect(m.AllocationMultiplier.Cmp(*exp.AllocationMultiplier)).To(BeZero(),
+							"device %q %s multiplier = %s, want %s", device.Name, resourceName, m.AllocationMultiplier.String(), exp.AllocationMultiplier.String())
+					case exp.CapacityKey != nil:
+						g.Expect(m.CapacityKey).NotTo(BeNil(), "device %q %s mapping has no CapacityKey", device.Name, resourceName)
+						g.Expect(*m.CapacityKey).To(Equal(*exp.CapacityKey),
+							"device %q %s capacityKey = %q, want %q", device.Name, resourceName, *m.CapacityKey, *exp.CapacityKey)
+					default:
+						Fail(fmt.Sprintf("expectedMapping for %s must set either AllocationMultiplier or CapacityKey", resourceName))
+					}
+				}
+				matched++
+			}
+		}
+		g.Expect(matched).To(BeNumerically(">", 0),
+			"no devices for driver %q advertise NodeAllocatableResourceMappings yet", driverName)
+	}, "60s", "2s").Should(Succeed())
 }
 
 // claimNewGPU verifies that a GPU is unclaimed and adds it to observedGPUs.

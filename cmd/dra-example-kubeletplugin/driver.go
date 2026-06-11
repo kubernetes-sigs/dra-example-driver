@@ -97,7 +97,7 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	logger := klog.FromContext(ctx)
 	logger.Info("Preparing claim", "uid", claim.UID, "namespace", claim.Namespace, "name", claim.Name)
-	preparedPBs, err := d.state.Prepare(ctx, claim)
+	preparedDevices, err := d.state.Prepare(ctx, claim)
 	if err != nil {
 		logger.Error(err, "Error preparing devices for claim", "uid", claim.UID)
 		return kubeletplugin.PrepareResult{
@@ -105,12 +105,13 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 		}
 	}
 	var prepared []kubeletplugin.Device
-	for _, preparedPB := range preparedPBs {
+	for _, preparedDevice := range preparedDevices {
 		prepared = append(prepared, kubeletplugin.Device{
-			Requests:     preparedPB.GetRequestNames(),
-			PoolName:     preparedPB.GetPoolName(),
-			DeviceName:   preparedPB.GetDeviceName(),
-			CDIDeviceIDs: preparedPB.GetCdiDeviceIds(),
+			Requests:     preparedDevice.GetRequestNames(),
+			PoolName:     preparedDevice.GetPoolName(),
+			DeviceName:   preparedDevice.GetDeviceName(),
+			CDIDeviceIDs: preparedDevice.GetCdiDeviceIds(),
+			ShareID:      preparedDevice.ShareID,
 		})
 	}
 

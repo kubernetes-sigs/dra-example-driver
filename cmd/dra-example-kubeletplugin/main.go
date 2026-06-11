@@ -32,6 +32,7 @@ import (
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
@@ -56,6 +57,8 @@ type Flags struct {
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
 	bindingConditions             bool
+	cpuNUMANodes                  int
+	cpusPerNUMANode               int
 }
 
 type Config struct {
@@ -69,6 +72,9 @@ type Config struct {
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
 		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions)
+	},
+	cpu.ProfileName: func(flags Flags) profiles.Profile {
+		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode)
 	},
 }
 
@@ -176,6 +182,20 @@ func newApp() *cli.App {
 			Value:       false,
 			Destination: &flags.bindingConditions,
 			EnvVars:     []string{"BINDING_CONDITIONS"},
+		},
+		&cli.IntFlag{
+			Name:        "cpu-numa-nodes",
+			Usage:       "Number of fake NUMA-node devices to advertise. Only relevant for the " + cpu.ProfileName + " profile.",
+			Value:       8,
+			Destination: &flags.cpuNUMANodes,
+			EnvVars:     []string{"CPU_NUMA_NODES"},
+		},
+		&cli.IntFlag{
+			Name:        "cpus-per-numa-node",
+			Usage:       "Number of CPUs each fake NUMA-node device advertises as consumable capacity. Only relevant for the " + cpu.ProfileName + " profile.",
+			Value:       4,
+			Destination: &flags.cpusPerNUMANode,
+			EnvVars:     []string{"CPUS_PER_NUMA_NODE"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
