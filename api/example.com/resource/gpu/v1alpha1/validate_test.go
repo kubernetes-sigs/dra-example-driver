@@ -92,6 +92,14 @@ func TestGpuConfigValidate(t *testing.T) {
 			gpuConfig: DefaultGpuConfig(),
 			expected:  nil,
 		},
+		"passthrough GpuConfig": {
+			gpuConfig: DefaultVfioGpuConfig(),
+			expected:  nil,
+		},
+		"invalid GPU mode": {
+			gpuConfig: &GpuConfig{Mode: "invalid"},
+			expected:  errors.New("unknown GPU mode: invalid"),
+		},
 		"invalid TimeSlicingConfig ignored with strategy is SpacePartitioning": {
 			gpuConfig: &GpuConfig{
 				Sharing: &GpuSharing{
