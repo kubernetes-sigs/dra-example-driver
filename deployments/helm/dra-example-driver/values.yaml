@@ -9,13 +9,19 @@ selectorLabelsOverride: {}
 
 allowDefaultNamespace: false
 
-# deviceProfile describes the overall shape of the devices managed by the
-# driver. Available profiles are:
-#   - "gpu": Node-local devices configurable through opaque config
-deviceProfile: "gpu"
+# featureGates enables alpha/experimental driver behavior. Each entry is
+# passed to components as FEATURE_GATES (comma-separated key=value pairs).
+#
+# VFIOGPUEnabled is recognized but not yet supported by this chart. Enabling it
+# fails at install time until the vfio-gpu profile is added.
+#
+# Without feature gates, the default gpu profile is used (gpu.example.com).
+featureGates: {}
 
-# driverName uniquely identifies the driver within the cluster. When empty, its
-# value is derived from the deviceProfile.
+# driverName uniquely identifies the driver within the cluster. Leave empty for
+# the driver components to derive it from the active device profile. The chart
+# derives the same default for Kubernetes resources that need the name at render
+# time. vfio-gpu.* driver names are not supported yet.
 driverName: ""
 
 # deviceClass configures the DeviceClass the driver creates for its devices.
@@ -50,7 +56,7 @@ serviceAccount:
 
 kubeletPlugin:
   # numDevices describes how many GPUs to advertise on each node when the "gpu"
-  # deviceProfile is used. Not relevant for other profiles.
+  # profile is used. Not relevant for other profiles.
   numDevices: 8
   # gpuPartitions sets the number of partitions per GPU. When set to a value
   # greater than 0, GPUs are exposed with shared counters allowing flexible

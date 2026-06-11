@@ -31,7 +31,9 @@ spec:
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         command: ["dra-example-controller"]
         args:
-          - --driver-name={{ include "dra-example-driver.driverName" . }}
+          {{- if .Values.driverName }}
+          - --driver-name={{ .Values.driverName }}
+          {{- end }}
           {{- range .Values.controller.plugins }}
           - --enable-plugin={{ . }}
           {{- end }}
