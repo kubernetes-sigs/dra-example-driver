@@ -57,6 +57,7 @@ type Flags struct {
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
 	bindingConditions             bool
+	cpuNUMANodes                  int
 	cpusPerNUMANode               int
 }
 
@@ -73,7 +74,7 @@ var validProfiles = map[string]func(flags Flags) profiles.Profile{
 		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions)
 	},
 	cpu.ProfileName: func(flags Flags) profiles.Profile {
-		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.numDevices, flags.cpusPerNUMANode)
+		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode)
 	},
 }
 
@@ -117,7 +118,7 @@ func newApp() *cli.App {
 		},
 		&cli.IntFlag{
 			Name:        "num-devices",
-			Usage:       "Number of top-level devices to advertise: GPUs for the " + gpu.ProfileName + " profile, NUMA nodes for the " + cpu.ProfileName + " profile.",
+			Usage:       "The number of devices to be generated. Only relevant for the " + gpu.ProfileName + " profile.",
 			Value:       8,
 			Destination: &flags.numDevices,
 			EnvVars:     []string{"NUM_DEVICES"},
@@ -181,6 +182,13 @@ func newApp() *cli.App {
 			Value:       false,
 			Destination: &flags.bindingConditions,
 			EnvVars:     []string{"BINDING_CONDITIONS"},
+		},
+		&cli.IntFlag{
+			Name:        "cpu-numa-nodes",
+			Usage:       "Number of fake NUMA-node devices to advertise. Only relevant for the " + cpu.ProfileName + " profile.",
+			Value:       8,
+			Destination: &flags.cpuNUMANodes,
+			EnvVars:     []string{"CPU_NUMA_NODES"},
 		},
 		&cli.IntFlag{
 			Name:        "cpus-per-numa-node",
