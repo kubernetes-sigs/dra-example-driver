@@ -1,11 +1,11 @@
 {
   "type": "object",
   "properties": {
-    "deviceProfile": {
-      "type": "string",
-      "enum": [
-        "gpu"
-      ]
+    "featureGates": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "boolean"
+      }
     }
   }
 }

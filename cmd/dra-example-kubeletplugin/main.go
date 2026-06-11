@@ -33,6 +33,7 @@ import (
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	"sigs.k8s.io/dra-example-driver/pkg/featuregates"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -50,7 +51,6 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
-	profile                       string
 	driverName                    string
 	podUID                        string
 	gpuPartitions                 int
@@ -139,15 +139,8 @@ func newApp() *cli.App {
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
 		},
 		&cli.StringFlag{
-			Name:        "device-profile",
-			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfileNames),
-			Value:       gpu.ProfileName,
-			Destination: &flags.profile,
-			EnvVars:     []string{"DEVICE_PROFILE"},
-		},
-		&cli.StringFlag{
 			Name:        "driver-name",
-			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Usage:       "Name of the DRA driver. Its default is derived from the active device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
 		},
@@ -200,13 +193,19 @@ func newApp() *cli.App {
 				return fmt.Errorf("create client: %w", err)
 			}
 
+			profile := featuregates.DeviceProfile()
+
 			if flags.driverName == "" {
-				flags.driverName = flags.profile + ".example.com"
+				flags.driverName = profile + ".example.com"
 			}
 
-			newProfile, ok := validProfiles[flags.profile]
+			newProfile, ok := validProfiles[profile]
 			if !ok {
-				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, validProfileNames)
+				var valid []string
+				for profileName := range validProfiles {
+					valid = append(valid, profileName)
+				}
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", profile, valid)
 			}
 
 			config := &Config{

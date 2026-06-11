@@ -59,10 +59,14 @@ spec:
           periodSeconds: 10
         {{- end }}
         env:
+        {{- if .Values.driverName }}
         - name: DRIVER_NAME
-          value: {{ include "dra-example-driver.driverName" . | quote }}
-        - name: DEVICE_PROFILE
-          value: {{ .Values.deviceProfile | quote }}
+          value: {{ .Values.driverName | quote }}
+        {{- end }}
+        {{- if .Values.featureGates }}
+        - name: FEATURE_GATES
+          value: "{{ range $key, $value := .Values.featureGates }}{{ $key }}={{ $value }},{{ end }}"
+        {{- end }}
         - name: CDI_ROOT
           value: /var/run/cdi
         - name: KUBELET_REGISTRAR_DIRECTORY_PATH
