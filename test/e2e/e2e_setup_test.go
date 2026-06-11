@@ -591,3 +591,25 @@ func verifyResourceClaimDeviceStatus(ctx context.Context, namespace, podName str
 			"Pod %s/%s: no ResourceClaim observed with non-empty status.devices[].data", namespace, podName)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
+
+// verifyResourceSliceBindingConditions verifies that all devices published in
+// ResourceSlices for the given driver have bindingConditions set.
+func verifyResourceSliceBindingConditions(ctx context.Context, driverName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		slices, err := clientset.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.driver=" + driverName,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(slices.Items).NotTo(BeEmpty(), "No ResourceSlices found")
+
+		for _, slice := range slices.Items {
+			for _, device := range slice.Spec.Devices {
+				g.Expect(device.BindingConditions).NotTo(BeEmpty(),
+					"Device %s in ResourceSlice %s: bindingConditions should not be empty", device.Name, slice.Name)
+				fmt.Fprintf(GinkgoWriter, "Device %s in ResourceSlice %s: bindingConditions=%v\n",
+					device.Name, slice.Name, device.BindingConditions)
+			}
+		}
+	}, "30s", "2s").Should(Succeed())
+}

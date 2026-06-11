@@ -386,4 +386,34 @@ var _ = Describe("Test GPU allocation", func() {
 			Expect(err.Error()).To(ContainSubstring("unknown time-slice interval"))
 		})
 	})
+
+	Context("BindingConditions", Ordered, func() {
+
+		var drv installedDriver
+		BeforeAll(func(ctx SpecContext) {
+			drv = installDriver(ctx, DriverConfig{
+				ExtraValues: map[string]string{
+					"kubeletPlugin.bindingConditions": "true",
+					"controller.plugins":              "{BindingConditions}",
+				},
+			})
+		})
+
+		It("should publish bindingConditions on devices in ResourceSlices", func(ctx SpecContext) {
+			verifyResourceSliceBindingConditions(ctx, drv.DriverName)
+		})
+
+		It("should allocate a GPU and make the pod Running with binding conditions", func(ctx SpecContext) {
+			namespace := "binding-conditions"
+			pods := []string{"pod0"}
+			containerName := "ctr0"
+			expectedGPUCount := 1
+
+			deployManifest(ctx, namespace, "binding-conditions/binding-conditions.yaml", drv)
+			checkPodsReadyAndRunning(ctx, namespace, pods)
+
+			observedGPUs := make(map[string]string)
+			verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
+		})
+	})
 })

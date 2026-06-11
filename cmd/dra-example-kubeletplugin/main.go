@@ -55,6 +55,7 @@ type Flags struct {
 	podUID                        string
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
+	bindingConditions             bool
 }
 
 type Config struct {
@@ -67,7 +68,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions)
 	},
 }
 
@@ -168,6 +169,13 @@ func newApp() *cli.App {
 			Usage:       "Enable adding allocated device attributes (e.g., model, uuid, driverVersion) into ResourceClaim.status.devices[].data. Disabled by default.",
 			Destination: &flags.gpuDeviceStatus,
 			EnvVars:     []string{"GPU_DEVICE_STATUS"},
+		},
+		&cli.BoolFlag{
+			Name:        "binding-conditions",
+			Usage:       "Enable or disable binding conditions processing in the DRA driver.",
+			Value:       false,
+			Destination: &flags.bindingConditions,
+			EnvVars:     []string{"BINDING_CONDITIONS"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)
