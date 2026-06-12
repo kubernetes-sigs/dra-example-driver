@@ -46,7 +46,7 @@ graph TD
 Binding conditions require two settings: `kubeletPlugin.bindingConditions` to publish binding conditions in the `ResourceSlice`, and `controller.plugins={BindingConditions}` to deploy the controller that automatically satisfies them:
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   --set kubeletPlugin.bindingConditions=true \

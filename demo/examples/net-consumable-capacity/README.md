@@ -51,7 +51,7 @@ graph TD
 Install the driver with the `net` profile:
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   --set deviceProfile=net \
@@ -75,7 +75,7 @@ kubectl get resourceslices -o wide
 Apply the example:
 
 ```bash
-cd demo/examples/net-consumable-capacity && kubectl apply -f net-consumable-capacity.yaml
+kubectl apply -f demo/examples/net-consumable-capacity/net-consumable-capacity.yaml
 ```
 
 Verify both pods are running:
@@ -105,11 +105,11 @@ Both pods may reference the same physical NIC index (`0`), confirming that a sin
 ## Cleanup
 
 ```bash
-cd demo/examples/net-consumable-capacity && kubectl delete -f net-consumable-capacity.yaml
+kubectl delete -f demo/examples/net-consumable-capacity/net-consumable-capacity.yaml
 ```
 
 To uninstall the driver:
 
 ```bash
-helm uninstall -n dra-example-driver dra-example-driver
+go tool -modfile hack/tools/go.mod helm uninstall -n dra-example-driver dra-example-driver
 ```

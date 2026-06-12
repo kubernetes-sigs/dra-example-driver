@@ -5,8 +5,8 @@ install/uninstall the driver.
 
 ## Prerequisites
 
+- [Go 1.26+](https://go.dev)
 - [gcloud CLI](https://cloud.google.com/sdk/docs/install)
-- [helm](https://helm.sh/docs/intro/install/)
 - [kubectl](https://kubernetes.io/docs/reference/kubectl/)
 - Authenticated GCP account and a selected project
 

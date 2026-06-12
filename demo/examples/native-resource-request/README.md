@@ -51,7 +51,7 @@ graph TD
 This example requires a separate driver installation with the `cpu` profile:
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver-cpu \
   --set deviceProfile=cpu \
@@ -70,7 +70,7 @@ helm upgrade -i \
 ### 2. Apply the Example
 
 ```bash
-cd demo/examples/native-resource-request && kubectl apply -f native-resource-request.yaml
+kubectl apply -f demo/examples/native-resource-request/native-resource-request.yaml
 ```
 
 ### 3. Verify the Pod is Running
@@ -120,11 +120,11 @@ Both requests are satisfied by the same device (`numa-node-0`) but with distinct
 ## Cleanup
 
 ```bash
-cd demo/examples/native-resource-request && kubectl delete -f native-resource-request.yaml
+kubectl delete -f demo/examples/native-resource-request/native-resource-request.yaml
 ```
 
 To uninstall the CPU driver:
 
 ```bash
-helm uninstall -n dra-example-driver-cpu dra-example-driver-cpu
+go tool -modfile hack/tools/go.mod helm uninstall -n dra-example-driver-cpu dra-example-driver-cpu
 ```

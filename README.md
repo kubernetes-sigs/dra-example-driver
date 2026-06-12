@@ -22,11 +22,10 @@ The procedure below has been tested and verified on both Linux and Mac.
 
 ### Prerequisites
 
+* [Go 1.26+](https://go.dev)
 * [GNU Make 3.81+](https://www.gnu.org/software/make/)
 * [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
 * [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/) or [Podman v4.9+](https://podman.io/docs/installation)
-* [kind v0.17.0+](https://kind.sigs.k8s.io/docs/user/quick-start/)
-* [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
 
 ### Creating a cluster and installing the example driver
@@ -154,7 +153,7 @@ local-path-storage   local-path-provisioner-7dbf974f64-9jmc7                    
 The validating admission webhook is disabled by default. To enable it, install cert-manager and its CRDs, then
 set the `webhook.enabled=true` value when the dra-example-driver chart is installed.
 ```bash
-helm install \
+go tool -modfile hack/tools/go.mod helm install \
   --repo https://charts.jetstack.io \
   --version v1.20.2 \
   --create-namespace \
@@ -166,9 +165,9 @@ helm install \
 ```
 More options for installing cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
 
-And then install the example resource driver via `helm`.
+And then install the example resource driver via Helm.
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   dra-example-driver \

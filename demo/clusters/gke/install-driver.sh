@@ -21,7 +21,7 @@ set -euo pipefail
 : "${DRIVER_VERSION:=0.2.0}"
 : "${DRIVER_CHART_REF:=oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver}"
 
-helm upgrade -i \
+go tool -modfile "$(git rev-parse --show-toplevel)/hack/tools/go.mod" helm upgrade -i \
   --create-namespace \
   --namespace "${DRIVER_NAMESPACE}" \
   --version "${DRIVER_VERSION}" \

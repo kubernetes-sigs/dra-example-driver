@@ -64,7 +64,7 @@ graph TD
 Install the driver with partitioning enabled:
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   --set kubeletPlugin.gpuPartitions=4 \
