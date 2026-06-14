@@ -43,6 +43,7 @@ import (
 	checkpointinstall "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/install"
 	checkpointv1alpha1 "sigs.k8s.io/dra-example-driver/internal/api/checkpoint/v1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/pkg/featuregates"
 )
 
 type AllocatableDevices map[string]resourceapi.Device
@@ -90,7 +91,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		return nil, fmt.Errorf("error enumerating all possible devices: %v", err)
 	}
 
-	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, config.flags.profile)
+	cdi, err := NewCDIHandler(config.flags.cdiRoot, config.flags.driverName, featuregates.DeviceProfile())
 	if err != nil {
 		return nil, fmt.Errorf("unable to create CDI handler: %v", err)
 	}

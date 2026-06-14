@@ -126,5 +126,9 @@ resource.k8s.io/v1beta1
 The driver name.
 */}}
 {{- define "dra-example-driver.driverName" -}}
-{{ default (print .Values.deviceProfile ".example.com") .Values.driverName }}
+{{- if .Values.driverName -}}
+{{- .Values.driverName -}}
+{{- else -}}
+gpu.example.com
+{{- end -}}
 {{- end -}}

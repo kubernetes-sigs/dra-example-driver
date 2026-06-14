@@ -36,6 +36,7 @@ import (
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	"sigs.k8s.io/dra-example-driver/pkg/featuregates"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -45,7 +46,6 @@ type Flags struct {
 	certFile   string
 	keyFile    string
 	port       int
-	profile    string
 	driverName string
 }
 
@@ -86,15 +86,8 @@ func newApp() *cli.App {
 			Destination: &flags.port,
 		},
 		&cli.StringFlag{
-			Name:        "device-profile",
-			Usage:       fmt.Sprintf("Name of the device profile. Valid values are %q.", validProfiles),
-			Value:       gpu.ProfileName,
-			Destination: &flags.profile,
-			EnvVars:     []string{"DEVICE_PROFILE"},
-		},
-		&cli.StringFlag{
 			Name:        "driver-name",
-			Usage:       "Name of the DRA driver. Its default is derived from the device profile.",
+			Usage:       "Name of the DRA driver. Its default is derived from the active device profile.",
 			Destination: &flags.driverName,
 			EnvVars:     []string{"DRIVER_NAME"},
 		},
@@ -114,17 +107,18 @@ func newApp() *cli.App {
 			return flags.loggingConfig.Apply()
 		},
 		Action: func(c *cli.Context) error {
-			configHandler, ok := validProfiles[flags.profile]
+			profile := featuregates.DeviceProfile()
+			configHandler, ok := validProfiles[profile]
 			if !ok {
 				var valid []string
 				for profileName := range validProfiles {
 					valid = append(valid, profileName)
 				}
-				return fmt.Errorf("invalid device profile %q, valid profiles are %q", flags.profile, valid)
+				return fmt.Errorf("invalid device profile %q, valid profiles are %q", profile, valid)
 			}
 
 			if flags.driverName == "" {
-				flags.driverName = flags.profile + ".example.com"
+				flags.driverName = profile + ".example.com"
 			}
 
 			mux, err := newMux(configHandler, flags.driverName)
