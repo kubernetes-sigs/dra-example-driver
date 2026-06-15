@@ -4,7 +4,8 @@
     "deviceProfile": {
       "type": "string",
       "enum": [
-        "gpu"
+        "gpu",
+        "cpu"
       ]
     }
   }
