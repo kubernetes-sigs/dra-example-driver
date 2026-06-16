@@ -1,22 +1,4 @@
 # Example: Shared ResourceClaim Across Pods
-#
-# One shared claim providing access to a GPU.
-# Two pods, each asking for access to the shared GPU.
-#
-# Uses a ResourceClaim (not a ResourceClaimTemplate), which is a standalone
-# object that multiple pods can reference by name.
-#
-# Expected: Both pods see the same GPU. Check with:
-#   kubectl logs -n basic-shared-claim-across-pods pod0 -c ctr0 | grep GPU_DEVICE
-#   kubectl logs -n basic-shared-claim-across-pods pod1 -c ctr0 | grep GPU_DEVICE
-# Both pods should show the same GPU ID.
-#
-# Driver requirements:
-#   Profile: gpu
-#   GPUs: 1
-#
-# Cluster requirements:
-#   Kubernetes 1.34+
 
 ---
 apiVersion: v1

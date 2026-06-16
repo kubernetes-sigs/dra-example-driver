@@ -1,0 +1,46 @@
+# Example: Extended Resource Requests via DRA (KEP-5004)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: extended-resource-request
+
+---
+# pod0: implicit extended-resource name. Works with the default chart install.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: extended-resource-request
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      limits:
+        deviceclass.resource.kubernetes.io/gpu.example.com: 1
+
+---
+# pod1: explicit extended-resource name. Requires the chart installed with
+# `--set deviceClass.extendedResourceName=example.com/gpu`, otherwise Pending.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: extended-resource-request
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      limits:
+        example.com/gpu: 1

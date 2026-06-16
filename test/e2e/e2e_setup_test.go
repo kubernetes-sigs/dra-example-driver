@@ -81,7 +81,7 @@ func init() {
 	cwd, _ := os.Getwd()
 	rootDir = filepath.Join(filepath.Dir(cwd), "..")
 	// command line flag for demo manifests directory
-	flag.StringVar(&demoManifestsDir, "demo-manifests-dir", filepath.Join(rootDir, "demo"), "Directory containing demo YAML manifests")
+	flag.StringVar(&demoManifestsDir, "demo-manifests-dir", filepath.Join(rootDir, "demo", "examples"), "Directory containing demo YAML manifests")
 }
 
 const (
@@ -127,7 +127,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 //   - "example.com/gpu" -> drv.ExtendedResourceName (only when set)
 func deployManifest(ctx context.Context, namespace, manifestFile string, drv installedDriver) {
 	GinkgoHelper()
-	absPath := filepath.Join(demoManifestsDir, manifestFile)
+	absPath := filepath.Join(demoManifestsDir, namespace, manifestFile)
 	raw, err := os.ReadFile(absPath)
 	Expect(err).NotTo(HaveOccurred(), "Failed to read manifest %s", absPath)
 
