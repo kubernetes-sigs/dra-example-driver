@@ -452,7 +452,7 @@ var _ = Describe("Test GPU allocation", func() {
 			containerName := "ctr0"
 			expectedGPUCount := 1
 
-			deployManifest(ctx, namespace, "binding-conditions/binding-conditions.yaml", drv)
+			deployManifest(ctx, namespace, "binding-conditions.yaml", drv)
 			checkPodsReadyAndRunning(ctx, namespace, pods)
 
 			observedGPUs := make(map[string]string)
