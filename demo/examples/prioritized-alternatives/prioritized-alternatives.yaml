@@ -1,0 +1,138 @@
+# Example: Prioritized Alternatives in Device Requests (KEP-4816)
+#
+# Two pods, one container each. Each pod's single DeviceRequest named "gpu"
+# provides a prioritized list of alternatives via the `firstAvailable` field.
+# The scheduler tries the subrequests in order and satisfies the request with
+# the first one that fits.
+#
+# pod0 demonstrates FALLBACK: the first two subrequests can't match any device,
+# so the request falls through to the third.
+#   1. bleeding-edge-gpu - selects on model == "BLEEDING-EDGE-GPU"
+#                          (no device matches; the driver publishes
+#                          model == "LATEST-GPU-MODEL")
+#   2. huge-gpu          - selects on memory >= 1Ti
+#                          (no device matches; the driver publishes 80Gi)
+#   3. older-gpu         - no selectors; matches any GPU in the class -> chosen
+#
+# pod1 demonstrates PREFERENCE: both subrequests can match, so the scheduler
+# picks the higher-priority one.
+#   1. latest-gpu        - selects on model == "LATEST-GPU-MODEL" (matches) -> chosen
+#   2. older-gpu         - no selectors; also matches, but lower priority
+#
+# Together these mirror KEP-4816 user story 1: prefer a high-end GPU, but accept
+# a less specialized one if the preferred options are not available.
+#
+# Expected: each pod gets exactly 1 GPU. pod0 is satisfied via "older-gpu" and
+# pod1 via "latest-gpu".
+# Check the GPUs were injected:
+#   kubectl logs -n prioritized-alternatives pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n prioritized-alternatives pod1 -c ctr0 | grep GPU_DEVICE
+# Check which subrequest the scheduler chose for each pod (the request field is
+# "gpu/older-gpu" for pod0 and "gpu/latest-gpu" for pod1):
+#   kubectl get resourceclaim -n prioritized-alternatives \
+#     -o jsonpath='{range .items[*]}{.status.allocation.devices.results[*].request}{"\n"}{end}'
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 2
+#
+# Cluster requirements:
+#   Kubernetes 1.34+ with the DRAPrioritizedList feature gate enabled
+#   (Beta and on by default in 1.34-1.35; GA in 1.36+)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: prioritized-alternatives
+
+---
+# pod0: fallback. The first two subrequests match no device, so the request is
+# satisfied by the third, "older-gpu".
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: prioritized-alternatives
+  name: prioritized-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        firstAvailable:
+        - name: bleeding-edge-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.example.com'].model == 'BLEEDING-EDGE-GPU'"
+        - name: huge-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.capacity['gpu.example.com'].memory.compareTo(quantity('1Ti')) >= 0"
+        - name: older-gpu
+          deviceClassName: gpu.example.com
+
+---
+# pod1: preference. Both subrequests match, so the scheduler chooses the
+# higher-priority one, "latest-gpu".
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: prioritized-alternatives
+  name: preferred-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        firstAvailable:
+        - name: latest-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.example.com'].model == 'LATEST-GPU-MODEL'"
+        - name: older-gpu
+          deviceClassName: gpu.example.com
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: prioritized-alternatives
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: prioritized-gpu
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: prioritized-alternatives
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: preferred-gpu

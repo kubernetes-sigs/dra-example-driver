@@ -204,6 +204,27 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyGPUAllocation(ctx, namespace, pods[0], containerName, expectedGPUCount, observedGPUs)
 	})
 
+	It("should honor firstAvailable priority order, preferring higher-priority subrequests and falling back when they don't match", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
+		namespace := "prioritized-alternatives"
+		pods := []string{"pod0", "pod1"}
+		containerName := "ctr0"
+		expectedGPUCount := 1
+
+		deployManifest(ctx, namespace, "prioritized-alternatives.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		for _, podName := range pods {
+			verifyGPUAllocation(ctx, namespace, podName, containerName, expectedGPUCount, observedGPUs)
+		}
+
+		// pod0 falls through to the only satisfiable subrequest.
+		verifyChosenSubrequest(ctx, namespace, "pod0", "gpu", drv.DriverName, "gpu/older-gpu")
+		// pod1 has two satisfiable subrequests, so the higher-priority one wins.
+		verifyChosenSubrequest(ctx, namespace, "pod1", "gpu", drv.DriverName, "gpu/latest-gpu")
+	})
+
 	It("Should share 1 GPU among the Pods in each of 2 PodGroups", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{})
 		namespace := "podgroup-resourceclaimtemplate"
