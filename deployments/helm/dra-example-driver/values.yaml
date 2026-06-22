@@ -10,8 +10,29 @@ selectorLabelsOverride: {}
 allowDefaultNamespace: false
 
 # deviceProfile describes the overall shape of the devices managed by the
-# driver. Available profiles are:
-#   - "gpu": Node-local devices configurable through opaque config
+# driver. The default is "gpu" so the existing demo and tests keep working
+# without any changes; pick a different profile only when you specifically
+# want to use a different device profile.
+#
+# Available profiles:
+#   - "gpu":      (default) Node-local mock GPUs configurable through
+#                 opaque config. This is what the README quickstart
+#                 and the demo/gpu-test*.yaml fixtures exercise.
+#   - "vfio-gpu": Real PCI devices already bound to the vfio-pci
+#                 kernel driver, discovered by walking
+#                 /sys/bus/pci/drivers/vfio-pci. Each such device is
+#                 advertised as a DRA device with attributes for the
+#                 PCI bus ID, vendor/device/class and IOMMU group
+#                 (vendor/device/class are sourced from
+#                 /sys/bus/pci/devices/<BDF>/).
+#
+# Examples:
+#   helm install ... dra-example-driver deployments/helm/dra-example-driver
+#   helm install ... --set deviceProfile=vfio-gpu dra-example-driver-vfio-gpu deployments/helm/dra-example-driver
+#
+# The driverName (and therefore the DeviceClass name) defaults to
+# "<deviceProfile>.example.com", so the profiles can coexist in the
+# same cluster as separate driver instances.
 deviceProfile: "gpu"
 
 # driverName uniquely identifies the driver within the cluster. When empty, its
@@ -81,6 +102,7 @@ kubeletPlugin:
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
   # bindingConditions enables or disables binding conditions processing in the DRA driver
   bindingConditions: false
+  enableDeviceMetadata: false
   containers:
     init:
       securityContext: {}
