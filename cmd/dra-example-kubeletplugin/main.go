@@ -24,6 +24,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/urfave/cli/v2"
 
@@ -35,6 +36,7 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
+	"sigs.k8s.io/dra-example-driver/pkg/metrics"
 )
 
 const (
@@ -51,6 +53,7 @@ type Flags struct {
 	kubeletRegistrarDirectoryPath string
 	kubeletPluginsDirectoryPath   string
 	healthcheckPort               int
+	metricsPort                   int
 	profile                       string
 	driverName                    string
 	podUID                        string
@@ -143,6 +146,13 @@ func newApp() *cli.App {
 			Value:       -1,
 			Destination: &flags.healthcheckPort,
 			EnvVars:     []string{"HEALTHCHECK_PORT"},
+		},
+		&cli.IntFlag{
+			Name:        "metrics-port",
+			Usage:       "Port to expose Prometheus metrics at /metrics. When positive, a literal port number. When zero, a random port is allocated. When negative, metrics are disabled.",
+			Value:       -1,
+			Destination: &flags.metricsPort,
+			EnvVars:     []string{"METRICS_PORT"},
 		},
 		&cli.StringFlag{
 			Name:        "device-profile",
@@ -267,6 +277,18 @@ func RunPlugin(ctx context.Context, config *Config) error {
 	defer stop()
 	ctx, cancel := context.WithCancelCause(ctx)
 	config.cancelMainCtx = cancel
+
+	metricsServer, err := metrics.StartServer(ctx, config.flags.metricsPort)
+	if err != nil {
+		return fmt.Errorf("start metrics server: %w", err)
+	}
+	defer func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		if err := metricsServer.Stop(shutdownCtx); err != nil {
+			logger.Error(err, "failed to stop metrics server")
+		}
+	}()
 
 	driver, err := NewDriver(ctx, config)
 	if err != nil {

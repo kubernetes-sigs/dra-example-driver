@@ -9,3 +9,6 @@ driver_image.tar
 
 # Ignore config telemetry files
 .config/
+
+# Ignore .bin files
+.bin/
