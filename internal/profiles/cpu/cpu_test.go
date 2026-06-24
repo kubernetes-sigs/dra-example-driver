@@ -81,7 +81,7 @@ func TestApplyConfig(t *testing.T) {
 		},
 	}}
 
-	edits, err := profile.ApplyConfig(nil, results)
+	edits, err := profile.ApplyConfig("test-claim", nil, results)
 	require.NoError(t, err)
 	require.Contains(t, edits, "numa-0")
 	assert.ElementsMatch(t,

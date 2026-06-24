@@ -108,7 +108,7 @@ func (p Profile) Validate(config runtime.Object) error {
 // configuration and otherwise injects env vars per allocated NUMA device so
 // the demo container can show which device was allocated and how much CPU
 // capacity was consumed.
-func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
+func (p Profile) ApplyConfig(claimName string, config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
 	if config != nil {
 		return nil, errors.New("configuration not allowed")
 	}
