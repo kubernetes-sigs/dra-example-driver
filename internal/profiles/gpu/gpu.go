@@ -17,6 +17,7 @@
 package gpu
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -316,6 +317,8 @@ func (p Profile) BuildDeviceStatus(allocatable map[string]resourceapi.Device, re
 	if !p.enableDeviceStatus {
 		return nil
 	}
+	ctx := context.Background()
+	logger := klog.FromContext(ctx).WithValues("device", result.Device)
 
 	deviceInfo := make(map[string]resourceapi.DeviceAttribute)
 	if d, ok := allocatable[result.Device]; ok {
@@ -328,7 +331,7 @@ func (p Profile) BuildDeviceStatus(allocatable map[string]resourceapi.Device, re
 
 	jsonBytes, err := json.Marshal(deviceInfo)
 	if err != nil {
-		klog.Errorf("Failed to marshal device data for %s: %v", result.Device, err)
+		logger.Error(err, "Failed to marshal device data")
 		jsonBytes = []byte("{}")
 	}
 

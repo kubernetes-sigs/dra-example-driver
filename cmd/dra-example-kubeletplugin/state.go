@@ -36,7 +36,7 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	"k8s.io/klog/v2"
-	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
+	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
