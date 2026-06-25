@@ -64,4 +64,6 @@ func TestStartServerServesMetrics(t *testing.T) {
 	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Contains(t, string(body), "go_goroutines")
+	require.Contains(t, string(body), "dra_example_driver_prepare_claims_total")
+	require.Contains(t, string(body), "dra_example_driver_unprepare_claims_total")
 }

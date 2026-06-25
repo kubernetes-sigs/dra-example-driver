@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -27,6 +28,8 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
+
+	"sigs.k8s.io/dra-example-driver/pkg/metrics"
 )
 
 type driver struct {
@@ -94,15 +97,22 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 	return result, nil
 }
 
-func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
+func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) (result kubeletplugin.PrepareResult) {
 	logger := klog.FromContext(ctx)
 	logger.Info("Preparing claim", "uid", claim.UID, "namespace", claim.Namespace, "name", claim.Name)
+
+	start := time.Now()
+	defer func() {
+		metrics.ObservePrepareClaim(result.Err, time.Since(start))
+	}()
+
 	preparedDevices, err := d.state.Prepare(ctx, claim)
 	if err != nil {
 		logger.Error(err, "Error preparing devices for claim", "uid", claim.UID)
-		return kubeletplugin.PrepareResult{
+		result = kubeletplugin.PrepareResult{
 			Err: fmt.Errorf("error preparing devices for claim %v: %w", claim.UID, err),
 		}
+		return result
 	}
 	var prepared []kubeletplugin.Device
 	for _, preparedDevice := range preparedDevices {
@@ -116,7 +126,8 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 	}
 
 	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)
-	return kubeletplugin.PrepareResult{Devices: prepared}
+	result = kubeletplugin.PrepareResult{Devices: prepared}
+	return result
 }
 
 func (d *driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletplugin.NamespacedObject) (map[types.UID]error, error) {
@@ -131,8 +142,13 @@ func (d *driver) UnprepareResourceClaims(ctx context.Context, claims []kubeletpl
 	return result, nil
 }
 
-func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.NamespacedObject) error {
-	if err := d.state.Unprepare(claim.UID); err != nil {
+func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.NamespacedObject) (err error) {
+	start := time.Now()
+	defer func() {
+		metrics.ObserveUnprepareClaim(err, time.Since(start))
+	}()
+
+	if err = d.state.Unprepare(claim.UID); err != nil {
 		return fmt.Errorf("error unpreparing devices for claim %v: %w", claim.UID, err)
 	}
 
@@ -141,7 +157,10 @@ func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.N
 
 func (d *driver) HandleError(ctx context.Context, err error, msg string) {
 	utilruntime.HandleErrorWithContext(ctx, err, msg)
-	if !errors.Is(err, kubeletplugin.ErrRecoverable) && d.cancelCtx != nil {
-		d.cancelCtx(fmt.Errorf("fatal background error: %w", err))
+	if !errors.Is(err, kubeletplugin.ErrRecoverable) {
+		metrics.FatalBackgroundErrorsTotal.Inc()
+		if d.cancelCtx != nil {
+			d.cancelCtx(fmt.Errorf("fatal background error: %w", err))
+		}
 	}
 }
