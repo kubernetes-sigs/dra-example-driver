@@ -1,0 +1,106 @@
+# Example: NIC Allocation with Consumable Bandwidth Capacity
+#
+# Two pods, one container each.
+# Each pod requests a NIC (Network Interface Card) and specifies how much
+# ingress and egress bandwidth it needs via the DRA consumable capacity API.
+# Both pods may share the same physical NIC as long as the combined bandwidth
+# requests do not exceed the device's total capacity (100Gbps each direction).
+#
+# Expected: Each container receives NET_DEVICE_*_INGRESS_RATE and
+# NET_DEVICE_*_EGRESS_RATE env vars reflecting the allocated bandwidth.
+# Check with:
+#   kubectl logs -n net-consumable-capacity pod0 -c ctr0 | grep NET_DEVICE
+#   kubectl logs -n net-consumable-capacity pod1 -c ctr0 | grep NET_DEVICE
+#
+# Driver requirements:
+#   Profile: net
+#   NICs: 1 (both pods share one NIC with separate bandwidth slices)
+#
+# Cluster requirements:
+#   Kubernetes 1.35+ with the DRAConsumableCapacity feature gate enabled
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: net-consumable-capacity
+
+---
+# pod0 requests 10Gbps ingress and 5Gbps egress
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: net-consumable-capacity
+  name: nic-10g-in-5g-out
+spec:
+  spec:
+    devices:
+      requests:
+      - name: nic
+        exactly:
+          deviceClassName: net.example.com
+          capacity:
+            requests:
+              ingressBandwidth: "10G"
+              egressBandwidth: "5G"
+
+---
+# pod1 requests 5Gbps ingress and 5Gbps egress
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: net-consumable-capacity
+  name: nic-5g-in-5g-out
+spec:
+  spec:
+    devices:
+      requests:
+      - name: nic
+        exactly:
+          deviceClassName: net.example.com
+          capacity:
+            requests:
+              ingressBandwidth: "5G"
+              egressBandwidth: "5G"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: net-consumable-capacity
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: nic
+  resourceClaims:
+  - name: nic
+    resourceClaimTemplateName: nic-10g-in-5g-out
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: net-consumable-capacity
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: nic
+  resourceClaims:
+  - name: nic
+    resourceClaimTemplateName: nic-5g-in-5g-out

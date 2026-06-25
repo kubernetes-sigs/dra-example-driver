@@ -21,7 +21,7 @@ VERSION  ?=
 vVERSION := v$(VERSION:v%=%)
 
 VENDOR := example.com
-APIS := $(CURDIR)/api/$(VENDOR)/resource/gpu/v1alpha1 $(CURDIR)/internal/api/checkpoint $(CURDIR)/internal/api/checkpoint/v1
+APIS := $(CURDIR)/api/$(VENDOR)/resource/gpu/v1alpha1 $(CURDIR)/internal/api/checkpoint $(CURDIR)/internal/api/checkpoint/v1 $(CURDIR)/api/$(VENDOR)/resource/net/v1alpha1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters
 PLURAL_EXCEPTIONS += GpuClaimParameters:GpuClaimParameters
