@@ -58,6 +58,12 @@ spec:
           failureThreshold: 3
           periodSeconds: 10
         {{- end }}
+        {{- if (gt (int .Values.kubeletPlugin.containers.plugin.metricsPort) 0) }}
+        ports:
+        - name: metrics
+          containerPort: {{ .Values.kubeletPlugin.containers.plugin.metricsPort }}
+          protocol: TCP
+        {{- end }}
         env:
         - name: DRIVER_NAME
           value: {{ include "dra-example-driver.driverName" . | quote }}
@@ -82,9 +88,13 @@ spec:
           value: {{ .Values.kubeletPlugin.numDevices | quote }}
         - name: GPU_DEVICE_STATUS
           value: {{ .Values.gpuDeviceStatus | quote }}
-        {{- if .Values.kubeletPlugin.containers.plugin.healthcheckPort }}
+        {{- if (gt (int .Values.kubeletPlugin.containers.plugin.healthcheckPort) 0) }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}
+        {{- end }}
+        {{- if (gt (int .Values.kubeletPlugin.containers.plugin.metricsPort) 0) }}
+        - name: METRICS_PORT
+          value: {{ .Values.kubeletPlugin.containers.plugin.metricsPort | quote }}
         {{- end }}
         - name: GPU_PARTITIONS
           value: {{ .Values.kubeletPlugin.gpuPartitions | quote }}
