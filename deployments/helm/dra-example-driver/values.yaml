@@ -92,6 +92,9 @@ kubeletPlugin:
       # Port running a gRPC health service checked by a livenessProbe.
       # Set to a negative value to disable the service and the probe.
       healthcheckPort: 51515
+      # Port exposing Prometheus metrics at /metrics.
+      # Set to a negative value to disable the metrics server.
+      metricsPort: 8080
 
 controller:
   # plugins is a list of plugins to enable in the controller.

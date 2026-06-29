@@ -24,6 +24,10 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+
+	// Register client-go REST client metrics with the Prometheus registry
+	// used by pkg/metrics (rest_client_requests_total, etc.).
+	_ "k8s.io/component-base/metrics/prometheus/restclient"
 )
 
 type KubeClientConfig struct {
