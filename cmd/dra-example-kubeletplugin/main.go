@@ -282,13 +282,13 @@ func RunPlugin(ctx context.Context, config *Config) error {
 	if err != nil {
 		return fmt.Errorf("start metrics server: %w", err)
 	}
-	defer func() {
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer func(ctx context.Context) {
+		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 5*time.Second)
 		defer shutdownCancel()
 		if err := metricsServer.Stop(shutdownCtx); err != nil {
 			logger.Error(err, "failed to stop metrics server")
 		}
-	}()
+	}(context.WithoutCancel(ctx))
 
 	driver, err := NewDriver(ctx, config)
 	if err != nil {
