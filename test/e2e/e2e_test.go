@@ -277,6 +277,25 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
+	It("should allocate NIC bandwidth slices using consumable capacity", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{
+			ExtraValues: map[string]string{
+				"deviceProfile":            "net",
+				"kubeletPlugin.numDevices": "4",
+			},
+		})
+		namespace := "net-consumable-capacity"
+		pods := []string{"pod0", "pod1"}
+		containerName := "ctr0"
+
+		deployManifest(ctx, namespace, "net-consumable-capacity.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		for _, podName := range pods {
+			verifyNetDeviceAllocation(ctx, namespace, podName, containerName)
+		}
+	})
+
 	It("should allocate partition devices from shared GPU counters", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{
 			ExtraValues: map[string]string{

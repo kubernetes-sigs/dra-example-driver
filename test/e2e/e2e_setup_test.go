@@ -69,9 +69,14 @@ const defaultGPUDeviceClassName = "gpu.example.com"
 // driver name.
 const defaultCPUDeviceClassName = "cpu.example.com"
 
+// defaultNETDeviceClassName is the driver name baked into demo manifests
+// using the net profile; deployManifest substitutes it for the per-test
+// driver name.
+const defaultNETDeviceClassName = "net.example.com"
+
 // defaultDeviceClassNames are the driver names baked into demo manifests as
 // placeholders; deployManifest substitutes each for the per-test driver name.
-var defaultDeviceClassNames = []string{defaultGPUDeviceClassName, defaultCPUDeviceClassName}
+var defaultDeviceClassNames = []string{defaultGPUDeviceClassName, defaultCPUDeviceClassName, defaultNETDeviceClassName}
 
 // defaultExtendedResourceName is the extended resource name baked into demo
 // manifests; deployManifest substitutes it when ExtendedResourceName is set.
@@ -92,6 +97,9 @@ const (
 var (
 	gpuDeviceRegexp = regexp.MustCompile(`(?m)^declare -x GPU_DEVICE_[A-Z0-9_]+="(gpu-.+)"$`)
 	gpuIDRegexp     = regexp.MustCompile(`^gpu-(.+)$`)
+
+	// netDeviceRateRegexp matches NET_DEVICE_<N>_{INGRESS,EGRESS}_RATE lines from pod logs.
+	netDeviceRateRegexp = regexp.MustCompile(`(?m)^declare -x NET_DEVICE_(\d+)_(INGRESS|EGRESS)_RATE="(\d+)"$`)
 )
 
 func TestE2e(t *testing.T) {
@@ -815,4 +823,32 @@ func verifyResourceSliceBindingConditions(ctx context.Context, driverName string
 			}
 		}
 	}, "30s", "2s").Should(Succeed())
+}
+
+// verifyNetDeviceAllocation checks that at least one NET_DEVICE_*_INGRESS_RATE
+// and NET_DEVICE_*_EGRESS_RATE environment variable is present in the container
+// logs, confirming that a NIC was allocated with consumable bandwidth capacity.
+func verifyNetDeviceAllocation(ctx context.Context, namespace, podName, containerName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		req := clientset.CoreV1().Pods(namespace).GetLogs(podName, &v1.PodLogOptions{
+			Container: containerName,
+		})
+		stream, err := req.Stream(ctx)
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to stream logs for pod %s/%s, container %s", namespace, podName, containerName)
+		defer stream.Close()
+		buf := new(bytes.Buffer)
+		_, err = io.Copy(buf, stream)
+		g.Expect(err).NotTo(HaveOccurred(),
+			"Failed to read logs for pod %s/%s, container %s", namespace, podName, containerName)
+
+		logs := buf.String()
+		matches := netDeviceRateRegexp.FindAllStringSubmatch(logs, -1)
+		g.Expect(matches).NotTo(BeEmpty(),
+			"Pod %s/%s container %s: no NET_DEVICE_*_INGRESS_RATE or EGRESS_RATE env vars found in logs:\n%s",
+			namespace, podName, containerName, logs)
+		fmt.Fprintf(GinkgoWriter, "Pod %s/%s container %s: found net device rate env vars: %v\n",
+			namespace, podName, containerName, matches)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
