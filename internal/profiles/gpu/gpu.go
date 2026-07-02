@@ -36,6 +36,7 @@ import (
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 const (
@@ -45,20 +46,22 @@ const (
 )
 
 type Profile struct {
-	nodeName           string
-	numGPUs            int
-	partitionsPerGPU   int
-	enableDeviceStatus bool
-	bindingConditions  bool
+	nodeName                 string
+	numGPUs                  int
+	partitionsPerGPU         int
+	enableDeviceStatus       bool
+	bindingConditions        bool
+	allowMultipleAllocations bool
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool, bindingConditions bool) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool, bindingConditions bool, allowMultipleAllocations bool) Profile {
 	return Profile{
-		nodeName:           nodeName,
-		numGPUs:            numGPUs,
-		partitionsPerGPU:   partitionsPerGPU,
-		enableDeviceStatus: enableDeviceStatus,
-		bindingConditions:  bindingConditions,
+		nodeName:                 nodeName,
+		numGPUs:                  numGPUs,
+		partitionsPerGPU:         partitionsPerGPU,
+		enableDeviceStatus:       enableDeviceStatus,
+		bindingConditions:        bindingConditions,
+		allowMultipleAllocations: allowMultipleAllocations,
 	}
 }
 
@@ -114,12 +117,12 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 				partitionAttrs["partitionable"] = resourceapi.DeviceAttribute{BoolValue: ptr.To(true)}
 
 				devices = append(devices, resourceapi.Device{
-					Name:       fmt.Sprintf("gpu-%d-partition-%d", i, j),
-					Attributes: partitionAttrs,
+					Name:                     fmt.Sprintf("gpu-%d-partition-%d", i, j),
+					Attributes:               partitionAttrs,
+					AllowMultipleAllocations: ptr.To(p.allowMultipleAllocations),
 					Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-						"memory": {
-							Value: partitionMemory,
-						},
+						"memory":  p.memoryCapacity(partitionMemory),
+						"compute": p.computeCapacity(partitionCompute),
 					},
 					ConsumesCounters: []resourceapi.DeviceCounterConsumption{
 						{
@@ -143,12 +146,12 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			fullAttrs["full"] = resourceapi.DeviceAttribute{BoolValue: ptr.To(true)}
 
 			devices = append(devices, resourceapi.Device{
-				Name:       fmt.Sprintf("gpu-%d-full", i),
-				Attributes: fullAttrs,
+				Name:                     fmt.Sprintf("gpu-%d-full", i),
+				Attributes:               fullAttrs,
+				AllowMultipleAllocations: ptr.To(p.allowMultipleAllocations),
 				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-					"memory": {
-						Value: memoryPerGPU,
-					},
+					"memory":  p.memoryCapacity(memoryPerGPU),
+					"compute": p.computeCapacity(computePerGPU),
 				},
 				ConsumesCounters: []resourceapi.DeviceCounterConsumption{
 					{
@@ -166,12 +169,12 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			})
 		} else {
 			devices = append(devices, resourceapi.Device{
-				Name:       fmt.Sprintf("gpu-%d", i),
-				Attributes: attrs,
+				Name:                     fmt.Sprintf("gpu-%d", i),
+				Attributes:               attrs,
+				AllowMultipleAllocations: ptr.To(p.allowMultipleAllocations),
 				Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
-					"memory": {
-						Value: memoryPerGPU,
-					},
+					"memory":  p.memoryCapacity(memoryPerGPU),
+					"compute": p.computeCapacity(computePerGPU),
 				},
 			})
 		}
@@ -201,6 +204,60 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 	}
 
 	return resources, nil
+}
+
+// memoryCapacity builds a DeviceCapacity for a memory quantity.
+// When allowMultipleAllocations is enabled it attaches a RequestPolicy with
+// ValidRange{Min: 1Gi, Step: 1Gi, Max: value} so consumers can request any
+// 1Gi-aligned amount up to the full device memory.
+//
+// 1Gi is chosen as both the minimum and step for flexibility: when used with a
+// PartitionableDevice the number of partitions can be any number.
+// partitionMemory must be >= 1Gi.
+func (p Profile) memoryCapacity(value resource.Quantity) resourceapi.DeviceCapacity {
+	dc := resourceapi.DeviceCapacity{Value: value}
+	if p.allowMultipleAllocations {
+		min := resource.MustParse("1Gi")
+		step := resource.MustParse("1Gi")
+		defaultVal := value.DeepCopy()
+		maxVal := value.DeepCopy()
+		dc.RequestPolicy = &resourceapi.CapacityRequestPolicy{
+			Default: &defaultVal,
+			ValidRange: &resourceapi.CapacityRequestPolicyRange{
+				Min:  &min,
+				Step: &step,
+				Max:  &maxVal,
+			},
+		}
+	}
+	return dc
+}
+
+// computeCapacity builds a DeviceCapacity for a compute quantity.
+// When allowMultipleAllocations is enabled it attaches a RequestPolicy with
+// ValidRange{Min: 1, Step: 1, Max: value} so consumers can request any
+// multiple of 1 up to the full device compute capacity.
+//
+// 1 is chosen as both the minimum and step for flexibility: when used with a
+// PartitionableDevice the number of partitions can be any number.
+// partitionCompute must be >= 1.
+func (p Profile) computeCapacity(value resource.Quantity) resourceapi.DeviceCapacity {
+	dc := resourceapi.DeviceCapacity{Value: value}
+	if p.allowMultipleAllocations {
+		min := resource.MustParse("1")
+		step := resource.MustParse("1")
+		defaultVal := value.DeepCopy()
+		maxVal := value.DeepCopy()
+		dc.RequestPolicy = &resourceapi.CapacityRequestPolicy{
+			Default: &defaultVal,
+			ValidRange: &resourceapi.CapacityRequestPolicyRange{
+				Min:  &min,
+				Step: &step,
+				Max:  &maxVal,
+			},
+		}
+	}
+	return dc
 }
 
 func generateUUIDs(seed string, count int) []string {
@@ -299,11 +356,21 @@ func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRe
 			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_PARTITION_COUNT=%v", envID, spconfig.PartitionCount))
 		}
 
+		if memory, ok := result.ConsumedCapacity["memory"]; ok {
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_MEMORY=%s", envID, memory.String()))
+		}
+		if compute, ok := result.ConsumedCapacity["compute"]; ok {
+			envs = append(envs, fmt.Sprintf("GPU_DEVICE_%s_COMPUTE=%s", envID, compute.String()))
+		}
+
 		edits := &cdispec.ContainerEdits{
 			Env: envs,
 		}
 
-		perDeviceEdits[result.Device] = &cdiapi.ContainerEdits{ContainerEdits: edits}
+		// Key edits by the share-aware device ID so that multiple allocations
+		// of the same device (AllowMultipleAllocations) each get their own edits.
+		deviceID := helpers.GetCDIDeviceID(result.Device, (*string)(result.ShareID))
+		perDeviceEdits[deviceID] = &cdiapi.ContainerEdits{ContainerEdits: edits}
 	}
 
 	return perDeviceEdits, nil

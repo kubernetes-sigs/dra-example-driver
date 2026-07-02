@@ -61,6 +61,7 @@ type Flags struct {
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
 	bindingConditions             bool
+	gpuAllowMultipleAllocations   bool
 	cpuNUMANodes                  int
 	cpusPerNUMANode               int
 }
@@ -75,7 +76,7 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions, flags.gpuAllowMultipleAllocations)
 	},
 	cpu.ProfileName: func(flags Flags) profiles.Profile {
 		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode)
@@ -196,6 +197,12 @@ func newApp() *cli.App {
 			Value:       false,
 			Destination: &flags.bindingConditions,
 			EnvVars:     []string{"BINDING_CONDITIONS"},
+		},
+		&cli.BoolFlag{
+			Name:        "gpu-allow-multiple-allocations",
+			Usage:       "Allow GPU devices to be allocated to multiple DeviceRequests. Disabled by default.",
+			Destination: &flags.gpuAllowMultipleAllocations,
+			EnvVars:     []string{"GPU_ALLOW_MULTIPLE_ALLOCATIONS"},
 		},
 		&cli.IntFlag{
 			Name:        "cpu-numa-nodes",

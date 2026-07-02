@@ -1,0 +1,87 @@
+# Example: Two Pods sharing one partition device via AllowMultipleAllocations
+# (DRAConsumableCapacity) with partitionable devices enabled. Each pod requests
+# a slice of a partition's memory and compute capacity. The driver must be
+# installed with both gpuAllowMultipleAllocations=true and
+# kubeletPlugin.gpuPartitions > 0.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-allow-multiple-allocations-partitionable
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-allow-multiple-allocations-partitionable
+  name: shared-partition-pod0
+spec:
+  devices:
+    requests:
+    - name: gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        capacity:
+          requests:
+            memory: 8Gi
+            compute: "10"
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-allow-multiple-allocations-partitionable
+  name: shared-partition-pod1
+spec:
+  devices:
+    requests:
+    - name: gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        capacity:
+          requests:
+            memory: 8Gi
+            compute: "10"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-allow-multiple-allocations-partitionable
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimName: shared-partition-pod0
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-allow-multiple-allocations-partitionable
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimName: shared-partition-pod1

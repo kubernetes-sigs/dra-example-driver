@@ -18,38 +18,43 @@ package gpu
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4, 0, false, false)
+	profile := NewProfile("test-node", 4, 0, false, false, false)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numGPUs)
 	assert.Equal(t, 0, profile.partitionsPerGPU)
 	assert.False(t, profile.enableDeviceStatus)
 	assert.Equal(t, false, profile.bindingConditions)
+	assert.Equal(t, false, profile.allowMultipleAllocations)
 }
 
 func TestNewProfile_WithAllOptions(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4, false, true)
+	profile := NewProfile("test-node", 2, 4, false, true, true)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 2, profile.numGPUs)
 	assert.Equal(t, 4, profile.partitionsPerGPU)
 	assert.Equal(t, true, profile.bindingConditions)
+	assert.Equal(t, true, profile.allowMultipleAllocations)
 }
 
 func TestEnumerateDevices_Standard(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0, false, false)
+	profile := NewProfile("test-node", 2, 0, false, false, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -84,15 +89,57 @@ func TestEnumerateDevices_Standard(t *testing.T) {
 		assert.NotNil(t, device.Attributes["model"].StringValue)
 		assert.Equal(t, "LATEST-GPU-MODEL", *device.Attributes["model"].StringValue)
 
-		// Verify capacity
+		// AllowMultipleAllocations should be false (not enabled)
+		require.NotNil(t, device.AllowMultipleAllocations)
+		assert.False(t, *device.AllowMultipleAllocations)
+
+		// No RequestPolicy when allowMultipleAllocations is disabled
 		memoryKey := resourceapi.QualifiedName("memory")
 		assert.Contains(t, device.Capacity, memoryKey)
 		assert.Equal(t, resource.MustParse("80Gi"), device.Capacity[memoryKey].Value)
+		assert.Nil(t, device.Capacity[memoryKey].RequestPolicy)
+
+		computeKey := resourceapi.QualifiedName("compute")
+		assert.Contains(t, device.Capacity, computeKey)
+		assert.Equal(t, resource.MustParse("100"), device.Capacity[computeKey].Value)
+		assert.Nil(t, device.Capacity[computeKey].RequestPolicy)
 	}
 }
 
+func TestEnumerateDevices_AllowMultipleAllocations(t *testing.T) {
+	profile := NewProfile("test-node", 1, 0, false, false, true)
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	device := resources.Pools["test-node"].Slices[0].Devices[0]
+
+	require.NotNil(t, device.AllowMultipleAllocations)
+	assert.True(t, *device.AllowMultipleAllocations)
+
+	// memory: ValidRange{Min: 1Gi, Step: 1Gi, Max: 80Gi}, Default: 80Gi
+	memoryCap := device.Capacity[resourceapi.QualifiedName("memory")]
+	assert.Equal(t, resource.MustParse("80Gi"), memoryCap.Value)
+	require.NotNil(t, memoryCap.RequestPolicy)
+	assert.Equal(t, resource.MustParse("80Gi"), *memoryCap.RequestPolicy.Default)
+	require.NotNil(t, memoryCap.RequestPolicy.ValidRange)
+	assert.Equal(t, resource.MustParse("1Gi"), *memoryCap.RequestPolicy.ValidRange.Min)
+	assert.Equal(t, resource.MustParse("1Gi"), *memoryCap.RequestPolicy.ValidRange.Step)
+	assert.Equal(t, resource.MustParse("80Gi"), *memoryCap.RequestPolicy.ValidRange.Max)
+
+	// compute: ValidRange{Min: 1, Step: 1, Max: 100}, Default: 100
+	computeCap := device.Capacity[resourceapi.QualifiedName("compute")]
+	assert.Equal(t, resource.MustParse("100"), computeCap.Value)
+	require.NotNil(t, computeCap.RequestPolicy)
+	assert.Equal(t, resource.MustParse("100"), *computeCap.RequestPolicy.Default)
+	require.NotNil(t, computeCap.RequestPolicy.ValidRange)
+	assert.Equal(t, resource.MustParse("1"), *computeCap.RequestPolicy.ValidRange.Min)
+	assert.Equal(t, resource.MustParse("1"), *computeCap.RequestPolicy.ValidRange.Step)
+	assert.Equal(t, resource.MustParse("100"), *computeCap.RequestPolicy.ValidRange.Max)
+}
+
 func TestEnumerateDevices_Partitionable(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4, false, false)
+	profile := NewProfile("test-node", 2, 4, false, false, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -138,7 +185,7 @@ func TestEnumerateDevices_Partitionable(t *testing.T) {
 }
 
 func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2, false, false)
+	profile := NewProfile("test-node", 1, 2, false, false, false)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -189,10 +236,91 @@ func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
 	assert.Equal(t, resource.MustParse("100"), fullDevice.ConsumesCounters[0].Counters["compute"].Value)
 }
 
+func TestEnumerateDevices_AllowMultipleAllocations_AndPartitions(t *testing.T) {
+	profile := NewProfile("test-node", 1, 2, false, false, true)
+
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	pool := resources.Pools["test-node"]
+
+	// Two slices: counter slice + device slice
+	require.Len(t, pool.Slices, 2)
+	deviceSlice := pool.Slices[1]
+
+	// 2 partition devices + 1 full device
+	require.Len(t, deviceSlice.Devices, 3)
+
+	// Partition devices: AllowMultipleAllocations=true + RequestPolicy scoped to partition size
+	for i := 0; i < 2; i++ {
+		device := deviceSlice.Devices[i]
+		assert.Equal(t, fmt.Sprintf("gpu-0-partition-%d", i), device.Name)
+
+		require.NotNil(t, device.AllowMultipleAllocations)
+		assert.True(t, *device.AllowMultipleAllocations)
+
+		// memory capacity: Value=40Gi, RequestPolicy{Default:40Gi, ValidRange{Min:1Gi,Step:1Gi,Max:40Gi}}
+		memoryCap := device.Capacity[resourceapi.QualifiedName("memory")]
+		assert.Equal(t, resource.MustParse("40Gi"), memoryCap.Value)
+		require.NotNil(t, memoryCap.RequestPolicy)
+		assert.Equal(t, resource.MustParse("40Gi"), *memoryCap.RequestPolicy.Default)
+		require.NotNil(t, memoryCap.RequestPolicy.ValidRange)
+		assert.Equal(t, resource.MustParse("1Gi"), *memoryCap.RequestPolicy.ValidRange.Min)
+		assert.Equal(t, resource.MustParse("1Gi"), *memoryCap.RequestPolicy.ValidRange.Step)
+		assert.Equal(t, resource.MustParse("40Gi"), *memoryCap.RequestPolicy.ValidRange.Max)
+
+		// compute capacity: Value=50, RequestPolicy{Default:50, ValidRange{Min:1,Step:1,Max:50}}
+		fifty := resource.MustParse("50")
+		computeCap := device.Capacity[resourceapi.QualifiedName("compute")]
+		assert.Equal(t, fifty.Value(), computeCap.Value.Value())
+		require.NotNil(t, computeCap.RequestPolicy)
+		assert.Equal(t, fifty.Value(), computeCap.RequestPolicy.Default.Value())
+		require.NotNil(t, computeCap.RequestPolicy.ValidRange)
+		assert.Equal(t, resource.MustParse("1"), *computeCap.RequestPolicy.ValidRange.Min)
+		assert.Equal(t, resource.MustParse("1"), *computeCap.RequestPolicy.ValidRange.Step)
+		assert.Equal(t, fifty.Value(), computeCap.RequestPolicy.ValidRange.Max.Value())
+
+		// ConsumesCounters still present
+		require.Len(t, device.ConsumesCounters, 1)
+		assert.Equal(t, "gpu-0-counters", device.ConsumesCounters[0].CounterSet)
+	}
+
+	// Full device: AllowMultipleAllocations=true + RequestPolicy scoped to full GPU size
+	fullDevice := deviceSlice.Devices[2]
+	assert.Equal(t, "gpu-0-full", fullDevice.Name)
+
+	require.NotNil(t, fullDevice.AllowMultipleAllocations)
+	assert.True(t, *fullDevice.AllowMultipleAllocations)
+
+	// memory capacity: Value=80Gi, RequestPolicy{Default:80Gi, ValidRange{Min:1Gi,Step:1Gi,Max:80Gi}}
+	fullMemoryCap := fullDevice.Capacity[resourceapi.QualifiedName("memory")]
+	assert.Equal(t, resource.MustParse("80Gi"), fullMemoryCap.Value)
+	require.NotNil(t, fullMemoryCap.RequestPolicy)
+	assert.Equal(t, resource.MustParse("80Gi"), *fullMemoryCap.RequestPolicy.Default)
+	require.NotNil(t, fullMemoryCap.RequestPolicy.ValidRange)
+	assert.Equal(t, resource.MustParse("1Gi"), *fullMemoryCap.RequestPolicy.ValidRange.Min)
+	assert.Equal(t, resource.MustParse("1Gi"), *fullMemoryCap.RequestPolicy.ValidRange.Step)
+	assert.Equal(t, resource.MustParse("80Gi"), *fullMemoryCap.RequestPolicy.ValidRange.Max)
+
+	// compute capacity: Value=100, RequestPolicy{Default:100, ValidRange{Min:1,Step:1,Max:100}}
+	fullComputeCap := fullDevice.Capacity[resourceapi.QualifiedName("compute")]
+	assert.Equal(t, resource.MustParse("100"), fullComputeCap.Value)
+	require.NotNil(t, fullComputeCap.RequestPolicy)
+	assert.Equal(t, resource.MustParse("100"), *fullComputeCap.RequestPolicy.Default)
+	require.NotNil(t, fullComputeCap.RequestPolicy.ValidRange)
+	assert.Equal(t, resource.MustParse("1"), *fullComputeCap.RequestPolicy.ValidRange.Min)
+	assert.Equal(t, resource.MustParse("1"), *fullComputeCap.RequestPolicy.ValidRange.Step)
+	assert.Equal(t, resource.MustParse("100"), *fullComputeCap.RequestPolicy.ValidRange.Max)
+
+	// ConsumesCounters still present
+	require.Len(t, fullDevice.ConsumesCounters, 1)
+	assert.Equal(t, "gpu-0-counters", fullDevice.ConsumesCounters[0].CounterSet)
+}
+
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2, 0, false, false)
-	profile2 := NewProfile("test-node", 2, 0, false, false)
+	profile1 := NewProfile("test-node", 2, 0, false, false, false)
+	profile2 := NewProfile("test-node", 2, 0, false, false, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -210,8 +338,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1, 0, false, false)
-	profile2 := NewProfile("node-2", 1, 0, false, false)
+	profile1 := NewProfile("node-1", 1, 0, false, false, false)
+	profile2 := NewProfile("node-2", 1, 0, false, false, false)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -225,9 +353,9 @@ func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_Disabled(t *testing.T) {
-	var _ profiles.DeviceStatusBuilder = NewProfile("test-node", 1, 0, true, false)
+	var _ profiles.DeviceStatusBuilder = NewProfile("test-node", 1, 0, true, false, false)
 
-	profile := NewProfile("test-node", 1, 0, false, false)
+	profile := NewProfile("test-node", 1, 0, false, false, false)
 	allocatable := map[string]resourceapi.Device{
 		"gpu-0": {Name: "gpu-0"},
 	}
@@ -242,7 +370,7 @@ func TestBuildDeviceStatus_Disabled(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_Enabled(t *testing.T) {
-	profile := NewProfile("test-node", 1, 0, true, false)
+	profile := NewProfile("test-node", 1, 0, true, false, false)
 	allocatable := map[string]resourceapi.Device{
 		"gpu-0": {
 			Name: "gpu-0",
@@ -278,7 +406,7 @@ func TestBuildDeviceStatus_Enabled(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
-	profile := NewProfile("test-node", 1, 0, true, false)
+	profile := NewProfile("test-node", 1, 0, true, false, false)
 	result := &resourceapi.DeviceRequestAllocationResult{
 		Device: "gpu-0",
 		Driver: "gpu.example.com",
@@ -294,4 +422,74 @@ func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
 	var data map[string]resourceapi.DeviceAttribute
 	require.NoError(t, json.Unmarshal(got.Data.Raw, &data))
 	assert.Empty(t, data)
+}
+
+func TestApplyConfig(t *testing.T) {
+	profile := NewProfile("test-node", 2, 0, false, false, false)
+
+	tests := []struct {
+		name     string
+		config   runtime.Object
+		results  []*resourceapi.DeviceRequestAllocationResult
+		wantEnvs map[string][]string
+	}{
+		{
+			name:   "consumed memory and compute capacity",
+			config: nil,
+			results: []*resourceapi.DeviceRequestAllocationResult{
+				{
+					Device: "gpu-0",
+					ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+						"memory":  resource.MustParse("16Gi"),
+						"compute": resource.MustParse("50"),
+					},
+				},
+			},
+			wantEnvs: map[string][]string{
+				"gpu-0": {
+					"GPU_DEVICE_0=gpu-0",
+					"GPU_DEVICE_0_SHARING_STRATEGY=TimeSlicing",
+					"GPU_DEVICE_0_TIMESLICE_INTERVAL=Default",
+					"GPU_DEVICE_0_MEMORY=16Gi",
+					"GPU_DEVICE_0_COMPUTE=50",
+				},
+			},
+		},
+		{
+			name:   "AllowMultipleAllocations: edits are keyed by device+shareID",
+			config: nil,
+			results: []*resourceapi.DeviceRequestAllocationResult{
+				{
+					Device:  "gpu-0",
+					ShareID: ptr.To(types.UID("share-abc")),
+					ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+						"memory":  resource.MustParse("16Gi"),
+						"compute": resource.MustParse("20"),
+					},
+				},
+			},
+			// state.go looks up edits by helpers.GetCDIDeviceID = "gpu-0-share-abc"
+			wantEnvs: map[string][]string{
+				"gpu-0-share-abc": {
+					"GPU_DEVICE_0=gpu-0",
+					"GPU_DEVICE_0_SHARING_STRATEGY=TimeSlicing",
+					"GPU_DEVICE_0_TIMESLICE_INTERVAL=Default",
+					"GPU_DEVICE_0_MEMORY=16Gi",
+					"GPU_DEVICE_0_COMPUTE=20",
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			edits, err := profile.ApplyConfig(tt.config, tt.results)
+			require.NoError(t, err)
+
+			for device, wantEnv := range tt.wantEnvs {
+				require.Contains(t, edits, device)
+				assert.ElementsMatch(t, wantEnv, edits[device].Env)
+			}
+		})
+	}
 }

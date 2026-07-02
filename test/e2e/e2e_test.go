@@ -296,6 +296,51 @@ var _ = Describe("Test GPU allocation", func() {
 		}
 	})
 
+	Context("AllowMultipleAllocations", Ordered, func() {
+		var drv installedDriver
+
+		BeforeAll(func(ctx SpecContext) {
+			drv = installDriver(ctx, DriverConfig{
+				GPUAllowMultipleAllocations: true,
+			})
+		})
+
+		It("should publish AllowMultipleAllocations and RequestPolicy on devices in ResourceSlices", func(ctx SpecContext) {
+			verifyResourceSliceAllowMultipleAllocations(ctx, drv.DriverName)
+		})
+
+		It("should allocate two shares of the same GPU with distinct ShareIDs and ConsumedCapacity", func(ctx SpecContext) {
+			namespace := "gpu-allow-multiple-allocations"
+			deployManifest(ctx, namespace, "gpu-allow-multiple-allocations.yaml", drv)
+			checkPodsReadyAndRunning(ctx, namespace, []string{"pod0", "pod1"})
+			verifyGPUConsumedCapacity(ctx, namespace, drv.DriverName)
+		})
+
+		Context("with partitionable devices", Ordered, func() {
+			var partDrv installedDriver
+
+			BeforeAll(func(ctx SpecContext) {
+				partDrv = installDriver(ctx, DriverConfig{
+					GPUAllowMultipleAllocations: true,
+					ExtraValues: map[string]string{
+						"kubeletPlugin.gpuPartitions": "4",
+					},
+				})
+			})
+
+			It("should publish AllowMultipleAllocations and RequestPolicy on partition devices in ResourceSlices", func(ctx SpecContext) {
+				verifyResourceSliceAllowMultipleAllocations(ctx, partDrv.DriverName)
+			})
+
+			It("should allocate two shares of the same partition with distinct ShareIDs and ConsumedCapacity", func(ctx SpecContext) {
+				namespace := "gpu-allow-multiple-allocations-partitionable"
+				deployManifest(ctx, namespace, "gpu-allow-multiple-allocations-partitionable.yaml", partDrv)
+				checkPodsReadyAndRunning(ctx, namespace, []string{"pod0", "pod1"})
+				verifyGPUConsumedCapacity(ctx, namespace, partDrv.DriverName)
+			})
+		})
+	})
+
 	It("should allocate partition devices from shared GPU counters", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{
 			ExtraValues: map[string]string{

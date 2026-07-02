@@ -88,6 +88,8 @@ spec:
           value: {{ .Values.kubeletPlugin.numDevices | quote }}
         - name: GPU_DEVICE_STATUS
           value: {{ .Values.gpuDeviceStatus | quote }}
+        - name: GPU_ALLOW_MULTIPLE_ALLOCATIONS
+          value: {{ .Values.gpuAllowMultipleAllocations | quote }}
         {{- if (gt (int .Values.kubeletPlugin.containers.plugin.healthcheckPort) 0) }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}

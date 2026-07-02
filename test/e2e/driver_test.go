@@ -87,6 +87,11 @@ type DriverConfig struct {
 	// attributes (e.g. uuid, model, driverVersion) into
 	// ResourceClaim.status.devices[].data.
 	GPUDeviceStatus bool
+
+	// GPUAllowMultipleAllocations, when true, sets AllowMultipleAllocations on
+	// every GPU device and adds a RequestPolicy (ValidRange) to memory and
+	// compute capacities (DRAConsumableCapacity feature).
+	GPUAllowMultipleAllocations bool
 }
 
 // installedDriver is what installDriver returns: the identity bits downstream
@@ -157,9 +162,10 @@ func installDriver(ctx context.Context, cfg DriverConfig) installedDriver {
 func buildHelmValues(cfg DriverConfig, namespace string) map[string]any {
 	GinkgoHelper()
 	values := map[string]any{
-		"driverName":        cfg.DriverName,
-		"namespaceOverride": namespace,
-		"gpuDeviceStatus":   cfg.GPUDeviceStatus,
+		"driverName":                  cfg.DriverName,
+		"namespaceOverride":           namespace,
+		"gpuDeviceStatus":             cfg.GPUDeviceStatus,
+		"gpuAllowMultipleAllocations": cfg.GPUAllowMultipleAllocations,
 		"kubeletPlugin": map[string]any{
 			"numDevices": cfg.NumDevices,
 		},
@@ -260,9 +266,15 @@ func readPodLogs(ctx context.Context, namespace, pod, container string, tailLine
 
 // waitForDriverReady polls for signals that Helm --wait does not cover: the
 // kubelet plugin DaemonSet has ready pods, the DeviceClass exists,
-// ResourceSlices have been published, and (when webhookEnabled) the webhook
-// is serving. The DaemonSet check ties readiness to the current install so
-// stale cluster state can't false-positive.
+// ResourceSlices with at least one device have been published, and (when
+// webhookEnabled) the webhook is serving. The DaemonSet check ties readiness
+// to the current install so stale cluster state can't false-positive.
+//
+// Checking for at least one device (not just any ResourceSlice) is important
+// for partitionable-device configurations: the driver publishes a counters-only
+// slice first, followed by a separate devices slice. Returning as soon as the
+// counters slice appears would cause tests to run before partition devices are
+// visible.
 func waitForDriverReady(ctx context.Context, namespace, driverName string, webhookEnabled bool) {
 	GinkgoHelper()
 
@@ -294,6 +306,17 @@ func waitForDriverReady(ctx context.Context, namespace, driverName string, webho
 			"Failed to list ResourceSlices for driver %s", driverName)
 		g.Expect(slices.Items).NotTo(BeEmpty(),
 			"No ResourceSlices yet published for driver %s", driverName)
+
+		// Ensure at least one device has been published. For partitionable
+		// drivers the first slice to arrive is counters-only; the devices
+		// slice follows shortly after. Gating on a device being present
+		// prevents tests from running against an incomplete slice set.
+		var totalDevices int
+		for _, s := range slices.Items {
+			totalDevices += len(s.Spec.Devices)
+		}
+		g.Expect(totalDevices).To(BeNumerically(">", 0),
+			"ResourceSlices for driver %s exist but contain no devices yet", driverName)
 	}).WithContext(ctx).WithTimeout(driverInstallTimeout).WithPolling(2 * time.Second).Should(Succeed())
 
 	if webhookEnabled {

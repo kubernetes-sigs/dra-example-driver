@@ -852,3 +852,145 @@ func verifyNetDeviceAllocation(ctx context.Context, namespace, podName, containe
 			namespace, podName, containerName, matches)
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
+
+// verifyResourceSliceAllowMultipleAllocations verifies that all devices
+// published by the given driver have AllowMultipleAllocations=true and carry
+// a RequestPolicy with a ValidRange on both "memory" and "compute" capacities.
+func verifyResourceSliceAllowMultipleAllocations(ctx context.Context, driverName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		slices, err := clientset.ResourceV1().ResourceSlices().List(ctx, metav1.ListOptions{
+			FieldSelector: "spec.driver=" + driverName,
+		})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(slices.Items).NotTo(BeEmpty(), "no ResourceSlices found for driver %s", driverName)
+
+		totalDevices := 0
+		for _, slice := range slices.Items {
+			for _, device := range slice.Spec.Devices {
+				totalDevices++
+				g.Expect(device.AllowMultipleAllocations).NotTo(BeNil(),
+					"device %s in ResourceSlice %s: AllowMultipleAllocations is nil", device.Name, slice.Name)
+				g.Expect(*device.AllowMultipleAllocations).To(BeTrue(),
+					"device %s in ResourceSlice %s: AllowMultipleAllocations should be true", device.Name, slice.Name)
+
+				for _, capName := range []resourceapi.QualifiedName{"memory", "compute"} {
+					cap, ok := device.Capacity[capName]
+					g.Expect(ok).To(BeTrue(),
+						"device %s in ResourceSlice %s: missing %q capacity", device.Name, slice.Name, capName)
+					g.Expect(cap.RequestPolicy).NotTo(BeNil(),
+						"device %s capacity %q: RequestPolicy should be set", device.Name, capName)
+					g.Expect(cap.RequestPolicy.ValidRange).NotTo(BeNil(),
+						"device %s capacity %q: RequestPolicy.ValidRange should be set", device.Name, capName)
+					g.Expect(cap.RequestPolicy.ValidRange.Min).NotTo(BeNil(),
+						"device %s capacity %q: RequestPolicy.ValidRange.Min should be set", device.Name, capName)
+					g.Expect(cap.RequestPolicy.ValidRange.Step).NotTo(BeNil(),
+						"device %s capacity %q: RequestPolicy.ValidRange.Step should be set", device.Name, capName)
+					g.Expect(cap.RequestPolicy.ValidRange.Max).NotTo(BeNil(),
+						"device %s capacity %q: RequestPolicy.ValidRange.Max should be set", device.Name, capName)
+					fmt.Fprintf(GinkgoWriter,
+						"device %s capacity %q: value=%s min=%s step=%s max=%s\n",
+						device.Name, capName, cap.Value.String(),
+						cap.RequestPolicy.ValidRange.Min.String(),
+						cap.RequestPolicy.ValidRange.Step.String(),
+						cap.RequestPolicy.ValidRange.Max.String(),
+					)
+				}
+			}
+		}
+		g.Expect(totalDevices).To(BeNumerically(">", 0),
+			"driver %s: no devices found across %d ResourceSlice(s); devices slice may not have been published yet",
+			driverName, len(slices.Items))
+	}, "30s", "2s").Should(Succeed())
+}
+
+// verifyGPUConsumedCapacity verifies that two pods sharing a GPU each have a
+// distinct non-empty ShareID and that ConsumedCapacity is reported for both
+// "memory" and "compute" on every allocation result. It also checks that the
+// driver injected GPU_DEVICE_<ID>_MEMORY and GPU_DEVICE_<ID>_COMPUTE env vars
+// into the container.
+func verifyGPUConsumedCapacity(ctx context.Context, namespace, driverName string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pods, err := clientset.CoreV1().Pods(namespace).List(ctx, metav1.ListOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(pods.Items).NotTo(BeEmpty(), "no pods in namespace %s", namespace)
+
+		seenShareIDs := map[string]string{} // shareID -> pod name
+
+		for _, pod := range pods.Items {
+			// Pods that reference ResourceClaims directly (via resourceClaimName)
+			// do not get ResourceClaimStatuses populated by the kubelet — only
+			// template-created claims produce that status field. Resolve claim
+			// names from pod.Spec.ResourceClaims instead.
+			g.Expect(pod.Spec.ResourceClaims).NotTo(BeEmpty(),
+				"pod %s has no spec.resourceClaims", pod.Name)
+
+			// Fetch pod logs once per pod to verify injected env vars.
+			gpus, logs := getGPUsFromPodLogs(ctx, g, namespace, pod.Name, "ctr0")
+			g.Expect(gpus).NotTo(BeEmpty(), "pod %s: no GPU env vars found in logs", pod.Name)
+			gpuID := getGPUID(gpus[0])
+
+			for _, prc := range pod.Spec.ResourceClaims {
+				g.Expect(prc.ResourceClaimName).NotTo(BeNil(),
+					"pod %s resourceClaim %s: ResourceClaimName is nil", pod.Name, prc.Name)
+				claimName := *prc.ResourceClaimName
+				claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(
+					ctx, claimName, metav1.GetOptions{})
+				g.Expect(err).NotTo(HaveOccurred())
+
+				// ShareID and ConsumedCapacity both live on the allocation results
+				// (status.allocation.devices.results), not on status.devices.
+				// status.devices is only populated when the driver calls BuildDeviceStatus
+				// (GPUDeviceStatus=true), which is not enabled in this test.
+				g.Expect(claim.Status.Allocation).NotTo(BeNil(),
+					"ResourceClaim %s has no status.allocation", claimName)
+				g.Expect(claim.Status.Allocation.Devices.Results).NotTo(BeEmpty(),
+					"ResourceClaim %s has no status.allocation.devices.results", claimName)
+
+				for _, r := range claim.Status.Allocation.Devices.Results {
+					// Each share must carry a non-empty ShareID.
+					g.Expect(r.ShareID).NotTo(BeNil(),
+						"claim %s device %s: ShareID should be set", claimName, r.Device)
+					shareID := string(*r.ShareID)
+					g.Expect(shareID).NotTo(BeEmpty(),
+						"claim %s device %s: ShareID should not be empty", claimName, r.Device)
+
+					// ShareIDs must be distinct across pods.
+					if prev, exists := seenShareIDs[shareID]; exists {
+						g.Expect(prev).To(Equal(pod.Name),
+							"ShareID %s is shared between pods %s and %s", shareID, prev, pod.Name)
+					}
+					seenShareIDs[shareID] = pod.Name
+
+					g.Expect(r.ConsumedCapacity).NotTo(BeEmpty(),
+						"claim %s device %s: ConsumedCapacity should not be empty", claimName, r.Device)
+					for _, capName := range []resourceapi.QualifiedName{"memory", "compute"} {
+						qty, ok := r.ConsumedCapacity[capName]
+						g.Expect(ok).To(BeTrue(),
+							"claim %s device %s: ConsumedCapacity missing %q", claimName, r.Device, capName)
+						g.Expect(qty.IsZero()).To(BeFalse(),
+							"claim %s device %s: ConsumedCapacity[%q] should be non-zero", claimName, r.Device, capName)
+						fmt.Fprintf(GinkgoWriter, "pod %s claim %s device %s: consumed %s=%s\n",
+							pod.Name, claimName, r.Device, capName, qty.String())
+					}
+				}
+			}
+
+			// Verify that GPU_DEVICE_<ID>_MEMORY and GPU_DEVICE_<ID>_COMPUTE were
+			// injected into the container by the driver.
+			memoryEnv := extractGPUProperty(logs, gpuID, "MEMORY")
+			g.Expect(memoryEnv).NotTo(BeEmpty(),
+				"pod %s: GPU_DEVICE_%s_MEMORY env var not found in container logs", pod.Name, gpuID)
+			computeEnv := extractGPUProperty(logs, gpuID, "COMPUTE")
+			g.Expect(computeEnv).NotTo(BeEmpty(),
+				"pod %s: GPU_DEVICE_%s_COMPUTE env var not found in container logs", pod.Name, gpuID)
+			fmt.Fprintf(GinkgoWriter, "pod %s: GPU_DEVICE_%s_MEMORY=%s GPU_DEVICE_%s_COMPUTE=%s\n",
+				pod.Name, gpuID, memoryEnv, gpuID, computeEnv)
+		}
+
+		// All pods must have received distinct ShareIDs.
+		g.Expect(seenShareIDs).To(HaveLen(len(pods.Items)),
+			"expected %d distinct ShareIDs, got %v", len(pods.Items), seenShareIDs)
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
