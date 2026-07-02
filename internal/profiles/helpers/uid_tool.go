@@ -16,7 +16,12 @@
 
 package helpers
 
-import "fmt"
+import (
+	"fmt"
+	"math/rand"
+
+	"github.com/google/uuid"
+)
 
 // GetCDIDeviceID returns the per-claim identifier for an allocated device. For
 // a share of a consumable-capacity device the ShareID is appended so that
@@ -27,4 +32,27 @@ func GetCDIDeviceID(device string, shareId *string) string {
 		return fmt.Sprintf("%s-%s", device, *shareId)
 	}
 	return device
+}
+
+// GenerateUUIDs generates a list of unique UUIDs with a given prefix and count.
+func GenerateUUIDs(seed string, prefix string, count int) []string {
+	rand := rand.New(rand.NewSource(hash(seed)))
+
+	uuids := make([]string, count)
+	for i := 0; i < count; i++ {
+		charset := make([]byte, 16)
+		rand.Read(charset)
+		uuid, _ := uuid.FromBytes(charset)
+		uuids[i] = prefix + "-" + uuid.String()
+	}
+
+	return uuids
+}
+
+func hash(s string) int64 {
+	h := int64(0)
+	for _, c := range s {
+		h = 31*h + int64(c)
+	}
+	return h
 }
