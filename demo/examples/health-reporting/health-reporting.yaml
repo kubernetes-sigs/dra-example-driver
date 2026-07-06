@@ -1,0 +1,74 @@
+# Example: DRA Device Health Reporting (KEP-4680)
+#
+# The driver implements the DRAResourceHealth gRPC service, streaming device
+# health updates to kubelet. Health status and messages appear in
+# pod.status.containerStatuses[].allocatedResourcesStatus.
+#
+# Health reporting is always enabled. A built-in simulator cycles devices
+# through realistic scenarios (temperature warnings, ECC errors, recovery).
+#
+# To force a specific health state, annotate the driver pod:
+#
+#   # Find the driver pod
+#   DRIVER_POD=$(kubectl get pod -n dra-example-driver \
+#     -l app.kubernetes.io/component=kubeletplugin -o name | head -1)
+#
+#   # Force gpu-0 unhealthy
+#   kubectl annotate -n dra-example-driver $DRIVER_POD \
+#     health.example.com/gpu-0=unhealthy --overwrite
+#
+#   # Return to healthy
+#   kubectl annotate -n dra-example-driver $DRIVER_POD \
+#     health.example.com/gpu-0=healthy --overwrite
+#
+#   # Remove override (return to simulation)
+#   kubectl annotate -n dra-example-driver $DRIVER_POD \
+#     health.example.com/gpu-0-
+#
+# Supported values: healthy, unhealthy, unknown
+#
+# Check health status:
+#   kubectl get pod -n health-reporting pod0 \
+#     -o jsonpath='{.status.containerStatuses[0].allocatedResourcesStatus}' | jq .
+#
+# Cluster requirements:
+#   Kubernetes 1.36+ (ResourceHealthStatus and ResourceHealthStatusMessage are
+#   Beta and enabled by default)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: health-reporting
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: health-reporting
+  name: single-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: health-reporting
+  name: pod0
+spec:
+  restartPolicy: Never
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu

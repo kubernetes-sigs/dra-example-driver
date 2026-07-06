@@ -122,7 +122,7 @@ require (
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xlab/treeprint v1.2.0 // indirect
 	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
-	go.etcd.io/etcd/client/pkg/v3 v3.6.8 // indirect
+	go.etcd.io/etcd/client/pkg/v3 v3.6.11 // indirect
 	go.opentelemetry.io/otel v1.43.0 // indirect
 	go.opentelemetry.io/otel/trace v1.43.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect
@@ -149,7 +149,7 @@ require (
 	k8s.io/apiextensions-apiserver v0.36.1 // indirect
 	k8s.io/apiserver v0.36.2 // indirect
 	k8s.io/cli-runtime v0.36.1 // indirect
-	k8s.io/kube-openapi v0.0.0-20260512234627-ef417d054102 // indirect
+	k8s.io/kube-openapi v0.0.0-20260519202549-bbf5c5577288 // indirect
 	k8s.io/kubectl v0.36.1 // indirect
 	oras.land/oras-go/v2 v2.6.1 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
@@ -158,4 +158,22 @@ require (
 	sigs.k8s.io/randfill v1.0.0 // indirect
 	sigs.k8s.io/structured-merge-diff/v6 v6.4.0 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
+)
+
+// Temporary, for local development only: use the version-neutral device health
+// API from kubernetes/kubernetes#139477 (WatchHealthStatus in DRAPlugin) until
+// it is released in k8s.io/dynamic-resource-allocation. The sibling k8s.io
+// staging modules must be replaced as well because the local module requires
+// them at v0.0.0. Run `go mod vendor` against such a checkout to build.
+replace (
+	k8s.io/api => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/api
+	k8s.io/apimachinery => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/apimachinery
+	k8s.io/apiserver => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/apiserver
+	k8s.io/client-go => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/client-go
+	k8s.io/component-base => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/component-base
+	k8s.io/component-helpers => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/component-helpers
+	k8s.io/dynamic-resource-allocation => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/dynamic-resource-allocation
+	k8s.io/kms => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/kms
+	k8s.io/kubelet => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/kubelet
+	k8s.io/streaming => /Users/harpatil/repos/kubernetes/kubernetes/.worktrees/pr-139477/staging/src/k8s.io/streaming
 )
