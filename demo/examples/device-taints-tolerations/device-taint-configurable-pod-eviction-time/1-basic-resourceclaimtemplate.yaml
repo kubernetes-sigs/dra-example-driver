@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: basic-resourceclaimtemplate
+
+---
+# ResourceClaimTemplate without toleration
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: single-gpu-without-toleration
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+---
+# ResourceClaimTemplate with toleration
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: single-gpu-with-toleration
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          tolerations:
+          - key: gpu.example.com/unhealthy
+            operator: Equal
+            value: "true"
+            effect: NoExecute
+
+---
+# ResourceClaimTemplate with toleration upto 300s
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: single-gpu-with-300s-toleration
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com
+          tolerations:
+          - key: gpu.example.com/unhealthy
+            operator: Equal
+            value: "true"
+            effect: NoExecute
+            tolerationSeconds: 300
+---
+
+# Pods for each of the resource claim template
+
+# Pod which uses resource claim template without any toleration - gets evicted immediately
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: pod-no-toleration
+  labels:
+    app: pod-no-toleration
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu-without-toleration
+
+---
+# Pod which uses resource claim template with toleration - doesn't get evicted
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: pod-with-toleration
+  labels:
+    app: pod-with-toleration
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu-with-toleration
+
+---
+# Pod which uses resource claim template with toleration upto 300s - gets evicted after 300s
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: pod-with-300s-toleration
+  labels:
+    app: pod-with-300s-toleration
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu-with-300s-toleration

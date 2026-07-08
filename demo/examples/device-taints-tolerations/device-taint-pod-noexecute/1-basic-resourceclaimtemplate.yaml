@@ -1,0 +1,19 @@
+# Doesn't have any toleration added to the ResourceClaimTemplate
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: basic-resourceclaimtemplate
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: single-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        exactly:
+          deviceClassName: gpu.example.com

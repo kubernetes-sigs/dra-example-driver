@@ -1,0 +1,12 @@
+apiVersion: resource.k8s.io/v1beta2
+kind: DeviceTaintRule
+metadata:
+  name: example
+spec:
+  deviceSelector:
+    driver: gpu.example.com
+  taint:
+    key: gpu.example.com/unhealthy
+    value: "true"
+    # Evict any already-running pods that do not tolerate the device taint.
+    effect: NoExecute

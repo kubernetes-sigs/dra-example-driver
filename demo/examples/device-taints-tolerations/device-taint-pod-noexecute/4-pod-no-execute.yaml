@@ -1,0 +1,20 @@
+# Provided the device taint rule is created, this pod will be scheduled and killed immediately.
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: basic-resourceclaimtemplate
+  name: pod-no-execute
+  labels:
+    app: pod-no-execute
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: single-gpu
