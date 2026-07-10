@@ -1,0 +1,14 @@
+apiVersion: resource.k8s.io/v1beta2
+kind: DeviceTaintRule
+metadata:
+  name: example
+spec:
+  # The entire hardware installation for this
+  # particular driver is broken.
+  # Evict all pods and don't schedule new ones.
+  deviceSelector:
+    driver: gpu.example.com
+  taint:
+    key: gpu.example.com/unhealthy
+    value: "true"
+    effect: NoSchedule
