@@ -1,0 +1,85 @@
+# Example: Two Pods sharing one GPU via AllowMultipleAllocations (DRAConsumableCapacity).
+# Each pod requests 16Gi memory and 20 compute from the same device.
+# The driver must be installed with gpuAllowMultipleAllocations=true.
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gpu-allow-multiple-allocations
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-allow-multiple-allocations
+  name: shared-gpu-pod0
+spec:
+  devices:
+    requests:
+    - name: gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        capacity:
+          requests:
+            memory: 16Gi
+            compute: "20"
+
+---
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaim
+metadata:
+  namespace: gpu-allow-multiple-allocations
+  name: shared-gpu-pod1
+spec:
+  devices:
+    requests:
+    - name: gpu
+      exactly:
+        deviceClassName: gpu.example.com
+        capacity:
+          requests:
+            memory: 16Gi
+            compute: "20"
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-allow-multiple-allocations
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimName: shared-gpu-pod0
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: gpu-allow-multiple-allocations
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimName: shared-gpu-pod1

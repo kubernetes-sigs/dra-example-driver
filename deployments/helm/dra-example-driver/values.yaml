@@ -34,6 +34,11 @@ deviceClass:
 # into ResourceClaim.status.devices[].data via server-side apply.
 gpuDeviceStatus: false
 
+# gpuAllowMultipleAllocations enables AllowMultipleAllocations on every GPU
+# device and attaches a RequestPolicy to each device's
+# memory capacity (DRAConsumableCapacity feature).
+gpuAllowMultipleAllocations: false
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver
