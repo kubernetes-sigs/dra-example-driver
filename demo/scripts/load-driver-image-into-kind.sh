@@ -27,10 +27,13 @@ set -o pipefail
 
 source "${CURRENT_DIR}/common.sh"
 
-# Work around kind not loading image with podman
-IMAGE_ARCHIVE=driver_image.tar
-${CONTAINER_TOOL} save -o "${IMAGE_ARCHIVE}" "${DRIVER_IMAGE}" && \
-${KIND} load image-archive \
-	--name "${KIND_CLUSTER_NAME}" \
-	"${IMAGE_ARCHIVE}"
-rm "${IMAGE_ARCHIVE}"
+# Work around kind not loading image with podman.
+# Also work around kind v0.31+ generating containerd config version 4, which
+# containerd v2.x inside the kind node image does not yet support (only 2 and 3).
+# Instead, pipe the image tar directly into each node via `ctr import`.
+for node in $(${KIND} get nodes --name "${KIND_CLUSTER_NAME}" 2>/dev/null | grep -v "^using"); do
+	echo "Loading ${DRIVER_IMAGE} into node ${node}..."
+	${CONTAINER_TOOL} save "${DRIVER_IMAGE}" | \
+		${CONTAINER_TOOL} exec -i "${node}" \
+			ctr --namespace=k8s.io images import -
+done
