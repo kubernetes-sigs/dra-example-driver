@@ -299,7 +299,7 @@ func (p Profile) Validate(config runtime.Object) error {
 }
 
 // ApplyConfig implements [profiles.ConfigHandler].
-func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
+func (p Profile) ApplyConfig(claimName string, config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
 	if config == nil {
 		config = configapi.DefaultGpuConfig()
 	}
