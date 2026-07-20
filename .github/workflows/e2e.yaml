@@ -17,13 +17,6 @@ jobs:
       uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
     - name: Build
       run: make PREFIX=artifacts cmds
-    - name: install helm and kubectl
-      run: |
-        sudo snap install helm --classic
-        sudo snap install kubectl --classic
-    - name: install kind
-      run: |
-        go install sigs.k8s.io/kind@v0.32.0
     - name: Setup e2e
       run: make setup-e2e
     - name: run e2e test
