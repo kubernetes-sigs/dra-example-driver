@@ -17,6 +17,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -237,4 +239,67 @@ func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 	}
 	assert.Equal(t, "1", consumedByShare["share-0"], "share-0 should keep its own consumed CPU edit")
 	assert.Equal(t, "3", consumedByShare["share-1"], "share-1 should keep its own consumed CPU edit")
+}
+
+// TestUnprepareRecoversFromCorruptCheckpoint verifies that Unprepare succeeds
+// without panicking when the on-disk checkpoint file is corrupt.
+func TestUnprepareRecoversFromCorruptCheckpoint(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+	claimUID := types.UID("some-claim-uid")
+
+	// t.TempDir() is used for both CDI files and the checkpoint directory so
+	// the test stays fully self-contained and cleans up automatically.
+	tmpDir := t.TempDir()
+
+	flags := &Flags{
+		cdiRoot:                     tmpDir,
+		driverName:                  driverName,
+		profile:                     "cpu",
+		nodeName:                    nodeName,
+		cpuNUMANodes:                1,
+		cpusPerNUMANode:             4,
+		kubeletPluginsDirectoryPath: tmpDir,
+	}
+
+	state, err := NewDeviceState(&Config{
+		flags:   flags,
+		profile: cpu.NewProfile(nodeName, driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode),
+	})
+	require.NoError(t, err)
+
+	// Pre-create the CDI spec file for the claim so we can later confirm that
+	// Unprepare reaches DeleteClaimSpecFile and removes it. The spec file name
+	// follows the CDI convention: <vendor>-<class>_<transientID>.yaml where
+	// vendor = "k8s." + driverName.
+	cdiSpecFile := filepath.Join(tmpDir, "k8s."+driverName+"-cpu_"+string(claimUID)+".yaml")
+	require.NoError(t, os.WriteFile(cdiSpecFile, []byte("kind: k8s."+driverName+"/cpu\n"), 0600))
+
+	// Write garbage bytes to the checkpoint file so that readCheckpoint returns
+	// (nil, err) — the exact precondition that triggers the nil dereference.
+	// The plugin directory must exist before writing (NewDeviceState does not
+	// create it; that is done by RunPlugin at startup).
+	pluginDir := filepath.Join(tmpDir, driverName)
+	require.NoError(t, os.MkdirAll(pluginDir, 0750))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(pluginDir, DriverPluginCheckpointFile),
+		[]byte("THIS IS NOT VALID CHECKPOINT JSON"),
+		0600,
+	))
+
+	// Unprepare must succeed (not just not-panic) when the checkpoint is corrupt.
+	require.NoError(t, state.Unprepare(claimUID))
+
+	// The CDI spec file for the claim must have been removed, proving that
+	// Unprepare reached DeleteClaimSpecFile rather than returning early.
+	assert.NoFileExists(t, cdiSpecFile, "CDI spec file must be deleted after Unprepare succeeds")
+
+	// The checkpoint file on disk must be valid (readable and empty).
+	decoder, _, err := checkpointSerializer()
+	require.NoError(t, err)
+	checkpoint, err := readCheckpoint(state.checkpointPath, decoder)
+	require.NoError(t, err, "checkpoint file must be valid after Unprepare recovers from corruption")
+	assert.Empty(t, checkpoint.PreparedClaims, "recovered checkpoint must have no prepared claims")
 }

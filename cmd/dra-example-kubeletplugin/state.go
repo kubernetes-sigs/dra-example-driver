@@ -195,7 +195,20 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 
 	checkpoint, err := readCheckpoint(s.checkpointPath, s.checkpointDecoder)
 	if err != nil {
-		if err := writeCheckpoint(s.checkpointPath, s.checkpointEncoder, new(checkpointapi.Checkpoint)); err != nil {
+		// The checkpoint file exists but cannot be read or decoded (e.g. it was
+		// corrupted on disk). Reset to an empty checkpoint so Unprepare can
+		// continue and release the requested claim.
+		//
+		// Deliberate fail-open: resetting drops tracking for every other
+		// currently-prepared claim on this node. That is acceptable here because
+		// unprepareDevices is a no-op — no real hardware is torn down. A
+		// production fork that performs real device teardown should instead
+		// fail-closed (return the error and let the kubelet retry) to avoid
+		// silently leaking other claims' hardware resources.
+		klog.ErrorS(err, "Corrupt checkpoint reset to empty; all prepared-claim tracking on this node is lost",
+			"path", s.checkpointPath, "claimUID", claimUID)
+		checkpoint = new(checkpointapi.Checkpoint)
+		if err := writeCheckpoint(s.checkpointPath, s.checkpointEncoder, checkpoint); err != nil {
 			return fmt.Errorf("unable to create new checkpoint: %v", err)
 		}
 	}
