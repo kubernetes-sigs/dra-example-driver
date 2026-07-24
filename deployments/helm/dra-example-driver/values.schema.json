@@ -6,7 +6,8 @@
       "enum": [
         "gpu",
         "cpu",
-        "net"
+        "net",
+        "vfio-gpu"
       ]
     }
   }
