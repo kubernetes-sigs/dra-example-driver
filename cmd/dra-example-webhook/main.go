@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	vfiogpu "sigs.k8s.io/dra-example-driver/internal/profiles/vfio-gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 )
 
@@ -53,8 +54,9 @@ type Flags struct {
 type validator func(runtime.Object) error
 
 var validProfiles = map[string]profiles.ConfigHandler{
-	gpu.ProfileName: gpu.Profile{},
-	cpu.ProfileName: cpu.Profile{},
+	gpu.ProfileName:     gpu.Profile{},
+	cpu.ProfileName:     cpu.Profile{},
+	vfiogpu.ProfileName: vfiogpu.Profile{},
 }
 
 func main() {
