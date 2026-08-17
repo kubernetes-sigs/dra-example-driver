@@ -1,0 +1,269 @@
+# Example: Scoping Opaque Configs to Prioritized-List Subrequests (KEP-4816)
+#
+# Three pods, one container each. Each pod's claim makes TWO device requests:
+#
+#   gpu   - a prioritized list of alternatives via `firstAvailable`, so the
+#           allocation result records the chosen subrequest as
+#           "<request>/<subrequest>" (e.g. "gpu/older-gpu").
+#   extra - an ordinary request, present so the claim has more than one
+#           request. This is what makes the example meaningful: the allocator
+#           clears a config's `requests` field only when the config applies to
+#           EVERY request in the claim. With a second request in play the
+#           scoping survives into the allocation result, and the driver is the
+#           one that has to match "gpu" against a "gpu/older-gpu" result.
+#
+# pod0 scopes its config to the PARENT request name "gpu". The chosen
+# subrequest is "older-gpu", so the driver sees a config scoped to "gpu"
+# against a result whose request is "gpu/older-gpu"; it must still apply.
+#   gpu   -> gpu/older-gpu, TIMESLICE_INTERVAL=Long    (from the config)
+#   extra -> extra,         TIMESLICE_INTERVAL=Default (out of scope)
+#
+# pod1 scopes one config to the FULL subrequest reference "gpu/latest-gpu"
+# (the chosen one) and another to "gpu/older-gpu" (not chosen). The allocator
+# drops the config for the unchosen subrequest, so only the first applies.
+#   gpu   -> gpu/latest-gpu, TIMESLICE_INTERVAL=Short   (from the config)
+#   extra -> extra,          TIMESLICE_INTERVAL=Default (out of scope)
+#
+# pod2 layers both spellings on one request to pin down PRECEDENCE. Matching
+# carries no specificity ranking: this driver applies the last matching config
+# in its precedence order, so the parent-scoped config listed last wins over
+# the more specific subrequest-scoped one listed before it.
+#   gpu   -> gpu/latest-gpu, TIMESLICE_INTERVAL=Long    (last match wins)
+#   extra -> extra,          TIMESLICE_INTERVAL=Default (out of scope)
+#
+# Together these cover both spellings the API allows for a config's `requests`
+# entry -- "<main request>" and "<main request>/<subrequest>" -- confirm that
+# neither leaks to a sibling request, and fix the order in which overlapping
+# configs resolve.
+#
+# This manifest is asserted by the subrequest config scoping e2e case in
+# test/e2e/e2e_test.go -- keep them in sync.
+#
+# Expected: each pod gets exactly 2 GPUs, one per request.
+# Check the injected GPUs and their intervals:
+#   kubectl logs -n subrequest-config-scoping pod0 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n subrequest-config-scoping pod1 -c ctr0 | grep GPU_DEVICE
+#   kubectl logs -n subrequest-config-scoping pod2 -c ctr0 | grep GPU_DEVICE
+# Check which request each device was allocated for, and that the config
+# scoping survived into the allocation result:
+#   kubectl get resourceclaim -n subrequest-config-scoping \
+#     -o jsonpath='{range .items[*]}{.status.allocation.devices.results[*].request}{"\n"}{end}'
+#   kubectl get resourceclaim -n subrequest-config-scoping \
+#     -o jsonpath='{range .items[*]}{.status.allocation.devices.config[*].requests}{"\n"}{end}'
+#
+# Driver requirements:
+#   Profile: gpu
+#   GPUs: 6 (2 per pod)
+#
+# Cluster requirements:
+#   Kubernetes 1.34+ with the DRAPrioritizedList feature gate enabled
+#   (Beta and on by default in 1.34-1.35; GA in 1.36+)
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: subrequest-config-scoping
+
+---
+# pod0: config scoped to the parent request name "gpu".
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: subrequest-config-scoping
+  name: parent-scoped-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        firstAvailable:
+        # No device has 1Ti of memory (the driver publishes 80Gi), so this
+        # subrequest is skipped and "older-gpu" is chosen.
+        - name: huge-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.capacity['gpu.example.com'].memory.compareTo(quantity('1Ti')) >= 0"
+        - name: older-gpu
+          deviceClassName: gpu.example.com
+      # A second request, so the config below does not apply to every request
+      # in the claim and therefore keeps its `requests` field.
+      - name: extra
+        exactly:
+          deviceClassName: gpu.example.com
+      config:
+      # Scoped to the parent request. Must apply to the "gpu/older-gpu"
+      # result, and must NOT apply to "extra".
+      - requests: ["gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: Long
+
+---
+# pod1: config scoped to the full "<request>/<subrequest>" reference.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: subrequest-config-scoping
+  name: subrequest-scoped-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        firstAvailable:
+        # Every device matches, so this higher-priority subrequest is chosen.
+        - name: latest-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.example.com'].model == 'LATEST-GPU-MODEL'"
+        - name: older-gpu
+          deviceClassName: gpu.example.com
+      - name: extra
+        exactly:
+          deviceClassName: gpu.example.com
+      config:
+      # Scoped to the chosen subrequest. Must apply to the "gpu/latest-gpu"
+      # result, and must NOT apply to "extra".
+      - requests: ["gpu/latest-gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: Short
+      # Scoped to the subrequest that is NOT chosen. The allocator leaves it
+      # out of the allocation result entirely, so it never reaches the driver.
+      - requests: ["gpu/older-gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: Medium
+
+---
+# pod2: overlapping configs, to pin down which one wins.
+apiVersion: resource.k8s.io/v1
+kind: ResourceClaimTemplate
+metadata:
+  namespace: subrequest-config-scoping
+  name: precedence-scoped-gpu
+spec:
+  spec:
+    devices:
+      requests:
+      - name: gpu
+        firstAvailable:
+        - name: latest-gpu
+          deviceClassName: gpu.example.com
+          selectors:
+          - cel:
+              expression: "device.attributes['gpu.example.com'].model == 'LATEST-GPU-MODEL'"
+        - name: older-gpu
+          deviceClassName: gpu.example.com
+      - name: extra
+        exactly:
+          deviceClassName: gpu.example.com
+      config:
+      # Both of these match the chosen "gpu/latest-gpu" result. Matching
+      # carries no specificity ranking, so the more specific subrequest-scoped
+      # config does NOT win by being more specific -- the parent-scoped one
+      # below wins by being later in the list.
+      - requests: ["gpu/latest-gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: Short
+      - requests: ["gpu"]
+        opaque:
+          driver: gpu.example.com
+          parameters:
+            apiVersion: gpu.resource.example.com/v1alpha1
+            kind: GpuConfig
+            sharing:
+              strategy: TimeSlicing
+              timeSlicingConfig:
+                interval: Long
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: subrequest-config-scoping
+  name: pod0
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: parent-scoped-gpu
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: subrequest-config-scoping
+  name: pod1
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: subrequest-scoped-gpu
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  namespace: subrequest-config-scoping
+  name: pod2
+  labels:
+    app: pod
+spec:
+  containers:
+  - name: ctr0
+    image: ubuntu:22.04
+    command: ["bash", "-c"]
+    args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
+    resources:
+      claims:
+      - name: gpu
+  resourceClaims:
+  - name: gpu
+    resourceClaimTemplateName: precedence-scoped-gpu
