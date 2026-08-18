@@ -323,9 +323,10 @@ metadata:
 #### Other platforms
 This demo uses kind by default. Additional platform-specific setup and cleanup
 guides are documented in [`demo/clusters`](demo/clusters/README.md), including
-GKE instructions in [`demo/clusters/gke`](demo/clusters/gke/README.md).
+Minikube instructions in [`demo/clusters/minikube`](demo/clusters/minikube/README.md)
+and GKE instructions in [`demo/clusters/gke`](demo/clusters/gke/README.md).
 
-### Run example workloads (shared across kind and GKE)
+### Run example workloads
 Next, deploy four example apps that demonstrate how `ResourceClaim`s,
 `ResourceClaimTemplate`s, and custom `GpuConfig` objects can be used to
 select and configure resources in various ways:
@@ -469,7 +470,9 @@ kind cluster started previously:
 ```
 
 #### Other platforms
-Use the cleanup steps documented in [`demo/clusters`](demo/clusters/README.md).
+Use the cleanup steps documented in [`demo/clusters`](demo/clusters/README.md)
+for Minikube (`./demo/clusters/minikube/delete-cluster.sh`) and GKE
+(`./demo/clusters/gke/delete-cluster.sh`).
 
 ## Device Profiles
 

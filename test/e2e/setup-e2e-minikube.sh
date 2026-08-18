@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+# Copyright 2024 The Kubernetes Authors.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Sets up a minikube cluster and installs prerequisites for e2e testing.
+# stop at first failure to save time
+set -e
+
+# Use local Helm chart by default, or from OCI registry if HELM_CHART_PATH is set
+# Example: HELM_CHART_PATH="oci://registry.k8s.io/dra-example-driver/charts/dra-example-driver" make setup-e2e-minikube
+# The same env var is honored by the e2e tests themselves, which install a
+# per-test driver release at runtime.
+HELM_CHART_PATH="${HELM_CHART_PATH:-deployments/helm/dra-example-driver}"
+export HELM_CHART_PATH
+
+# Skip building local driver image if using OCI registry chart
+if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
+    bash demo/build-driver.sh
+fi
+bash demo/clusters/minikube/create-cluster.sh
+
+helm upgrade -i \
+  --repo https://charts.jetstack.io \
+  --version v1.20.2 \
+  --create-namespace \
+  --namespace cert-manager \
+  --wait \
+  --set crds.enabled=true \
+  cert-manager \
+  cert-manager

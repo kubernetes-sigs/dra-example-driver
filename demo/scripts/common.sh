@@ -55,6 +55,12 @@ fi
 # The path to kind's cluster configuration file
 : ${KIND_CLUSTER_CONFIG_PATH:="${SCRIPTS_DIR}/kind-cluster-config.yaml"}
 
+# The name of the minikube cluster to create
+: ${MINIKUBE_CLUSTER_NAME:="${DRIVER_NAME}-cluster"}
+
+# The minikube VM/container driver (docker, podman, etc.)
+: ${MINIKUBE_DRIVER:="${CONTAINER_TOOL}"}
+
 # The derived name of the driver image to build
 : ${DRIVER_IMAGE:="${DRIVER_IMAGE_REGISTRY}/${DRIVER_IMAGE_NAME}:${DRIVER_IMAGE_TAG}"}
 
@@ -76,6 +82,7 @@ if [[ -z "${CONTAINER_TOOL}" ]]; then
 fi
 
 : ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
+: ${MINIKUBE:="minikube --profile=${MINIKUBE_CLUSTER_NAME}"}
 
 # check_demo_config validates image-build env (DRIVER_IMAGE_OS/PLATFORM and
 # explicit PLATFORMS settings). Call from image build/push scripts only, after

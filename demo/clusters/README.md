@@ -11,3 +11,11 @@ common layout:
 - `delete-cluster.sh` — delete that cluster
 
 Platforms may add other scripts or notes next to these entrypoints as needed.
+
+## Supported platforms
+
+| Platform | Directory | Notes |
+|----------|-----------|-------|
+| [kind](https://kind.sigs.k8s.io/) | [`kind/`](kind/) | Default for local development |
+| [Minikube](https://minikube.sigs.k8s.io/) | [`minikube/`](minikube/README.md) | Local alternative to kind |
+| [GKE](https://cloud.google.com/kubernetes-engine) | [`gke/`](gke/README.md) | Managed cloud cluster |
