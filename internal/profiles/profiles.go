@@ -41,8 +41,10 @@ type ConfigHandler interface {
 	Validate(config runtime.Object) error
 	// ApplyConfig applies a configuration to a set of device allocation
 	// results. When `config` is nil, the profile's default configuration should
-	// be applied.
-	ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error)
+	// be applied. The claimName parameter provides the name of the ResourceClaim
+	// being prepared, which can be used to generate claim-specific CDI configurations
+	// (e.g., unique mount paths, claim-specific identifiers).
+	ApplyConfig(claimName string, config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error)
 }
 
 // NoopConfigHandler implements a [ConfigHandler] that does not allow
@@ -50,7 +52,7 @@ type ConfigHandler interface {
 type NoopConfigHandler struct{}
 
 // ApplyConfig implements [ConfigHandler].
-func (n NoopConfigHandler) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error) {
+func (n NoopConfigHandler) ApplyConfig(claimName string, config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (PerDeviceCDIContainerEdits, error) {
 	if config != nil {
 		return nil, errors.New("configuration not allowed")
 	}
