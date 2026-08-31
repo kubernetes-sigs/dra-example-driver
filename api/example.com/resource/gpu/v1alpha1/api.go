@@ -31,7 +31,14 @@ const GpuConfigKind = "GpuConfig"
 type GpuConfig struct {
 	metav1.TypeMeta `json:",inline"`
 	Sharing         *GpuSharing `json:"sharing,omitempty"`
+	Mode            VfioMode    `json:"mode,omitempty"`
 }
+
+type VfioMode string
+
+const (
+	VfioModePassthrough VfioMode = "Passthrough"
+)
 
 // DefaultGpuConfig provides the default GPU configuration.
 func DefaultGpuConfig() *GpuConfig {
@@ -49,10 +56,23 @@ func DefaultGpuConfig() *GpuConfig {
 	}
 }
 
+func DefaultVfioGpuConfig() *GpuConfig {
+	return &GpuConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: GroupName + "/" + Version,
+			Kind:       GpuConfigKind,
+		},
+		Mode: VfioModePassthrough,
+	}
+}
+
 // Normalize updates a GpuConfig config with implied default values based on other settings.
 func (c *GpuConfig) Normalize() error {
 	if c == nil {
 		return fmt.Errorf("config is 'nil'")
+	}
+	if c.Mode == VfioModePassthrough {
+		return nil
 	}
 	if c.Sharing == nil {
 		c.Sharing = &GpuSharing{

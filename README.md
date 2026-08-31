@@ -25,7 +25,7 @@ The procedure below has been tested and verified on both Linux and Mac.
 * [GNU Make 3.81+](https://www.gnu.org/software/make/)
 * [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
 * [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/) or [Podman v4.9+](https://podman.io/docs/installation)
-* [kind v0.17.0+](https://kind.sigs.k8s.io/docs/user/quick-start/)
+* [kind v0.32.0+](https://kind.sigs.k8s.io/docs/user/quick-start/) (required for Kubernetes 1.36 node images / containerd config v4; `kind load` fails on older kind)
 * [helm v3.7.0+](https://helm.sh/docs/intro/install/)
 * [kubectl v1.18+](https://kubernetes.io/docs/reference/kubectl/)
 
@@ -484,6 +484,70 @@ For driver developers, this pattern is specific to the example driver and not
 intended to be a recommendation for all DRA drivers. Other drivers will likely
 be simpler by implementing their logic more directly than through an
 abstraction like the example driver's profiles.
+
+### Available profiles
+
+The default profile is `gpu`, which is what the quickstart above installs; all
+existing `demo/gpu-test*.yaml` fixtures continue to work unchanged. An
+additional profile exists for devices in vfio mode. This is for virtualized workloads like KubeVirt and Kata.
+
+| Profile    | Driver name             | Devices advertise                                                       | Discovery                                          | Demo fixtures              |
+|------------|-------------------------|-------------------------------------------------------------------------|----------------------------------------------------|----------------------------|
+| `gpu`      | `gpu.example.com`       | model/index/uuid                                                        | Mock (count via `--num-devices`)                   | `demo/gpu-test{1..5}.yaml` |
+| `vfio-gpu` | `vfio-gpu.example.com`  | `resource.kubernetes.io/pciBusID`, vendor/device/class, IOMMU group| Real, scans `/sys/bus/pci/drivers/vfio-pci` (vendor/device/class read from `/sys/bus/pci/devices/<BDF>`) | `demo/clusters/kind/vfio-gpu-test.yaml`   |
+
+The `vfio-gpu` profile relies on the upstream kubeletplugin framework's
+[KEP-5304][kep-5304] support to write a device metadata file at
+`/var/run/kubernetes.io/dra-device-attributes/<claim>/<request>/metadata.json`
+inside any consuming pod (enabled via the `kubeletPlugin.enableDeviceMetadata`
+Helm value / `--enable-device-metadata` CLI flag).
+
+The profile additionally injects, via the per-claim CDI spec built at
+`NodePrepareResources` time, the VFIO character devices the launcher
+needs to actually open the device: `/dev/vfio/<iommu_group>` for the
+allocated BDF and the userspace `/dev/vfio/vfio` entry point.
+
+The profile discovers devices by walking `/sys/bus/pci/drivers/vfio-pci/`,
+so every advertised device is by construction already bound to `vfio-pci`.
+No vendor/device filter or CEL selector is needed: the kernel has already
+partitioned the bus for us.
+
+Binding devices to `vfio-pci` is the operator's job (kernel cmdline
+`vfio-pci.ids=`, `driverctl set-override <BDF> vfio-pci`, a custom systemd
+unit, ...). Hosts that haven't bound anything yet will advertise an empty
+pool rather than fail the driver startup.
+
+### Installing a non-default profile
+
+```bash
+# vfio-gpu profile (real PCI passthrough for KubeVirt VMIs)
+helm upgrade -i \
+  --create-namespace \
+  --namespace dra-example-driver-vfio \
+  --set deviceProfile=vfio-gpu \
+  --set kubeletPlugin.enableDeviceMetadata=true \
+  --set driverName=vfio-gpu.example.com \
+  dra-example-driver-vfio \
+  deployments/helm/dra-example-driver
+```
+
+Each profile is a separate driver in the cluster, so both can be
+installed side-by-side without conflict.
+
+### vfio-gpu kind demo
+
+The default [`demo/clusters/kind/create-cluster.sh`](demo/clusters/kind/create-cluster.sh)
+quickstart targets the mock `gpu` profile. For vfio-gpu, prepare a Linux host with
+devices bound to `vfio-pci`, then create the cluster with vfio mounts enabled:
+
+```bash
+VFIO_GPU=true ./demo/clusters/kind/create-cluster.sh
+```
+
+Install the driver with `deviceProfile=vfio-gpu` as above, then apply
+[`demo/clusters/kind/vfio-gpu-test.yaml`](demo/clusters/kind/vfio-gpu-test.yaml)
+(KubeVirt must be installed separately). See
+[`demo/clusters/kind/README.md`](demo/clusters/kind/README.md) for the full walkthrough.
 
 ## Anatomy of a DRA resource driver
 

@@ -11,3 +11,10 @@ common layout:
 - `delete-cluster.sh` — delete that cluster
 
 Platforms may add other scripts or notes next to these entrypoints as needed.
+
+## Available platforms
+
+| Path | Purpose |
+|---|---|
+| [`kind/`](kind/) | kind cluster for the default `gpu` (mock devices) DRA profile and, with `VFIO_GPU=true`, the `vfio-gpu` profile (host vfio-pci bindings + PCI sysfs mounts). See [`kind/README.md`](kind/README.md). |
+| [`gke/`](gke/) | GKE cluster scripts |
