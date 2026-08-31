@@ -12,19 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-CONTAINER_TOOL ?= docker
 MKDIR    ?= mkdir
 TR       ?= tr
 DIST_DIR ?= $(CURDIR)/dist
-HELM     ?= "go run helm.sh/helm/v3/cmd/helm@latest"
+HELM     ?= "go tool -modfile $(CURDIR)/hack/tools/go.mod helm"
 
 export IMAGE_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'v*')
 export CHART_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'chart/*')
 
 include $(CURDIR)/common.mk
-
-BUILDIMAGE_TAG ?= golang$(GO_VERSION)
-BUILDIMAGE ?= $(IMAGE_NAME)-build:$(BUILDIMAGE_TAG)
 
 CMDS := $(patsubst ./cmd/%/,%,$(sort $(dir $(wildcard ./cmd/*/))))
 CMD_TARGETS := $(patsubst %,cmd-%, $(CMDS))
@@ -34,8 +30,7 @@ MAKE_TARGETS := binaries build check fmt test examples cmds coverage generate $(
 
 TARGETS := $(MAKE_TARGETS) $(CMD_TARGETS)
 
-DOCKER_TARGETS := $(patsubst %,docker-%, $(TARGETS))
-.PHONY: $(TARGETS) $(DOCKER_TARGETS)
+.PHONY: $(TARGETS)
 
 GOOS ?= linux
 
@@ -76,14 +71,14 @@ assert-fmt:
 	fi
 
 ineffassign:
-	ineffassign $(MODULE)/...
+	go tool -modfile hack/tools/go.mod ineffassign $(MODULE)/...
 
 .PHONY: lint
 lint:
-	golangci-lint run --build-tags=e2e ./...
+	go tool -modfile hack/tools/golangci-lint/go.mod golangci-lint run --build-tags=e2e ./...
 
 misspell:
-	misspell $(MODULE)/...
+	go tool -modfile hack/tools/go.mod misspell $(MODULE)/...
 
 vet:
 	go vet $(MODULE)/...
@@ -92,8 +87,7 @@ vet:
 test: logcheck
 .PHONY: logcheck
 logcheck:
-	(cd hack/tools && GOBIN=$(PWD) go install sigs.k8s.io/logtools/logcheck)
-	./logcheck -check-contextual -check-deprecations ./...
+	go tool -modfile hack/tools/go.mod logcheck -check-contextual -check-deprecations ./...
 
 COVERAGE_FILE := coverage.out
 test: build cmds
@@ -108,7 +102,7 @@ generate: generate-deepcopy generate-conversion
 generate-deepcopy:
 	for api in $(APIS); do \
 		rm -f $${api}/zz_generated.deepcopy.go; \
-		controller-gen \
+		go tool -modfile hack/tools/go.mod controller-gen \
 			object:headerFile=$(CURDIR)/hack/boilerplate.generatego.txt \
 			paths=$${api}/ \
 			output:object:dir=$${api}; \
@@ -117,7 +111,7 @@ generate-deepcopy:
 generate-conversion:
 	for api in $(APIS); do \
 		rm -f $${api}/zz_generated.conversion.go; \
-		conversion-gen \
+		go tool -modfile hack/tools/go.mod conversion-gen \
 			--go-header-file=$(CURDIR)/hack/boilerplate.generatego.txt \
 			--output-file=zz_generated.conversion.go \
 			$${api}/; \
@@ -131,50 +125,6 @@ test-e2e:
 
 teardown-e2e:
 	test/e2e/teardown-e2e.sh
-
-# Generate an image for containerized builds
-# Note: This image is local only
-.PHONY: .build-image
-.build-image: docker/Dockerfile.devel
-	if [ x"$(SKIP_IMAGE_BUILD)" = x"" ]; then \
-		$(CONTAINER_TOOL) build \
-			--progress=plain \
-			--build-arg GO_VERSION="$(GO_VERSION)" \
-			--tag $(BUILDIMAGE) \
-			-f $(^) \
-			docker; \
-	fi
-
-ifeq ($(CONTAINER_TOOL),podman)
-CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD):Z
-else
-CONTAINER_TOOL_OPTS=-v $(PWD):$(PWD):z --user $$(id -u):$$(id -g)
-endif
-
-$(DOCKER_TARGETS): docker-%: .build-image
-	@echo "Running 'make $(*)' in container $(BUILDIMAGE)"
-	$(CONTAINER_TOOL) run \
-		--rm \
-		-e HOME=$(PWD) \
-		-e GOCACHE=$(PWD)/.cache/go \
-		-e GOPATH=$(PWD)/.cache/gopath \
-		$(CONTAINER_TOOL_OPTS) \
-		-w $(PWD) \
-		$(BUILDIMAGE) \
-			make $(*)
-
-# Start an interactive shell using the development image.
-.PHONY: .shell
-.shell:
-	$(CONTAINER_TOOL) run \
-		--rm \
-		-ti \
-		-e HOME=$(PWD) \
-		-e GOCACHE=$(PWD)/.cache/go \
-		-e GOPATH=$(PWD)/.cache/gopath \
-		$(CONTAINER_TOOL_OPTS) \
-		-w $(PWD) \
-		$(BUILDIMAGE)
 
 .PHONY: push-release-artifacts
 push-release-artifacts:

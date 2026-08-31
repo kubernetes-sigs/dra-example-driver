@@ -21,6 +21,7 @@
 
 # A reference to the current directory where this script is located
 SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
+ROOT_DIR="$(git rev-parse --show-toplevel)"
 
 # The name of the example driver
 : ${DRIVER_NAME:=dra-example-driver}
@@ -28,7 +29,7 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 # The registry, image and tag for the example driver
 : ${DRIVER_IMAGE_REGISTRY:="registry.k8s.io/dra-example-driver"}
 : ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
-: ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
+: ${DRIVER_IMAGE_TAG:="$(cat ${ROOT_DIR}/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
 # Use DRIVER_IMAGE_OS as the canonical variable name.
 # DRIVER_IMAGE_PLATFORM is a deprecated compatibility fallback.
 if [[ -n "${DRIVER_IMAGE_PLATFORM:-}" && -z "${DRIVER_IMAGE_OS:-}" ]]; then
@@ -75,7 +76,7 @@ if [[ -z "${CONTAINER_TOOL}" ]]; then
     fi
 fi
 
-: ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} kind"}
+: ${KIND:="env KIND_EXPERIMENTAL_PROVIDER=${CONTAINER_TOOL} go tool -modfile ${ROOT_DIR}/hack/tools/go.mod kind"}
 
 # check_demo_config validates image-build env (DRIVER_IMAGE_OS/PLATFORM and
 # explicit PLATFORMS settings). Call from image build/push scripts only, after

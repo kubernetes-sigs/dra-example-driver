@@ -22,6 +22,7 @@ The procedure below has been tested and verified on both Linux and Mac.
 
 ### Prerequisites
 
+* [Go 1.26+](https://go.dev)
 * [GNU Make 3.81+](https://www.gnu.org/software/make/)
 * [GNU Tar 1.34+](https://www.gnu.org/software/tar/)
 * [docker v20.10+ (including buildx)](https://docs.docker.com/engine/install/) or [Podman v4.9+](https://podman.io/docs/installation)
