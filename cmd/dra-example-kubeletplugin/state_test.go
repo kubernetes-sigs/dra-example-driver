@@ -398,6 +398,127 @@ func TestPrepareRestoredClaimFailsWhenClaimSpecCannotBeRecreated(t *testing.T) {
 	assert.Equal(t, claim.UID, checkpoint.PreparedClaims[0].UID)
 }
 
+// makeExclusive clears AllowMultipleAllocations on an already-registered
+// allocatable device, so tests can exercise the exclusivity check against a
+// device that is not, like the CPU profile's own numa nodes, shareable by
+// design.
+func makeExclusive(state *DeviceState, deviceName string) {
+	device := state.allocatable[deviceName]
+	device.AllowMultipleAllocations = nil
+	state.allocatable[deviceName] = device
+}
+
+// TestPrepareRejectsConflictingClaim verifies the fix for the double-allocation
+// race described in kubernetes/kubernetes#141471: if a claim's device is force-deleted,
+// the control plane can reallocate the same device to a second claim before the
+// first claim is unprepared. Prepare must reject the second claim rather than
+// silently double-booking the device.
+func TestPrepareRejectsConflictingClaim(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	makeExclusive(state, "numa-0")
+
+	claimA := testCPUClaim(driverName, nodeName)
+	claimA.UID, claimA.Name = "claim-a-uid", "claim-a"
+	_, err := state.Prepare(context.Background(), claimA)
+	require.NoError(t, err, "first claim should prepare successfully")
+
+	claimB := testCPUClaim(driverName, nodeName)
+	claimB.UID, claimB.Name = "claim-b-uid", "claim-b"
+	prepared, err := state.Prepare(context.Background(), claimB)
+	require.Error(t, err, "second claim for the same device must be rejected while the first is still prepared")
+	assert.Contains(t, err.Error(), "already prepared for claim")
+	assert.Nil(t, prepared)
+}
+
+// TestPrepareSucceedsAfterUnprepareReleasesDevice verifies the normal, non-racy
+// lifecycle still works: once a claim is unprepared, its device is free for a
+// different claim to prepare without conflict.
+func TestPrepareSucceedsAfterUnprepareReleasesDevice(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	makeExclusive(state, "numa-0")
+
+	claimA := testCPUClaim(driverName, nodeName)
+	claimA.UID, claimA.Name = "claim-a-uid", "claim-a"
+	_, err := state.Prepare(context.Background(), claimA)
+	require.NoError(t, err)
+
+	require.NoError(t, state.Unprepare(claimA.UID))
+
+	claimB := testCPUClaim(driverName, nodeName)
+	claimB.UID, claimB.Name = "claim-b-uid", "claim-b"
+	prepared, err := state.Prepare(context.Background(), claimB)
+	require.NoError(t, err, "device should be free once the original claim is unprepared")
+	assert.NotEmpty(t, prepared)
+}
+
+// TestPrepareIsIdempotentForSameClaim verifies that re-preparing the same claim
+// UID (e.g. a kubelet retry before the checkpoint write completed) is not
+// mistaken for a conflicting claim.
+func TestPrepareIsIdempotentForSameClaim(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	// Same claim UID, no Unprepare in between -- must not be treated as a conflict.
+	_, err = state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+}
+
+// TestExclusiveDeviceNamesExcludesSharedAllocations verifies that AdminAccess
+// allocations and devices marked AllowMultipleAllocations are excluded from
+// exclusivity checking, since both are designed to be held concurrently by
+// multiple claims and must not be flagged as a conflict.
+func TestExclusiveDeviceNamesExcludesSharedAllocations(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	makeExclusive(state, "numa-0")
+	state.allocatable["shared-device"] = resourceapi.Device{
+		Name:                     "shared-device",
+		AllowMultipleAllocations: ptr.To(true),
+	}
+
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{UID: "claim-uid"},
+		Status: resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{Results: []resourceapi.DeviceRequestAllocationResult{
+					{Request: "exclusive", Driver: driverName, Pool: nodeName, Device: "numa-0"},
+					{Request: "admin", Driver: driverName, Pool: nodeName, Device: "numa-0", AdminAccess: ptr.To(true)},
+					{Request: "shared", Driver: driverName, Pool: nodeName, Device: "shared-device"},
+				}},
+			},
+		},
+	}
+
+	names := state.exclusiveDeviceNames(claim)
+	assert.Equal(t, []string{"numa-0"}, names, "AdminAccess and AllowMultipleAllocations results must be excluded")
+}
+
 func newTestCPUDeviceState(t *testing.T, root, nodeName, driverName string) *DeviceState {
 	t.Helper()
 

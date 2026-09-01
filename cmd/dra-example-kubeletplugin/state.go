@@ -86,6 +86,16 @@ type DeviceState struct {
 
 	coreClient      coreclientset.Interface
 	gpuDeviceStatus bool
+
+	// preparedDevices tracks which claim currently holds each exclusively
+	// allocated device, so a Prepare call for a different claim can be
+	// rejected instead of silently double-booking it. This is in-memory only
+	// -- like all other driver state, it does not survive a restart, and
+	// device names are not persisted in the on-disk checkpoint (see
+	// PreparedClaim). Restart-time recovery of a claim's own devices is
+	// handled separately by restoreClaimFromCheckpoint, which is keyed by
+	// claim UID and never goes through this map.
+	preparedDevices map[string]types.UID
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -151,6 +161,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointEncoder: checkpointEncoder,
 		coreClient:        config.coreclient,
 		gpuDeviceStatus:   config.flags.gpuDeviceStatus,
+		preparedDevices:   make(map[string]types.UID),
 	}
 
 	return state, nil
@@ -175,11 +186,16 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		return restoredDevices, nil
 	}
 
+	if err := s.checkDeviceExclusivity(claim); err != nil {
+		return nil, err
+	}
+
 	preparedDevices, err := s.prepareDevices(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
 	s.addClaimToCheckpoint(checkpoint, claim, preparedDevices)
+	s.recordPreparedDevices(claim)
 
 	if err = s.cdi.CreateClaimSpecFile(string(claim.UID), preparedDevices); err != nil {
 		return nil, fmt.Errorf("unable to create CDI spec file for claim: %v", err)
@@ -218,6 +234,7 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 		return fmt.Errorf("unprepare failed: %v", err)
 	}
 	s.removeClaimFromCheckpoint(checkpoint, claimUID)
+	s.releasePreparedDevices(claimUID)
 
 	err = s.cdi.DeleteClaimSpecFile(string(claimUID))
 	if err != nil {
@@ -403,6 +420,63 @@ func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
 		}
 	}
 	return false
+}
+
+// checkDeviceExclusivity returns an error if any device claim was allocated
+// by this driver is already prepared for a different claim. Devices meant to
+// be shared by design -- AdminAccess allocations, and devices themselves
+// marked AllowMultipleAllocations (e.g. consumable-capacity/partitionable
+// devices) -- are excluded, since holding those concurrently is intended
+// behavior, not a conflict.
+func (s *DeviceState) checkDeviceExclusivity(claim *resourceapi.ResourceClaim) error {
+	for _, name := range s.exclusiveDeviceNames(claim) {
+		if holder, ok := s.preparedDevices[name]; ok && holder != claim.UID {
+			return fmt.Errorf("device %s is already prepared for claim %s", name, holder)
+		}
+	}
+	return nil
+}
+
+// recordPreparedDevices records that claim now holds each of its exclusively
+// allocated devices, for future checkDeviceExclusivity calls.
+func (s *DeviceState) recordPreparedDevices(claim *resourceapi.ResourceClaim) {
+	for _, name := range s.exclusiveDeviceNames(claim) {
+		s.preparedDevices[name] = claim.UID
+	}
+}
+
+// releasePreparedDevices removes claimUID's hold on any devices it was
+// tracked as holding.
+func (s *DeviceState) releasePreparedDevices(claimUID types.UID) {
+	for name, holder := range s.preparedDevices {
+		if holder == claimUID {
+			delete(s.preparedDevices, name)
+		}
+	}
+}
+
+// exclusiveDeviceNames returns the names of the devices claim was allocated
+// by this driver that are expected to be held exclusively -- i.e. excluding
+// AdminAccess allocations and devices that allow multiple concurrent
+// allocations, both of which are designed to be shared.
+func (s *DeviceState) exclusiveDeviceNames(claim *resourceapi.ResourceClaim) []string {
+	if claim == nil || claim.Status.Allocation == nil {
+		return nil
+	}
+	var names []string
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		if result.Driver != s.driverName {
+			continue
+		}
+		if result.AdminAccess != nil && *result.AdminAccess {
+			continue
+		}
+		if device, ok := s.allocatable[result.Device]; ok && device.AllowMultipleAllocations != nil && *device.AllowMultipleAllocations {
+			continue
+		}
+		names = append(names, result.Device)
+	}
+	return names
 }
 
 func checkpointSerializer() (runtime.Decoder, runtime.Encoder, error) {
