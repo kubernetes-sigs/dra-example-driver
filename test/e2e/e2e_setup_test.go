@@ -628,6 +628,70 @@ func verifyChosenSubrequest(ctx context.Context, namespace, podName, podLocalCla
 	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
 }
 
+// requestInterval pairs an allocation result's request reference with the
+// TIMESLICE_INTERVAL the container is expected to see for the device that was
+// allocated to that request. "Default" means no opaque config matched and the
+// driver fell back to the default GpuConfig.
+type requestInterval struct {
+	request  string
+	interval string
+}
+
+// verifyRequestScopedConfig checks that a claim's opaque configs were applied
+// to exactly the devices their `requests` scoping names.
+//
+// Unlike verifySharedGPUGroup, which keys off whichever GPU a container
+// happens to see, this resolves each expected request reference to its
+// allocated device through the ResourceClaim, then asserts that device's
+// injected interval. That distinction matters for prioritized-list claims:
+// the allocation result records the chosen subrequest as
+// "<request>/<subrequest>" (KEP-4816), and a config scoped to the parent
+// request must still reach it while leaving sibling requests alone.
+func verifyRequestScopedConfig(ctx context.Context, namespace, podName, podLocalClaimName, containerName, driverName string, expected []requestInterval) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q; status: %+v",
+			namespace, podName, podLocalClaimName, pod.Status.ResourceClaimStatuses)
+		claimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get ResourceClaim %s/%s", namespace, claimName)
+		g.Expect(claim.Status.Allocation).NotTo(BeNil(),
+			"ResourceClaim %s/%s is not yet allocated", namespace, claimName)
+
+		deviceForRequest := make(map[string]string)
+		for _, r := range claim.Status.Allocation.Devices.Results {
+			if r.Driver == driverName {
+				deviceForRequest[r.Request] = r.Device
+			}
+		}
+
+		_, logs := getGPUsFromPodLogs(ctx, g, namespace, podName, containerName)
+
+		for _, want := range expected {
+			device, ok := deviceForRequest[want.request]
+			g.Expect(ok).To(BeTrue(),
+				"ResourceClaim %s/%s has no allocation result for request %q; results: %+v",
+				namespace, claimName, want.request, claim.Status.Allocation.Devices.Results)
+
+			interval := extractGPUProperty(logs, getGPUID(device), "TIMESLICE_INTERVAL")
+			g.Expect(interval).To(Equal(want.interval),
+				"Pod %s/%s, container %s: device %s (allocated for request %q) should have TIMESLICE_INTERVAL=%s, got %q",
+				namespace, podName, containerName, device, want.request, want.interval, interval)
+
+			fmt.Fprintf(GinkgoWriter, "Pod %s/%s request %q -> device %s has TIMESLICE_INTERVAL=%s\n",
+				namespace, podName, want.request, device, interval)
+		}
+	}, checkPodLogsTimeout, checkPodLogsInterval).Should(Succeed())
+}
+
 // expectedMapping describes the asserted shape of a single
 // NodeAllocatableResource mapping. Exactly one of DeviceMultiplier and
 // CapacityKey should be set; whichever is set is what the helper asserts.
