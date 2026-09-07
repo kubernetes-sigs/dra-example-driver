@@ -37,6 +37,7 @@ import (
 
 	"k8s.io/klog/v2"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
+	"k8s.io/utils/ptr"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
@@ -506,9 +507,29 @@ func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, d
 
 		// copy the object and update only status.devices
 		claim = claim.DeepCopy()
-		claim.Status.Devices = devices
+		claim.Status.Devices = mergeDeviceStatus(claim.Status.Devices, devices)
 
 		_, err = rc.UpdateStatus(ctx, claim, metav1.UpdateOptions{})
 		return err
 	})
+}
+
+// mergeDeviceStatus merges updates into existing per-device status entries,
+// matched on driver, pool, device and shareID. Only the Data field of a
+// matching entry is replaced, so fields written by other actors (for example
+// Conditions set by the binding conditions controller) are preserved. Entries
+// with no existing match are appended.
+func mergeDeviceStatus(existing, updates []resourceapi.AllocatedDeviceStatus) []resourceapi.AllocatedDeviceStatus {
+	merged := slices.Clone(existing)
+	for _, u := range updates {
+		idx := slices.IndexFunc(merged, func(d resourceapi.AllocatedDeviceStatus) bool {
+			return d.Driver == u.Driver && d.Pool == u.Pool && d.Device == u.Device && ptr.Equal(d.ShareID, u.ShareID)
+		})
+		if idx < 0 {
+			merged = append(merged, u)
+			continue
+		}
+		merged[idx].Data = u.Data
+	}
+	return merged
 }
