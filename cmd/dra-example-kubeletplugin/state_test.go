@@ -30,6 +30,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	"k8s.io/utils/ptr"
@@ -477,4 +478,41 @@ func assertClaimSpecResolvesPreparedDevices(t *testing.T, state *DeviceState, cl
 		}
 	}
 	assert.Greater(t, resolved, 0, "expected at least one claim-specific CDI device ID")
+}
+
+func TestMergeDeviceStatusPreservesConditions(t *testing.T) {
+	cond := metav1.Condition{Type: "BindingConditions", Status: metav1.ConditionTrue, Reason: "Ready"}
+	existing := []resourceapi.AllocatedDeviceStatus{
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Conditions: []metav1.Condition{cond}},
+	}
+	updates := []resourceapi.AllocatedDeviceStatus{
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"x"}`)}},
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-1", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"y"}`)}},
+	}
+
+	merged := mergeDeviceStatus(existing, updates)
+
+	require.Len(t, merged, 2)
+	assert.Equal(t, "gpu-0", merged[0].Device)
+	assert.Equal(t, []metav1.Condition{cond}, merged[0].Conditions, "existing conditions must be preserved")
+	assert.Equal(t, updates[0].Data, merged[0].Data)
+	assert.Equal(t, updates[1], merged[1], "unmatched entries are appended")
+	assert.Len(t, existing[0].Conditions, 1, "input must not be mutated")
+}
+
+func TestMergeDeviceStatusDistinguishesShareID(t *testing.T) {
+	shareA, shareB := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+	existing := []resourceapi.AllocatedDeviceStatus{
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", ShareID: &shareA, Conditions: []metav1.Condition{{Type: "BindingConditions", Status: metav1.ConditionTrue}}},
+	}
+	updates := []resourceapi.AllocatedDeviceStatus{
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", ShareID: &shareB, Data: &runtime.RawExtension{Raw: []byte(`{}`)}},
+	}
+
+	merged := mergeDeviceStatus(existing, updates)
+
+	require.Len(t, merged, 2)
+	assert.Equal(t, &shareA, merged[0].ShareID)
+	assert.Len(t, merged[0].Conditions, 1)
+	assert.Equal(t, &shareB, merged[1].ShareID)
 }
