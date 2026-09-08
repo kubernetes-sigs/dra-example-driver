@@ -35,6 +35,7 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/net"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 	"sigs.k8s.io/dra-example-driver/pkg/metrics"
@@ -62,6 +63,9 @@ type Flags struct {
 	gpuDeviceStatus               bool
 	bindingConditions             bool
 	gpuAllowMultipleAllocations   bool
+	gpuPublishPCIeRoot            bool
+	netPublishPCIeRoot            bool
+	pcieRoots                     string
 	cpuNUMANodes                  int
 	cpusPerNUMANode               int
 }
@@ -76,13 +80,13 @@ type Config struct {
 
 var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	gpu.ProfileName: func(flags Flags) profiles.Profile {
-		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions, flags.gpuAllowMultipleAllocations)
+		return gpu.NewProfile(flags.nodeName, flags.numDevices, flags.gpuPartitions, flags.gpuDeviceStatus, flags.bindingConditions, flags.gpuAllowMultipleAllocations, flags.gpuPublishPCIeRoot, helpers.ParsePCIeRoots(flags.pcieRoots))
 	},
 	cpu.ProfileName: func(flags Flags) profiles.Profile {
 		return cpu.NewProfile(flags.nodeName, flags.driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode)
 	},
 	net.ProfileName: func(flags Flags) profiles.Profile {
-		return net.NewProfile(flags.nodeName, flags.numDevices)
+		return net.NewProfile(flags.nodeName, flags.numDevices, flags.netPublishPCIeRoot, helpers.ParsePCIeRoots(flags.pcieRoots))
 	},
 }
 
@@ -203,6 +207,24 @@ func newApp() *cli.App {
 			Usage:       "Allow GPU devices to be allocated to multiple DeviceRequests. Disabled by default.",
 			Destination: &flags.gpuAllowMultipleAllocations,
 			EnvVars:     []string{"GPU_ALLOW_MULTIPLE_ALLOCATIONS"},
+		},
+		&cli.BoolFlag{
+			Name:        "gpu-publish-pcie-root",
+			Usage:       "Publish resource.kubernetes.io/pcieRoot on mock GPU devices. Disabled by default.",
+			Destination: &flags.gpuPublishPCIeRoot,
+			EnvVars:     []string{"GPU_PUBLISH_PCIE_ROOT"},
+		},
+		&cli.BoolFlag{
+			Name:        "net-publish-pcie-root",
+			Usage:       "Publish resource.kubernetes.io/pcieRoot on mock net devices. Disabled by default.",
+			Destination: &flags.netPublishPCIeRoot,
+			EnvVars:     []string{"NET_PUBLISH_PCIE_ROOT"},
+		},
+		&cli.StringFlag{
+			Name:        "pcie-roots",
+			Usage:       "Comma-separated PCIe root values for mock devices (e.g. pci0000:00,pci0000:80). When publish is enabled and this is empty, deterministic defaults are used.",
+			Destination: &flags.pcieRoots,
+			EnvVars:     []string{"PCIE_ROOTS"},
 		},
 		&cli.IntFlag{
 			Name:        "cpu-numa-nodes",

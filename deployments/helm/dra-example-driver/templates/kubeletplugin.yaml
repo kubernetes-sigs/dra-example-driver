@@ -90,6 +90,12 @@ spec:
           value: {{ .Values.gpuDeviceStatus | quote }}
         - name: GPU_ALLOW_MULTIPLE_ALLOCATIONS
           value: {{ .Values.gpuAllowMultipleAllocations | quote }}
+        - name: GPU_PUBLISH_PCIE_ROOT
+          value: {{ .Values.gpuPublishPCIeRoot | quote }}
+        - name: NET_PUBLISH_PCIE_ROOT
+          value: {{ .Values.netPublishPCIeRoot | quote }}
+        - name: PCIE_ROOTS
+          value: {{ .Values.pcieRoots | quote }}
         {{- if (gt (int .Values.kubeletPlugin.containers.plugin.healthcheckPort) 0) }}
         - name: HEALTHCHECK_PORT
           value: {{ .Values.kubeletPlugin.containers.plugin.healthcheckPort | quote }}

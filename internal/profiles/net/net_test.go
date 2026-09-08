@@ -24,20 +24,22 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/ptr"
 
 	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/net/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4)
+	profile := NewProfile("test-node", 4, false, nil)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numNets)
 }
 
 func TestEnumerateDevices(t *testing.T) {
-	profile := NewProfile("test-node", 3)
+	profile := NewProfile("test-node", 3, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -93,8 +95,54 @@ func TestEnumerateDevices(t *testing.T) {
 	}
 }
 
+func TestEnumerateDevices_PublishesPCIeRoot(t *testing.T) {
+	roots := []string{"pci0000:00", "pci0000:80"}
+	profile := NewProfile("test-node", 3, true, roots)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"nic-0": roots[0],
+		"nic-1": roots[1],
+		"nic-2": roots[0],
+	}
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		attr, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		require.True(t, ok, "device %q missing pcieRoot", device.Name)
+		require.NotNil(t, attr.StringValue)
+		assert.Equal(t, expected[device.Name], *attr.StringValue)
+	}
+}
+
+func TestEnumerateDevices_PublishesDefaultPCIeRoots(t *testing.T) {
+	profile := NewProfile("test-node", 2, true, nil)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"nic-0": helpers.DefaultPCIeRoots[0],
+		"nic-1": helpers.DefaultPCIeRoots[1],
+	}
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		attr, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		require.True(t, ok, "device %q missing pcieRoot", device.Name)
+		assert.Equal(t, expected[device.Name], *attr.StringValue)
+	}
+}
+
+func TestEnumerateDevices_OmitsPCIeRootWhenDisabled(t *testing.T) {
+	profile := NewProfile("test-node", 2, false, []string{"pci0000:00"})
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		_, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		assert.False(t, ok, "device %q should not publish pcieRoot when disabled", device.Name)
+	}
+}
+
 func TestEnumerateDevices_CapacityRequestPolicy(t *testing.T) {
-	profile := NewProfile("test-node", 1)
+	profile := NewProfile("test-node", 1, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -130,8 +178,8 @@ func TestEnumerateDevices_CapacityRequestPolicy(t *testing.T) {
 
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2)
-	profile2 := NewProfile("test-node", 2)
+	profile1 := NewProfile("test-node", 2, false, nil)
+	profile2 := NewProfile("test-node", 2, false, nil)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -149,8 +197,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1)
-	profile2 := NewProfile("node-2", 1)
+	profile1 := NewProfile("node-1", 1, false, nil)
+	profile2 := NewProfile("node-2", 1, false, nil)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -164,7 +212,7 @@ func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
 }
 
 func TestApplyConfig_Default(t *testing.T) {
-	profile := NewProfile("test-node", 2)
+	profile := NewProfile("test-node", 2, false, nil)
 	results := []*resourceapi.DeviceRequestAllocationResult{
 		{
 			Device: "nic-0",
@@ -186,7 +234,7 @@ func TestApplyConfig_Default(t *testing.T) {
 }
 
 func TestApplyConfig_WithBurstConfig(t *testing.T) {
-	profile := NewProfile("test-node", 2)
+	profile := NewProfile("test-node", 2, false, nil)
 	config := &configapi.NetConfig{
 		BandwidthBurst: &configapi.BandwidthBurstEntry{
 			// Burst values in bits - maximum amount of bits available instantaneously
@@ -221,7 +269,7 @@ func TestApplyConfig_WithBurstConfig(t *testing.T) {
 }
 
 func TestApplyConfig_MultipleDevices(t *testing.T) {
-	profile := NewProfile("test-node", 3)
+	profile := NewProfile("test-node", 3, false, nil)
 	results := []*resourceapi.DeviceRequestAllocationResult{
 		{
 			Device: "nic-0",
@@ -251,7 +299,7 @@ func TestApplyConfig_MultipleDevices(t *testing.T) {
 }
 
 func TestApplyConfig_WithShareID(t *testing.T) {
-	profile := NewProfile("test-node", 1)
+	profile := NewProfile("test-node", 1, false, nil)
 	results := []*resourceapi.DeviceRequestAllocationResult{
 		{
 			Device:  "nic-0",
@@ -273,7 +321,7 @@ func TestApplyConfig_WithShareID(t *testing.T) {
 }
 
 func TestValidate_ValidConfig(t *testing.T) {
-	profile := NewProfile("test-node", 1)
+	profile := NewProfile("test-node", 1, false, nil)
 	config := &configapi.NetConfig{
 		BandwidthBurst: &configapi.BandwidthBurstEntry{
 			IngressBurst: 10000000, // 10Mb in bits
@@ -286,7 +334,7 @@ func TestValidate_ValidConfig(t *testing.T) {
 }
 
 func TestValidate_InvalidConfigType(t *testing.T) {
-	profile := NewProfile("test-node", 1)
+	profile := NewProfile("test-node", 1, false, nil)
 
 	// Test with invalid config - BandwidthBurst should not be nil after normalization
 	config := &configapi.NetConfig{}
