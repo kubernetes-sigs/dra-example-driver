@@ -27,13 +27,15 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/deviceattribute"
 	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", 4, 0, false, false, false)
+	profile := NewProfile("test-node", 4, 0, false, false, false, false, nil)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 4, profile.numGPUs)
@@ -41,20 +43,70 @@ func TestNewProfile(t *testing.T) {
 	assert.False(t, profile.enableDeviceStatus)
 	assert.Equal(t, false, profile.bindingConditions)
 	assert.Equal(t, false, profile.allowMultipleAllocations)
+	assert.False(t, profile.publishPCIeRoot)
 }
 
 func TestNewProfile_WithAllOptions(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4, false, true, true)
+	roots := []string{"pci0000:00", "pci0000:80"}
+	profile := NewProfile("test-node", 2, 4, false, true, true, true, roots)
 
 	assert.Equal(t, "test-node", profile.nodeName)
 	assert.Equal(t, 2, profile.numGPUs)
 	assert.Equal(t, 4, profile.partitionsPerGPU)
 	assert.Equal(t, true, profile.bindingConditions)
 	assert.Equal(t, true, profile.allowMultipleAllocations)
+	assert.True(t, profile.publishPCIeRoot)
+	assert.Equal(t, roots, profile.pcieRoots)
+}
+
+func TestEnumerateDevices_PublishesPCIeRoot(t *testing.T) {
+	roots := []string{"pci0000:00", "pci0000:80"}
+	profile := NewProfile("test-node", 3, 0, false, false, false, true, roots)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"gpu-0": roots[0],
+		"gpu-1": roots[1],
+		"gpu-2": roots[0],
+	}
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		attr, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		require.True(t, ok, "device %q missing pcieRoot", device.Name)
+		require.NotNil(t, attr.StringValue)
+		assert.Equal(t, expected[device.Name], *attr.StringValue)
+	}
+}
+
+func TestEnumerateDevices_PublishesDefaultPCIeRoots(t *testing.T) {
+	profile := NewProfile("test-node", 2, 0, false, false, false, true, nil)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	expected := map[string]string{
+		"gpu-0": helpers.DefaultPCIeRoots[0],
+		"gpu-1": helpers.DefaultPCIeRoots[1],
+	}
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		attr, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		require.True(t, ok, "device %q missing pcieRoot", device.Name)
+		assert.Equal(t, expected[device.Name], *attr.StringValue)
+	}
+}
+
+func TestEnumerateDevices_OmitsPCIeRootWhenDisabled(t *testing.T) {
+	profile := NewProfile("test-node", 2, 0, false, false, false, false, []string{"pci0000:00"})
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	for _, device := range resources.Pools["test-node"].Slices[0].Devices {
+		_, ok := device.Attributes[deviceattribute.StandardDeviceAttributePCIeRoot]
+		assert.False(t, ok, "device %q should not publish pcieRoot when disabled", device.Name)
+	}
 }
 
 func TestEnumerateDevices_Standard(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0, false, false, false)
+	profile := NewProfile("test-node", 2, 0, false, false, false, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -107,7 +159,7 @@ func TestEnumerateDevices_Standard(t *testing.T) {
 }
 
 func TestEnumerateDevices_AllowMultipleAllocations(t *testing.T) {
-	profile := NewProfile("test-node", 1, 0, false, false, true)
+	profile := NewProfile("test-node", 1, 0, false, false, true, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -139,7 +191,7 @@ func TestEnumerateDevices_AllowMultipleAllocations(t *testing.T) {
 }
 
 func TestEnumerateDevices_Partitionable(t *testing.T) {
-	profile := NewProfile("test-node", 2, 4, false, false, false)
+	profile := NewProfile("test-node", 2, 4, false, false, false, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -185,7 +237,7 @@ func TestEnumerateDevices_Partitionable(t *testing.T) {
 }
 
 func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2, false, false, false)
+	profile := NewProfile("test-node", 1, 2, false, false, false, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -237,7 +289,7 @@ func TestEnumerateDevices_PartitionableDeviceAttributes(t *testing.T) {
 }
 
 func TestEnumerateDevices_AllowMultipleAllocations_AndPartitions(t *testing.T) {
-	profile := NewProfile("test-node", 1, 2, false, false, true)
+	profile := NewProfile("test-node", 1, 2, false, false, true, false, nil)
 
 	resources, err := profile.EnumerateDevices()
 	require.NoError(t, err)
@@ -319,8 +371,8 @@ func TestEnumerateDevices_AllowMultipleAllocations_AndPartitions(t *testing.T) {
 
 func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 	// UUIDs should be consistent for the same node name
-	profile1 := NewProfile("test-node", 2, 0, false, false, false)
-	profile2 := NewProfile("test-node", 2, 0, false, false, false)
+	profile1 := NewProfile("test-node", 2, 0, false, false, false, false, nil)
+	profile2 := NewProfile("test-node", 2, 0, false, false, false, false, nil)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -338,8 +390,8 @@ func TestEnumerateDevices_ConsistentUUIDs(t *testing.T) {
 }
 
 func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
-	profile1 := NewProfile("node-1", 1, 0, false, false, false)
-	profile2 := NewProfile("node-2", 1, 0, false, false, false)
+	profile1 := NewProfile("node-1", 1, 0, false, false, false, false, nil)
+	profile2 := NewProfile("node-2", 1, 0, false, false, false, false, nil)
 
 	resources1, err := profile1.EnumerateDevices()
 	require.NoError(t, err)
@@ -353,9 +405,9 @@ func TestEnumerateDevices_DifferentNodesHaveDifferentUUIDs(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_Disabled(t *testing.T) {
-	var _ profiles.DeviceStatusBuilder = NewProfile("test-node", 1, 0, true, false, false)
+	var _ profiles.DeviceStatusBuilder = NewProfile("test-node", 1, 0, true, false, false, false, nil)
 
-	profile := NewProfile("test-node", 1, 0, false, false, false)
+	profile := NewProfile("test-node", 1, 0, false, false, false, false, nil)
 	allocatable := map[string]resourceapi.Device{
 		"gpu-0": {Name: "gpu-0"},
 	}
@@ -370,7 +422,7 @@ func TestBuildDeviceStatus_Disabled(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_Enabled(t *testing.T) {
-	profile := NewProfile("test-node", 1, 0, true, false, false)
+	profile := NewProfile("test-node", 1, 0, true, false, false, false, nil)
 	allocatable := map[string]resourceapi.Device{
 		"gpu-0": {
 			Name: "gpu-0",
@@ -406,7 +458,7 @@ func TestBuildDeviceStatus_Enabled(t *testing.T) {
 }
 
 func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
-	profile := NewProfile("test-node", 1, 0, true, false, false)
+	profile := NewProfile("test-node", 1, 0, true, false, false, false, nil)
 	result := &resourceapi.DeviceRequestAllocationResult{
 		Device: "gpu-0",
 		Driver: "gpu.example.com",
@@ -425,7 +477,7 @@ func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
 }
 
 func TestApplyConfig(t *testing.T) {
-	profile := NewProfile("test-node", 2, 0, false, false, false)
+	profile := NewProfile("test-node", 2, 0, false, false, false, false, nil)
 
 	tests := []struct {
 		name     string

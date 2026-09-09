@@ -39,6 +39,21 @@ gpuDeviceStatus: false
 # memory capacity (DRAConsumableCapacity feature).
 gpuAllowMultipleAllocations: false
 
+# gpuPublishPCIeRoot publishes resource.kubernetes.io/pcieRoot on mock GPU
+# devices. Enable for cross-driver matchAttribute demos (e.g. GPU + SR-IOV
+# Virtual Function alignment). Disabled by default.
+gpuPublishPCIeRoot: false
+
+# netPublishPCIeRoot publishes resource.kubernetes.io/pcieRoot on mock net
+# devices. Enable for cross-profile matchAttribute demos without SR-IOV.
+# Disabled by default.
+netPublishPCIeRoot: false
+
+# pcieRoots is a comma-separated list of PCIe root values assigned to mock
+# devices in round-robin order (e.g. "pci0000:00,pci0000:80"). When publish
+# is enabled and this is empty, defaults are used also in round-robin order.
+pcieRoots: ""
+
 imagePullSecrets: []
 image:
   repository: registry.k8s.io/dra-example-driver/dra-example-driver

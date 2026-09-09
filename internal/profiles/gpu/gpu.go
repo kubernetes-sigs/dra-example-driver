@@ -52,9 +52,11 @@ type Profile struct {
 	enableDeviceStatus       bool
 	bindingConditions        bool
 	allowMultipleAllocations bool
+	publishPCIeRoot          bool
+	pcieRoots                []string
 }
 
-func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool, bindingConditions bool, allowMultipleAllocations bool) Profile {
+func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDeviceStatus bool, bindingConditions bool, allowMultipleAllocations bool, publishPCIeRoot bool, pcieRoots []string) Profile {
 	return Profile{
 		nodeName:                 nodeName,
 		numGPUs:                  numGPUs,
@@ -62,10 +64,17 @@ func NewProfile(nodeName string, numGPUs int, partitionsPerGPU int, enableDevice
 		enableDeviceStatus:       enableDeviceStatus,
 		bindingConditions:        bindingConditions,
 		allowMultipleAllocations: allowMultipleAllocations,
+		publishPCIeRoot:          publishPCIeRoot,
+		pcieRoots:                pcieRoots,
 	}
 }
 
 func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
+	var pcieRoots []string
+	if p.publishPCIeRoot {
+		pcieRoots = helpers.ResolvePCIeRoots(p.pcieRoots)
+	}
+
 	seed := p.nodeName
 	uuids := generateUUIDs(seed, p.numGPUs)
 
@@ -95,6 +104,9 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			"driverVersion": {
 				VersionValue: ptr.To("1.0.0"),
 			},
+		}
+		for k, v := range helpers.TopologyAttributesForDeviceIndex(i, pcieRoots) {
+			attrs[k] = v
 		}
 
 		if p.partitionsPerGPU > 0 {
