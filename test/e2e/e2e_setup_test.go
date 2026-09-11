@@ -43,6 +43,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	apitypes "k8s.io/apimachinery/pkg/types"
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -1138,4 +1139,96 @@ func verifyPodResourcesAPI(ctx context.Context, namespace, podName, containerNam
 	Expect(output).To(ContainSubstring(driverName), "Driver %s not found under dynamicResources", driverName)
 
 	fmt.Fprintf(GinkgoWriter, "✓ PodResources API successfully verified via pod logs:\n%s\n", output)
+}
+
+// verifyAllocatedResourcesHealth verifies that the pod's container status
+// reports the expected device health (KEP-4680) for its resource claims.
+func verifyAllocatedResourcesHealth(ctx context.Context, namespace, podName, containerName string, expectedHealth v1.ResourceHealthStatus) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred())
+
+		var cs *v1.ContainerStatus
+		for i := range pod.Status.ContainerStatuses {
+			if pod.Status.ContainerStatuses[i].Name == containerName {
+				cs = &pod.Status.ContainerStatuses[i]
+				break
+			}
+		}
+		g.Expect(cs).NotTo(BeNil(), "container status not found for %s", containerName)
+		g.Expect(cs.AllocatedResourcesStatus).NotTo(BeEmpty(),
+			"allocatedResourcesStatus is empty for container %s", containerName)
+
+		var found bool
+		for _, rs := range cs.AllocatedResourcesStatus {
+			if !strings.HasPrefix(string(rs.Name), "claim:") {
+				continue
+			}
+			g.Expect(rs.Resources).NotTo(BeEmpty())
+
+			for _, rh := range rs.Resources {
+				g.Expect(string(rh.ResourceID)).NotTo(BeEmpty())
+				g.Expect(rh.Health).To(Equal(expectedHealth),
+					"device %s health is %s, expected %s", rh.ResourceID, rh.Health, expectedHealth)
+				g.Expect(rh.Message).NotTo(BeNil())
+				g.Expect(*rh.Message).NotTo(BeEmpty())
+
+				fmt.Fprintf(GinkgoWriter, "Pod %s/%s container %s device %s: health=%s message=%q\n",
+					namespace, podName, containerName, rh.ResourceID, rh.Health, *rh.Message)
+			}
+			found = true
+		}
+		g.Expect(found).To(BeTrue(), "no DRA resource status found in allocatedResourcesStatus")
+	}, "120s", "5s").Should(Succeed())
+}
+
+const healthOverrideAnnotationPrefix = "health.example.com/"
+
+// podNodeAndAllocatedDevices returns the node the pod landed on and the names of
+// the devices allocated to its pod-local claim. A health override must target
+// the exact driver pod (node) and device(s) the workload is using, otherwise the
+// test would depend on allocator ordering and a single-node cluster.
+func podNodeAndAllocatedDevices(ctx context.Context, namespace, podName, podLocalClaimName string) (string, []string) {
+	GinkgoHelper()
+	pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+	Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+	Expect(pod.Spec.NodeName).NotTo(BeEmpty(), "pod %s/%s has no node assigned", namespace, podName)
+
+	shares := getClaimDeviceShares(ctx, namespace, podName, podLocalClaimName)
+	devices := make([]string, 0, len(shares))
+	for _, s := range shares {
+		devices = append(devices, s.device)
+	}
+	return pod.Spec.NodeName, devices
+}
+
+// setDeviceHealthOverride annotates the driver's kubelet plugin pod running on
+// nodeName so it forces the given health value for each of the named devices.
+// The driver on that node watches its own pod for health.example.com/<device>
+// annotations and overrides the simulated health of that device accordingly.
+func setDeviceHealthOverride(ctx context.Context, drv installedDriver, nodeName string, devices []string, value string) {
+	GinkgoHelper()
+	pods, err := clientset.CoreV1().Pods(drv.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: driverPodSelector,
+		FieldSelector: "spec.nodeName=" + nodeName,
+	})
+	Expect(err).NotTo(HaveOccurred())
+	Expect(pods.Items).To(HaveLen(1),
+		"expected exactly one kubelet plugin pod on node %s in namespace %s, got %d",
+		nodeName, drv.Namespace, len(pods.Items))
+
+	annotations := make(map[string]string, len(devices))
+	for _, device := range devices {
+		annotations[healthOverrideAnnotationPrefix+device] = value
+	}
+	patch, err := json.Marshal(map[string]any{
+		"metadata": map[string]any{
+			"annotations": annotations,
+		},
+	})
+	Expect(err).NotTo(HaveOccurred())
+	_, err = clientset.CoreV1().Pods(drv.Namespace).Patch(ctx, pods.Items[0].Name,
+		apitypes.StrategicMergePatchType, patch, metav1.PatchOptions{})
+	Expect(err).NotTo(HaveOccurred(), "failed to annotate driver pod %s/%s", drv.Namespace, pods.Items[0].Name)
 }

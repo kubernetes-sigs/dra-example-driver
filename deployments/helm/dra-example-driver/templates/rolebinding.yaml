@@ -1,0 +1,16 @@
+{{- if .Values.kubeletPlugin.deviceHealth }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "dra-example-driver.fullname" . }}-pods-role-binding
+  namespace: {{ include "dra-example-driver.namespace" . }}
+subjects:
+- kind: ServiceAccount
+  name: {{ include "dra-example-driver.serviceAccountName" . }}
+  namespace: {{ include "dra-example-driver.namespace" . }}
+roleRef:
+  kind: Role
+  name: {{ include "dra-example-driver.fullname" . }}-pods-role
+  apiGroup: rbac.authorization.k8s.io
+{{- end }}

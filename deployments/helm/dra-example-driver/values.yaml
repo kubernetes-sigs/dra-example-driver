@@ -88,6 +88,15 @@ kubeletPlugin:
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
   # bindingConditions enables or disables binding conditions processing in the DRA driver
   bindingConditions: false
+  # deviceHealth enables device health reporting (KEP-4680). Set to false to opt
+  # out: the driver then advertises no health service to the kubelet and
+  # WatchHealthStatus returns ErrHealthNotSupported.
+  deviceHealth: true
+  # simulateHealthChanges makes the device-health simulator (KEP-4680) randomly
+  # walk devices through simulated faults on their own. When false (default),
+  # devices report healthy until pinned via a health.example.com/<device>
+  # annotation on the driver pod, which keeps the demo deterministic.
+  simulateHealthChanges: false
   containers:
     init:
       securityContext: {}

@@ -1,0 +1,16 @@
+{{- if .Values.kubeletPlugin.deviceHealth }}
+---
+# The kubelet plugin watches its OWN pod (by name, in this namespace) to pick up
+# health.example.com/<device> annotation overrides used by the device-health
+# reporting demo (KEP-4680). That only requires watching pods in the release
+# namespace, so it is a namespaced Role rather than a cluster-wide grant.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "dra-example-driver.fullname" . }}-pods-role
+  namespace: {{ include "dra-example-driver.namespace" . }}
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["watch"]
+{{- end }}

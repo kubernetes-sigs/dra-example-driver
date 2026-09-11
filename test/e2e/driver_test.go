@@ -100,6 +100,9 @@ type DriverConfig struct {
 type installedDriver struct {
 	DriverName           string
 	ExtendedResourceName string
+	// Namespace is the (generated) namespace the driver release is installed
+	// in; tests use it to reach the driver pods, e.g. for health overrides.
+	Namespace string
 }
 
 // installDriver installs the DRA example driver via Helm and registers
@@ -154,6 +157,7 @@ func installDriver(ctx context.Context, cfg DriverConfig) installedDriver {
 	return installedDriver{
 		DriverName:           cfg.DriverName,
 		ExtendedResourceName: cfg.ExtendedResourceName,
+		Namespace:            namespace,
 	}
 }
 
