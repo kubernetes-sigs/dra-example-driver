@@ -58,6 +58,10 @@ type Flags struct {
 	profile                       string
 	driverName                    string
 	podUID                        string
+	podName                       string
+	namespace                     string
+	deviceHealth                  bool
+	simulateHealthChanges         bool
 	gpuPartitions                 int
 	gpuDeviceStatus               bool
 	bindingConditions             bool
@@ -177,6 +181,31 @@ func newApp() *cli.App {
 			Usage:       "UID of the pod (used for seamless upgrades to create unique socket names).",
 			Destination: &flags.podUID,
 			EnvVars:     []string{"POD_UID"},
+		},
+		&cli.StringFlag{
+			Name:        "pod-name",
+			Usage:       "Name of this driver pod. Used to watch this pod for health.example.com/<device> override annotations (device-health demo).",
+			Destination: &flags.podName,
+			EnvVars:     []string{"POD_NAME"},
+		},
+		&cli.StringFlag{
+			Name:        "namespace",
+			Usage:       "Namespace of this driver pod. Used together with pod-name to watch for health override annotations.",
+			Destination: &flags.namespace,
+			EnvVars:     []string{"NAMESPACE"},
+		},
+		&cli.BoolFlag{
+			Name:        "device-health",
+			Usage:       "Enable device health reporting (KEP-4680). When false, the driver advertises no health service to the kubelet and WatchHealthStatus returns ErrHealthNotSupported - the way a driver with no health source opts out.",
+			Value:       true,
+			Destination: &flags.deviceHealth,
+			EnvVars:     []string{"DEVICE_HEALTH"},
+		},
+		&cli.BoolFlag{
+			Name:        "simulate-health-changes",
+			Usage:       "When true, devices randomly walk through simulated health faults on their own. When false (default) they report healthy until pinned via a health.example.com/<device> annotation. Only relevant when --device-health is enabled.",
+			Destination: &flags.simulateHealthChanges,
+			EnvVars:     []string{"SIMULATE_HEALTH_CHANGES"},
 		},
 		&cli.IntFlag{
 			Name:        "gpu-partitions",

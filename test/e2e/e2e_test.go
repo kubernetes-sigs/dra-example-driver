@@ -417,6 +417,36 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyPodResourcesAPI(ctx, namespace, pods[0], containerName, drv.DriverName)
 	})
 
+	It("should report device health status in pod allocatedResourcesStatus", func(ctx SpecContext) {
+		drv := installDriver(ctx, DriverConfig{})
+		namespace := "health-reporting"
+		pods := []string{"pod0"}
+
+		deployManifest(ctx, namespace, "health-reporting.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		// Target the exact device(s) the pod was allocated, on the exact node it
+		// landed on, so the test does not depend on allocator ordering or on a
+		// single-node cluster.
+		nodeName, devices := podNodeAndAllocatedDevices(ctx, namespace, "pod0", "gpu")
+		Expect(devices).NotTo(BeEmpty(), "pod0 has no allocated devices")
+
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+
+		// Force the allocated device(s) unhealthy through the driver's annotation
+		// override and verify the transition surfaces in the pod status.
+		setDeviceHealthOverride(ctx, drv, nodeName, devices, "unhealthy")
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnhealthy)
+
+		// Force the Unknown state (the third KEP-4680 health state).
+		setDeviceHealthOverride(ctx, drv, nodeName, devices, "unknown")
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnknown)
+
+		// Return to healthy without a driver restart.
+		setDeviceHealthOverride(ctx, drv, nodeName, devices, "healthy")
+		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+	})
+
 	// Webhook tests share one driver pinned to "gpu.example.com" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
