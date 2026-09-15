@@ -35,18 +35,27 @@ import (
 const ProfileName = "net"
 
 type Profile struct {
-	nodeName string
-	numNets  int
+	nodeName        string
+	numNets         int
+	publishPCIeRoot bool
+	pcieRoots       []string
 }
 
-func NewProfile(nodeName string, numNets int) Profile {
+func NewProfile(nodeName string, numNets int, publishPCIeRoot bool, pcieRoots []string) Profile {
 	return Profile{
-		nodeName: nodeName,
-		numNets:  numNets,
+		nodeName:        nodeName,
+		numNets:         numNets,
+		publishPCIeRoot: publishPCIeRoot,
+		pcieRoots:       pcieRoots,
 	}
 }
 
 func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
+	var pcieRoots []string
+	if p.publishPCIeRoot {
+		pcieRoots = helpers.ResolvePCIeRoots(p.pcieRoots)
+	}
+
 	seed := p.nodeName
 	uuids := helpers.GenerateUUIDs(seed, "net", p.numNets)
 
@@ -65,23 +74,28 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 
 	var devices []resourceapi.Device
 	for i, uuid := range uuids {
+		attrs := map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
+			"index": {
+				IntValue: ptr.To(int64(i)),
+			},
+			"uuid": {
+				StringValue: ptr.To(uuid),
+			},
+			"model": {
+				StringValue: ptr.To("LATEST-NET-MODEL"),
+			},
+			"driverVersion": {
+				VersionValue: ptr.To("1.0.0"),
+			},
+		}
+		for k, v := range helpers.TopologyAttributesForDeviceIndex(i, pcieRoots) {
+			attrs[k] = v
+		}
+
 		device := resourceapi.Device{
 			Name:                     fmt.Sprintf("nic-%d", i),
 			AllowMultipleAllocations: ptr.To(true),
-			Attributes: map[resourceapi.QualifiedName]resourceapi.DeviceAttribute{
-				"index": {
-					IntValue: ptr.To(int64(i)),
-				},
-				"uuid": {
-					StringValue: ptr.To(uuid),
-				},
-				"model": {
-					StringValue: ptr.To("LATEST-NET-MODEL"),
-				},
-				"driverVersion": {
-					VersionValue: ptr.To("1.0.0"),
-				},
-			},
+			Attributes:               attrs,
 			Capacity: map[resourceapi.QualifiedName]resourceapi.DeviceCapacity{
 				"vfs": {
 					Value: resource.MustParse("100"),
