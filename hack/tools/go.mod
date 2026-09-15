@@ -3,7 +3,7 @@ module sigs.k8s.io/dra-example-driver/hack/tools
 go 1.26.0
 
 // Matches root go.mod
-toolchain go1.26.2
+toolchain go1.26.8
 
 tool (
 	github.com/client9/misspell/cmd/misspell
