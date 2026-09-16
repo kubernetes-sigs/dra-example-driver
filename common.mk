@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-GO_VERSION ?= 1.26.2
+# Matches `toolchain` in go.mod
+GO_VERSION ?= 1.26.8
 
 DRIVER_NAME := dra-example-driver
 MODULE := sigs.k8s.io/$(DRIVER_NAME)
