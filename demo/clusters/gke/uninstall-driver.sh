@@ -19,6 +19,6 @@ set -euo pipefail
 : "${DRIVER_RELEASE_NAME:=dra-example-driver}"
 : "${DRIVER_NAMESPACE:=dra-example-driver}"
 
-helm uninstall "${DRIVER_RELEASE_NAME}" --namespace "${DRIVER_NAMESPACE}"
+go tool -modfile "$(git rev-parse --show-toplevel)/hack/tools/go.mod" helm uninstall "${DRIVER_RELEASE_NAME}" --namespace "${DRIVER_NAMESPACE}"
 
 echo "Driver uninstall complete: ${DRIVER_RELEASE_NAME} (${DRIVER_NAMESPACE})"

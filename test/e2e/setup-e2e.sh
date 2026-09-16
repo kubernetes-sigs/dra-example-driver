@@ -30,7 +30,7 @@ if [[ "${HELM_CHART_PATH}" != oci://* ]]; then
 fi
 bash demo/clusters/kind/create-cluster.sh
 
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --repo https://charts.jetstack.io \
   --version v1.20.2 \
   --create-namespace \

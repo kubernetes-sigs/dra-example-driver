@@ -34,7 +34,6 @@ export VERSION="${DRIVER_IMAGE_TAG}"
 export PLATFORMS
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
-# Regenerate CRDs/deepcopy in the repo's devel container (root Makefile docker-% target).
-make docker-generate
+make generate
 
 make -f deployments/container/Makefile push

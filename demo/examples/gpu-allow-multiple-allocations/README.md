@@ -65,7 +65,7 @@ graph TD
 Install the driver with multiple allocations enabled:
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   --set gpuAllowMultipleAllocations=true \

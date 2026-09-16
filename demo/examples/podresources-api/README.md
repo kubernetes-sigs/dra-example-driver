@@ -58,7 +58,7 @@ graph TD
 ### 1. Install the Driver
 
 ```bash
-helm upgrade -i \
+go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
   --namespace dra-example-driver \
   dra-example-driver \
@@ -181,5 +181,5 @@ The PodResources API returns a JSON response containing all pods on the node. Th
 
 ```bash
 kubectl delete -f demo/examples/podresources-api/podresources-api.yaml
-helm uninstall dra-example-driver -n dra-example-driver
+go tool -modfile hack/tools/go.mod helm uninstall dra-example-driver -n dra-example-driver
 ```

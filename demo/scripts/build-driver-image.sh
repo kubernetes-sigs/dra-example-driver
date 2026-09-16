@@ -45,6 +45,6 @@ export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image locally (demo / kind workflow).
-make docker-generate
+make generate
 
 make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"
