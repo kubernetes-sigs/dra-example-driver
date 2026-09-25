@@ -46,6 +46,17 @@ func TestObserveUnprepareClaim(t *testing.T) {
 	require.Equal(t, float64(1), counterValue(t, "dra_example_driver_unprepare_claims_total", map[string]string{"result": "error"}))
 }
 
+func TestObserveDeviceStatusUpdate(t *testing.T) {
+	t.Parallel()
+
+	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted} {
+		labels := map[string]string{"result": result}
+		before := counterValue(t, "dra_example_driver_device_status_updates_total", labels)
+		ObserveDeviceStatusUpdate(result)
+		require.Equal(t, before+1, counterValue(t, "dra_example_driver_device_status_updates_total", labels))
+	}
+}
+
 func counterValue(t *testing.T, name string, labels map[string]string) float64 {
 	t.Helper()
 

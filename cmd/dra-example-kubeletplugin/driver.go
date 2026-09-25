@@ -120,6 +120,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		return nil, err
 	}
 	driver.state = state
+	state.statusUpdater.Start(ctx)
 
 	// Device health reporting (KEP-4680) is opt-out: on by default, disabled with
 	// --device-health=false (DEVICE_HEALTH). When disabled we build no simulator
@@ -196,6 +197,7 @@ func (d *driver) Shutdown(logger klog.Logger) error {
 	}
 
 	d.helper.Stop()
+	d.state.statusUpdater.Stop()
 	return nil
 }
 
