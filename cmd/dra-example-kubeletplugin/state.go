@@ -33,6 +33,7 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/util/retry"
 	draclient "k8s.io/dynamic-resource-allocation/client"
+	"k8s.io/dynamic-resource-allocation/resourceclaim"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 
 	"k8s.io/klog/v2"
@@ -320,7 +321,7 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 		}
 
 		for _, c := range slices.Backward(configs) {
-			if len(c.Requests) == 0 || slices.Contains(c.Requests, result.Request) {
+			if configMatchesRequest(c.Requests, result.Request) {
 				configResultsMap[c.Config] = append(configResultsMap[c.Config], &result)
 				break
 			}
@@ -425,6 +426,33 @@ func checkpointSerializer() (runtime.Decoder, runtime.Encoder, error) {
 	checkpointDecoder := checkpointCodecFactory.UniversalDecoder(checkpointapi.SchemeGroupVersion)
 
 	return checkpointDecoder, checkpointEncoder, nil
+}
+
+// configMatchesRequest reports whether a config scoped to configRequests
+// applies to the allocation result recorded for requestRef. An empty
+// configRequests applies to every request. When a request is satisfied via a
+// prioritized list of subrequests (KEP-4816 firstAvailable), the scheduler
+// records the result's request as "<request>/<subrequest>", so a config may
+// reference either the full subrequest reference or just the parent request.
+//
+// This mirrors the matching used by
+// [k8s.io/dynamic-resource-allocation/resourceclaim.ConfigForResult]; that
+// helper is not called directly because it re-filters the raw, undecoded
+// config list per result, while this driver decodes every config once up
+// front and resolves precedence over the decoded list in computeDeviceConfig.
+//
+// Matching carries no specificity ranking: computeDeviceConfig applies the
+// last matching config in its precedence-ordered list, so a parent-scoped
+// config with higher precedence shadows a subrequest-scoped one and vice
+// versa.
+func configMatchesRequest(configRequests []string, requestRef string) bool {
+	if len(configRequests) == 0 {
+		return true
+	}
+	if slices.Contains(configRequests, requestRef) {
+		return true
+	}
+	return slices.Contains(configRequests, resourceclaim.BaseRequestRef(requestRef))
 }
 
 // GetOpaqueDeviceConfigs returns an ordered list of the configs contained in possibleConfigs for this driver.

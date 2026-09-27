@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -40,6 +41,7 @@ import (
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 )
 
 var (
@@ -245,6 +247,193 @@ func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 	}
 	assert.Equal(t, "1", consumedByShare["share-0"], "share-0 should keep its own consumed CPU edit")
 	assert.Equal(t, "3", consumedByShare["share-1"], "share-1 should keep its own consumed CPU edit")
+}
+
+// TestConfigMatchesRequest verifies the request-scoping rules for opaque device
+// configs, in particular that a config naming a parent request also applies to
+// results allocated via one of its prioritized-list subrequests (KEP-4816
+// firstAvailable), where the scheduler records the result's request as
+// "<request>/<subrequest>".
+func TestConfigMatchesRequest(t *testing.T) {
+	tests := map[string]struct {
+		configRequests []string
+		requestRef     string
+		expected       bool
+	}{
+		"empty config requests match everything": {
+			configRequests: nil,
+			requestRef:     "gpu",
+			expected:       true,
+		},
+		"exact match on plain request": {
+			configRequests: []string{"gpu"},
+			requestRef:     "gpu",
+			expected:       true,
+		},
+		"parent request matches subrequest result": {
+			configRequests: []string{"gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       true,
+		},
+		"exact subrequest reference matches": {
+			configRequests: []string{"gpu/older-gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       true,
+		},
+		"subrequest reference does not match sibling subrequest": {
+			configRequests: []string{"gpu/latest-gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       false,
+		},
+		"subrequest reference does not match bare parent request": {
+			configRequests: []string{"gpu/older-gpu"},
+			requestRef:     "gpu",
+			expected:       false,
+		},
+		"unrelated request does not match": {
+			configRequests: []string{"other"},
+			requestRef:     "gpu/older-gpu",
+			expected:       false,
+		},
+		"parent match among multiple entries matches": {
+			configRequests: []string{"other", "gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       true,
+		},
+		"exact subrequest match among multiple entries matches": {
+			configRequests: []string{"other", "gpu/older-gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       true,
+		},
+		"no matching entry among multiple entries does not match": {
+			configRequests: []string{"other", "gpu/latest-gpu"},
+			requestRef:     "gpu/older-gpu",
+			expected:       false,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, test.expected, configMatchesRequest(test.configRequests, test.requestRef))
+		})
+	}
+}
+
+// TestComputeDeviceConfigSubrequestConfigMatch verifies end to end through
+// computeDeviceConfig that an opaque config attached to a claim is applied to
+// a device allocated via a prioritized-list subrequest (KEP-4816
+// firstAvailable): a config scoped to the parent request name or to the full
+// "<request>/<subrequest>" reference must apply, while configs scoped to a
+// sibling subrequest or an unrelated request must fall back to the default.
+func TestComputeDeviceConfigSubrequestConfigMatch(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "gpu.example.com"
+	)
+
+	flags := &Flags{
+		cdiRoot:    t.TempDir(),
+		driverName: driverName,
+		profile:    "gpu",
+		nodeName:   nodeName,
+		numDevices: 1,
+	}
+	state, err := NewDeviceState(&Config{
+		flags:   flags,
+		profile: gpu.NewProfile(nodeName, flags.numDevices, 0, false, false, false),
+	})
+	require.NoError(t, err)
+
+	claimConfig := func(interval string, requests ...string) resourceapi.DeviceAllocationConfiguration {
+		params := fmt.Sprintf(`{
+			"apiVersion": "gpu.resource.example.com/v1alpha1",
+			"kind": "GpuConfig",
+			"sharing": {
+				"strategy": "TimeSlicing",
+				"timeSlicingConfig": {"interval": %q}
+			}
+		}`, interval)
+		return resourceapi.DeviceAllocationConfiguration{
+			Source:   resourceapi.AllocationConfigSourceClaim,
+			Requests: requests,
+			DeviceConfiguration: resourceapi.DeviceConfiguration{
+				Opaque: &resourceapi.OpaqueDeviceConfiguration{
+					Driver:     driverName,
+					Parameters: runtime.RawExtension{Raw: []byte(params)},
+				},
+			},
+		}
+	}
+
+	tests := map[string]struct {
+		configs []resourceapi.DeviceAllocationConfiguration
+		// expectedInterval is the TIMESLICE_INTERVAL env expected on the
+		// prepared device; "Default" means no config matched and the default
+		// GpuConfig was applied.
+		expectedInterval string
+	}{
+		"config scoped to parent request applies to subrequest result": {
+			configs:          []resourceapi.DeviceAllocationConfiguration{claimConfig("Long", "gpu")},
+			expectedInterval: "Long",
+		},
+		"config scoped to full subrequest reference applies": {
+			configs:          []resourceapi.DeviceAllocationConfiguration{claimConfig("Long", "gpu/older-gpu")},
+			expectedInterval: "Long",
+		},
+		"config scoped to sibling subrequest does not apply": {
+			configs:          []resourceapi.DeviceAllocationConfiguration{claimConfig("Long", "gpu/latest-gpu")},
+			expectedInterval: "Default",
+		},
+		"config scoped to unrelated request does not apply": {
+			configs:          []resourceapi.DeviceAllocationConfiguration{claimConfig("Long", "other")},
+			expectedInterval: "Default",
+		},
+		// Matching carries no specificity ranking: the last matching config
+		// in precedence order wins, whether it names the parent request or
+		// the full subrequest reference.
+		"subrequest-scoped config listed later shadows parent-scoped config": {
+			configs: []resourceapi.DeviceAllocationConfiguration{
+				claimConfig("Long", "gpu"),
+				claimConfig("Short", "gpu/older-gpu"),
+			},
+			expectedInterval: "Short",
+		},
+		"parent-scoped config listed later shadows subrequest-scoped config": {
+			configs: []resourceapi.DeviceAllocationConfiguration{
+				claimConfig("Short", "gpu/older-gpu"),
+				claimConfig("Long", "gpu"),
+			},
+			expectedInterval: "Long",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			claim := &resourceapi.ResourceClaim{
+				ObjectMeta: metav1.ObjectMeta{UID: "claim-uid"},
+				Status: resourceapi.ResourceClaimStatus{
+					Allocation: &resourceapi.AllocationResult{
+						Devices: resourceapi.DeviceAllocationResult{
+							Results: []resourceapi.DeviceRequestAllocationResult{{
+								Request: "gpu/older-gpu",
+								Driver:  driverName,
+								Pool:    nodeName,
+								Device:  "gpu-0",
+							}},
+							Config: test.configs,
+						},
+					},
+				},
+			}
+
+			prepared, err := state.computeDeviceConfig(claim)
+			require.NoError(t, err)
+			require.Len(t, prepared, 1)
+			require.NotNil(t, prepared[0].ContainerEdits)
+			assert.Contains(t, prepared[0].ContainerEdits.Env,
+				"GPU_DEVICE_0_TIMESLICE_INTERVAL="+test.expectedInterval)
+		})
+	}
 }
 
 // TestUnprepareReturnsErrorOnUnreadableCheckpoint verifies that Unprepare returns an error

@@ -225,6 +225,54 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyChosenSubrequest(ctx, namespace, "pod1", "gpu", drv.DriverName, "gpu/latest-gpu")
 	})
 
+	It("should apply opaque configs scoped to a prioritized-list subrequest", func(ctx SpecContext) {
+		// Regression test for config matching against prioritized-list
+		// subrequests. The allocator records the chosen subrequest as
+		// "<request>/<subrequest>" (KEP-4816) and clears a config's
+		// `requests` field only when the config applies to every request in
+		// the claim. Each claim here makes a second request ("extra") so the
+		// scoping survives into the allocation result and the driver has to
+		// match "gpu" against a "gpu/older-gpu" result itself. Without that
+		// second request the allocator nils out `requests`, "empty means
+		// all" applies, and the driver's matching is never exercised.
+		drv := installDriver(ctx, DriverConfig{NumDevices: 6})
+		namespace := "subrequest-config-scoping"
+		pods := []string{"pod0", "pod1", "pod2"}
+		containerName := "ctr0"
+		expectedGPUCount := 2
+
+		deployManifest(ctx, namespace, "subrequest-config-scoping.yaml", drv)
+		checkPodsReadyAndRunning(ctx, namespace, pods)
+
+		observedGPUs := make(map[string]string)
+		for _, podName := range pods {
+			verifyGPUAllocation(ctx, namespace, podName, containerName, expectedGPUCount, observedGPUs)
+		}
+
+		// pod0's config names the parent request "gpu" and must reach the
+		// device allocated via the "older-gpu" subrequest, while leaving the
+		// sibling "extra" request on the default config.
+		verifyRequestScopedConfig(ctx, namespace, "pod0", "gpu", containerName, drv.DriverName, []requestInterval{
+			{request: "gpu/older-gpu", interval: string(gpuv1alpha1.LongTimeSlice)},
+			{request: "extra", interval: string(gpuv1alpha1.DefaultTimeSlice)},
+		})
+		// pod1's config names the full "gpu/latest-gpu" reference. Its
+		// "gpu/older-gpu" config is dropped by the allocator because that
+		// subrequest was not chosen, so "extra" again keeps the default.
+		verifyRequestScopedConfig(ctx, namespace, "pod1", "gpu", containerName, drv.DriverName, []requestInterval{
+			{request: "gpu/latest-gpu", interval: string(gpuv1alpha1.ShortTimeSlice)},
+			{request: "extra", interval: string(gpuv1alpha1.DefaultTimeSlice)},
+		})
+		// pod2 has two configs that both match the chosen subrequest: one
+		// scoped to "gpu/latest-gpu" (Short) and, after it, one scoped to the
+		// parent "gpu" (Long). Matching carries no specificity ranking, so
+		// the later config wins even though the earlier one is more specific.
+		verifyRequestScopedConfig(ctx, namespace, "pod2", "gpu", containerName, drv.DriverName, []requestInterval{
+			{request: "gpu/latest-gpu", interval: string(gpuv1alpha1.LongTimeSlice)},
+			{request: "extra", interval: string(gpuv1alpha1.DefaultTimeSlice)},
+		})
+	})
+
 	It("Should share 1 GPU among the Pods in each of 2 PodGroups", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{})
 		namespace := "podgroup-resourceclaimtemplate"
