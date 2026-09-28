@@ -7,7 +7,7 @@ toolchain go1.26.8
 require (
 	github.com/google/uuid v1.6.0
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/spf13/pflag v1.0.10
 	github.com/stretchr/testify v1.12.1
