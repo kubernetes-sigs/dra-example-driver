@@ -193,15 +193,25 @@ func TestDeviceStatusUpdaterCancel(t *testing.T) {
 }
 
 func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
-	f := &fakeStatusUpdate{block: make(chan struct{})}
-	u := newDeviceStatusUpdater(f.update)
-	ctx, cancel := context.WithCancel(context.Background())
-	u.Start(ctx)
+	started := make(chan struct{})
+	u := newDeviceStatusUpdater(func(ctx context.Context, _, _ string, _ types.UID, _ ...resourceapi.AllocatedDeviceStatus) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	// The parent context stays active. Stop must cancel the updater's own
+	// context, otherwise this call blocks until the attempt timeout (30s).
+	u.Start(context.Background())
 	u.Enqueue(testStatusClaim("uid-1"), testDeviceStatuses)
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
 
 	stopped := make(chan struct{})
 	go func() {
-		cancel()
 		u.Stop()
 		close(stopped)
 	}()
@@ -210,6 +220,67 @@ func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop did not return while an update was in flight")
 	}
+}
+
+func TestDeviceStatusUpdaterSupersededFailureDoesNotConsumeRetryBudget(t *testing.T) {
+	claim := testStatusClaim("uid-1")
+	replaced := []resourceapi.AllocatedDeviceStatus{{Driver: "gpu.example.com", Pool: "node", Device: "gpu-1"}}
+	started := make(chan struct{})
+	release := make(chan struct{})
+
+	var mu sync.Mutex
+	var requeuesAtStart []int
+	var published []resourceapi.AllocatedDeviceStatus
+
+	var u *deviceStatusUpdater
+	u = newDeviceStatusUpdaterWithRateLimiter(func(ctx context.Context, _, _ string, uid types.UID, devices ...resourceapi.AllocatedDeviceStatus) error {
+		mu.Lock()
+		requeuesAtStart = append(requeuesAtStart, u.queue.NumRequeues(uid))
+		call := len(requeuesAtStart)
+		if call > 1 {
+			published = append([]resourceapi.AllocatedDeviceStatus(nil), devices...)
+		}
+		mu.Unlock()
+		if call == 1 {
+			close(started)
+			select {
+			case <-release:
+				return apierrors.NewServiceUnavailable("unavailable")
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		return nil
+	}, workqueue.NewTypedItemExponentialFailureRateLimiter[types.UID](time.Millisecond, 5*time.Millisecond))
+	u.maxRetries = 3
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(func() {
+		cancel()
+		u.Stop()
+	})
+	u.Start(ctx)
+
+	retriesBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)
+	u.Enqueue(claim, testDeviceStatuses)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first update did not start")
+	}
+	// Replace the payload while the first attempt is still in flight, so its
+	// failure is handled only after Forget has reset the retry budget.
+	u.Enqueue(claim, replaced)
+	close(release)
+
+	require.Eventually(t, func() bool { return !u.hasPending(claim.UID) }, 5*time.Second, time.Millisecond)
+	time.Sleep(20 * time.Millisecond)
+
+	mu.Lock()
+	defer mu.Unlock()
+	require.Len(t, requeuesAtStart, 2)
+	assert.Equal(t, 0, requeuesAtStart[1], "a stale failure must not consume the replacement update's retry budget")
+	assert.Equal(t, replaced, published)
+	assert.Equal(t, float64(0), deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)-retriesBefore)
 }
 
 func TestUpdateDeviceStatusChecksClaimUID(t *testing.T) {

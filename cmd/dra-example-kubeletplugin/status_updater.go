@@ -85,6 +85,10 @@ type deviceStatusUpdater struct {
 	mu         sync.Mutex
 	pending    map[types.UID]pendingDeviceStatus
 	generation uint64
+	// cancel is the updater's own context, a child of the context passed to
+	// Start. Stop uses it to abort in-flight API calls when that parent is
+	// still active. It is nil until Start.
+	cancel context.CancelFunc
 
 	wg sync.WaitGroup
 }
@@ -106,23 +110,39 @@ func newDeviceStatusUpdaterWithRateLimiter(update deviceStatusUpdateFunc, rateLi
 }
 
 // Start runs the worker until ctx is cancelled or Stop is called.
+// The worker uses a child of ctx, so cancelling the parent aborts in-flight
+// attempts and Stop can do the same while the parent is still active.
 func (u *deviceStatusUpdater) Start(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	u.mu.Lock()
+	u.cancel = cancel
+	u.mu.Unlock()
+
+	// Unblock queue.Get when the worker context goes away.
 	u.wg.Add(1)
 	go func() {
 		defer u.wg.Done()
-		// Unblock queue.Get when the parent context goes away.
-		go func() {
-			<-ctx.Done()
-			u.queue.ShutDown()
-		}()
+		<-ctx.Done()
+		u.queue.ShutDown()
+	}()
+
+	u.wg.Add(1)
+	go func() {
+		defer u.wg.Done()
 		for u.processNextItem(ctx) {
 		}
 	}()
 }
 
-// Stop shuts down the queue and waits for the worker to exit. Updates that
-// have not been published yet are dropped.
+// Stop cancels in-flight attempts, shuts down the queue, and waits for the
+// worker to exit. Updates that have not been published yet are dropped.
 func (u *deviceStatusUpdater) Stop() {
+	u.mu.Lock()
+	cancel := u.cancel
+	u.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	u.queue.ShutDown()
 	u.wg.Wait()
 }
@@ -131,6 +151,7 @@ func (u *deviceStatusUpdater) Stop() {
 // any update for the same claim that has not been published yet.
 func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices []resourceapi.AllocatedDeviceStatus) {
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	u.generation++
 	u.pending[claim.UID] = pendingDeviceStatus{
 		namespace:  claim.Namespace,
@@ -138,8 +159,9 @@ func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices 
 		devices:    devices,
 		generation: u.generation,
 	}
-	u.mu.Unlock()
-	// A fresh update starts with a fresh backoff.
+	// A fresh update starts with a fresh backoff. Forget and Add stay under
+	// mu, together with requeue, so a stale in-flight failure cannot call
+	// AddRateLimited after this reset and spend one of the new update's retries.
 	u.queue.Forget(claim.UID)
 	u.queue.Add(claim.UID)
 }
@@ -148,8 +170,9 @@ func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices 
 // unprepared.
 func (u *deviceStatusUpdater) Cancel(claimUID types.UID) {
 	u.mu.Lock()
+	defer u.mu.Unlock()
 	delete(u.pending, claimUID)
-	u.mu.Unlock()
+	// Under mu so it cannot interleave with requeue's AddRateLimited.
 	u.queue.Forget(claimUID)
 }
 
@@ -192,10 +215,28 @@ func (u *deviceStatusUpdater) processNextItem(ctx context.Context) bool {
 		logger.Error(err, "Giving up on publishing device status to ResourceClaim: retries exhausted", "attempt", attempt)
 		u.finish(uid, p)
 	default:
-		metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultRetry)
-		logger.V(1).Info("Failed to publish device status to ResourceClaim, will retry", "err", err, "attempt", attempt)
-		u.queue.AddRateLimited(uid)
+		if u.requeue(uid, p) {
+			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultRetry)
+			logger.V(1).Info("Failed to publish device status to ResourceClaim, will retry", "err", err, "attempt", attempt)
+		} else {
+			logger.V(2).Info("Not retrying device status update; it was superseded or cancelled", "err", err, "attempt", attempt)
+		}
 	}
+	return true
+}
+
+// requeue schedules another attempt for uid unless Enqueue replaced it or
+// Cancel dropped it while this attempt was in flight. The check and
+// AddRateLimited share mu with Enqueue and Cancel so a stale failure cannot
+// increment the retry count after a fresh update has reset it.
+func (u *deviceStatusUpdater) requeue(uid types.UID, attempted pendingDeviceStatus) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	cur, ok := u.pending[uid]
+	if !ok || cur.generation != attempted.generation {
+		return false
+	}
+	u.queue.AddRateLimited(uid)
 	return true
 }
 
