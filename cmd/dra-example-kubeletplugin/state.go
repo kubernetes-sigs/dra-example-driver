@@ -87,6 +87,9 @@ type DeviceState struct {
 
 	coreClient      coreclientset.Interface
 	gpuDeviceStatus bool
+
+	// statusUpdater publishes ResourceClaim device status in the background.
+	statusUpdater *deviceStatusUpdater
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -153,6 +156,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		coreClient:        config.coreclient,
 		gpuDeviceStatus:   config.flags.gpuDeviceStatus,
 	}
+	state.statusUpdater = newDeviceStatusUpdater(state.updateDeviceStatus)
 
 	return state, nil
 }
@@ -218,6 +222,7 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 	if err := s.unprepareDevices(claimUID, checkpoint); err != nil {
 		return fmt.Errorf("unprepare failed: %v", err)
 	}
+	s.statusUpdater.Cancel(claimUID)
 	s.removeClaimFromCheckpoint(checkpoint, claimUID)
 
 	err = s.cdi.DeleteClaimSpecFile(string(claimUID))
@@ -260,14 +265,12 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 		}
 	}
 	if len(deviceStatuses) > 0 {
-		klog.FromContext(ctx).Info("Publishing device status to ResourceClaim",
-			"namespace", claim.Namespace, "name", claim.Name, "devices", len(deviceStatuses))
-		if err := s.updateDeviceStatus(ctx, claim.Namespace, claim.Name, deviceStatuses...); err != nil {
-			// A failure to publish status is non-fatal: the device is still
-			// prepared and the claim status will simply be missing the data.
-			klog.FromContext(ctx).Error(err, "Failed to update device status on ResourceClaim",
-				"namespace", claim.Namespace, "name", claim.Name)
-		}
+		// Publishing status is non-fatal and must not block
+		// NodePrepareResources: the device is prepared either way. The update
+		// is retried in the background; see [deviceStatusUpdater].
+		klog.FromContext(ctx).V(2).Info("Queueing device status for ResourceClaim",
+			"namespace", claim.Namespace, "name", claim.Name, "uid", claim.UID, "devices", len(deviceStatuses))
+		s.statusUpdater.Enqueue(claim, deviceStatuses)
 	}
 
 	return preparedDevices, nil
@@ -493,7 +496,7 @@ func GetOpaqueDeviceConfigs(
 	return resultConfigs, nil
 }
 
-func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, devices ...resourceapi.AllocatedDeviceStatus) error {
+func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, uid types.UID, devices ...resourceapi.AllocatedDeviceStatus) error {
 	// Converting wrapper to use latest API types,
 	// converts to/from server-supported version.
 	c := draclient.New(s.coreClient)
@@ -502,6 +505,9 @@ func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, d
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		claim, err := rc.Get(ctx, name, metav1.GetOptions{})
 		if err != nil {
+			return err
+		}
+		if err := checkClaimUID(claim, uid); err != nil {
 			return err
 		}
 

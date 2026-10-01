@@ -28,6 +28,14 @@ const (
 	resultError   = "error"
 )
 
+// Results of a single attempt to publish device status to a ResourceClaim.
+const (
+	DeviceStatusResultSuccess        = "success"
+	DeviceStatusResultRetry          = "retry"
+	DeviceStatusResultPermanentError = "permanent_error"
+	DeviceStatusResultExhausted      = "exhausted"
+)
+
 var (
 	PrepareClaimsTotal = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
 		Namespace:      Namespace,
@@ -71,12 +79,21 @@ var (
 		Help:           "Total number of fatal background errors reported by the driver.",
 	})
 
+	DeviceStatusUpdatesTotal = k8smetrics.NewCounterVec(&k8smetrics.CounterOpts{
+		Namespace:      Namespace,
+		Subsystem:      Subsystem,
+		Name:           "device_status_updates_total",
+		StabilityLevel: k8smetrics.ALPHA,
+		Help:           "Total number of attempts to publish device status to a ResourceClaim, by result: success, retry, permanent_error or exhausted.",
+	}, []string{"result"})
+
 	driverMetrics = []k8smetrics.Registerable{
 		PrepareClaimsTotal,
 		PrepareClaimDurationSeconds,
 		UnprepareClaimsTotal,
 		UnprepareClaimDurationSeconds,
 		FatalBackgroundErrorsTotal,
+		DeviceStatusUpdatesTotal,
 	}
 )
 
@@ -93,6 +110,9 @@ func initDriverMetricSeries() {
 	for _, result := range []string{resultSuccess, resultError} {
 		PrepareClaimsTotal.WithLabelValues(result).Add(0)
 		UnprepareClaimsTotal.WithLabelValues(result).Add(0)
+	}
+	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted} {
+		DeviceStatusUpdatesTotal.WithLabelValues(result).Add(0)
 	}
 }
 
@@ -114,4 +134,11 @@ func ObserveUnprepareClaim(err error, duration time.Duration) {
 	}
 	UnprepareClaimsTotal.WithLabelValues(result).Inc()
 	UnprepareClaimDurationSeconds.WithLabelValues(result).Observe(duration.Seconds())
+}
+
+// ObserveDeviceStatusUpdate records the result of a single attempt to publish
+// device status to a ResourceClaim. result is one of the DeviceStatusResult*
+// constants.
+func ObserveDeviceStatusUpdate(result string) {
+	DeviceStatusUpdatesTotal.WithLabelValues(result).Inc()
 }
