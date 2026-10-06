@@ -26,6 +26,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	resourcev1 "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/utils/ptr"
 )
@@ -79,8 +80,12 @@ var _ = Describe("Default driver identity", Serial, func() {
 				}
 			}).WithContext(ctx).WithTimeout(driverInstallTimeout).WithPolling(time.Second).Should(Succeed())
 
-			By("preparing the existing claim again through the replacement plugin")
-			createIdentityPod(ctx, drv, "recovered", claim.Name, pod.Spec.NodeName)
+			// Node-allocatable CPU claims cannot be shared between pods.
+			// GPU and network claims exercise prepare after checkpoint recovery.
+			if profile != "cpu" {
+				By("preparing the existing claim again through the replacement plugin")
+				createIdentityPod(ctx, drv, "recovered", claim.Name, pod.Spec.NodeName)
+			}
 			recovered, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Get(ctx, claim.Name, metav1.GetOptions{})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(recovered.Status.Allocation).To(Equal(allocated.Status.Allocation))
@@ -89,6 +94,20 @@ var _ = Describe("Default driver identity", Serial, func() {
 			By("allocating a new claim after the update")
 			fresh := createIdentityClaim(ctx, drv, "after-update")
 			createIdentityPod(ctx, drv, "after-update", fresh.Name, "")
+
+			By("remaining healthy through multiple liveness probes")
+			Consistently(func(g Gomega) {
+				pods, err := clientset.CoreV1().Pods(drv.Namespace).List(ctx, metav1.ListOptions{LabelSelector: driverPodSelector})
+				g.Expect(err).NotTo(HaveOccurred())
+				g.Expect(pods.Items).NotTo(BeEmpty())
+				for _, p := range pods.Items {
+					g.Expect(p.Status.ContainerStatuses).NotTo(BeEmpty())
+					for _, container := range p.Status.ContainerStatuses {
+						g.Expect(container.Ready).To(BeTrue())
+						g.Expect(container.RestartCount).To(BeZero())
+					}
+				}
+			}).WithContext(ctx).WithTimeout(35 * time.Second).WithPolling(time.Second).Should(Succeed())
 		})
 	}
 })
@@ -104,6 +123,13 @@ func createIdentityClaim(ctx context.Context, drv installedDriver, name string) 
 		}},
 	}, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.ResourceV1().ResourceClaims(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
 	return claim
 }
 
@@ -125,6 +151,13 @@ func createIdentityPod(ctx context.Context, drv installedDriver, name, claim, no
 	}
 	_, err := clientset.CoreV1().Pods(drv.Namespace).Create(ctx, pod, metav1.CreateOptions{})
 	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.CoreV1().Pods(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.CoreV1().Pods(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
 	checkPodsReadyAndRunning(ctx, drv.Namespace, []string{name})
 	logs, err := clientset.CoreV1().Pods(drv.Namespace).GetLogs(name, &corev1.PodLogOptions{Container: "workload"}).DoRaw(ctx)
 	Expect(err).NotTo(HaveOccurred())

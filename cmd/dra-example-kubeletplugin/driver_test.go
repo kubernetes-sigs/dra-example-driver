@@ -90,9 +90,9 @@ func newDriverTestConfig(t *testing.T, deviceHealth bool, healthcheckPort int) (
 func TestNewDriverWithLongNameAndRollingUpdate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	config, _ := newDriverTestConfig(t, false, -1)
+	config, _ := newDriverTestConfig(t, false, 0)
 	config.flags.podUID = "f358c92b-e974-4f29-a84f-6c64bec0949d"
-	// Match the production registrar directory's length so the old full-UID
+	// Use a directory at least as long as the production registrar path so the old full-UID
 	// filename would exceed Linux's Unix socket path limit.
 	config.flags.kubeletRegistrarDirectoryPath = filepath.Join(config.flags.kubeletRegistrarDirectoryPath, "registry-padding")
 	require.NoError(t, os.MkdirAll(config.flags.kubeletRegistrarDirectoryPath, 0750))
@@ -107,6 +107,9 @@ func TestNewDriverWithLongNameAndRollingUpdate(t *testing.T) {
 	info, err := entries[0].Info()
 	require.NoError(t, err)
 	assert.NotZero(t, info.Mode()&os.ModeSocket)
+	resp, err := d.healthcheck.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: "liveness"})
+	require.NoError(t, err)
+	assert.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, resp.GetStatus())
 }
 
 func TestNewDriverLifecycle(t *testing.T) {
