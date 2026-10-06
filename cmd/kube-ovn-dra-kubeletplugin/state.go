@@ -292,6 +292,15 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			items = append(items, prepItem{result: result, ifaceName: ifaceName})
 		}
 	}
+	if s.isNIC {
+		ifaceNames := make([]string, len(items))
+		for i, it := range items {
+			ifaceNames[i] = it.ifaceName
+		}
+		if err := s.checkInterfaceNames(claim, ifaceNames); err != nil {
+			return nil, err
+		}
+	}
 
 	// Waiting for kube-ovn-controller's allocation is the slow step. Wait for all
 	// claimed NICs concurrently so prepare latency is ~one round-trip instead of N.
@@ -363,6 +372,36 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 func (s *DeviceState) unprepareDevices(claimUID string, _ profiles.PreparedDevices) error {
 	if s.nicStore != nil {
 		s.nicStore.RemoveClaim(claimUID)
+	}
+	return nil
+}
+
+// checkInterfaceNames rejects interface names that two NICs of a pod would
+// share: within the claim, or with a NIC of another claim of the pod. Such a
+// pod would otherwise only fail when the sandbox starts, on the rename of the
+// second NIC in the pod netns. Prepare calls are serialized by the state lock.
+func (s *DeviceState) checkInterfaceNames(claim *resourceapi.ResourceClaim, ifaceNames []string) error {
+	seen := make(map[string]bool, len(ifaceNames))
+	for _, name := range ifaceNames {
+		if seen[name] {
+			return fmt.Errorf("claim %s/%s requests more than one NIC named %q; set a distinct interfaceName in each request's NicConfig",
+				claim.Namespace, claim.Name, name)
+		}
+		seen[name] = true
+	}
+	if s.nicStore == nil {
+		return nil
+	}
+	for _, ref := range claim.Status.ReservedFor {
+		if ref.Resource != "pods" || ref.APIGroup != "" {
+			continue
+		}
+		for _, spec := range s.nicStore.Specs(string(ref.UID)) {
+			if spec.ClaimUID != string(claim.UID) && seen[spec.IfaceName] {
+				return fmt.Errorf("NIC %q of claim %s/%s is already used by another DRA NIC of pod %s/%s (claim UID %s); set a distinct interfaceName in the NicConfig",
+					spec.IfaceName, claim.Namespace, claim.Name, claim.Namespace, ref.Name, spec.ClaimUID)
+			}
+		}
 	}
 	return nil
 }

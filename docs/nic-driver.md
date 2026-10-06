@@ -72,7 +72,10 @@ The contract between both sides is written up in kube-ovn's `docs/dra-nic.md`.
    attachments of one NAD. `interfaceName` comes from the `NicConfig` that
    applies to the request (default `net1`).
 4. **Prepare.** `NodePrepareResources` resolves the pod from the claim's
-   `reservedFor`, then `nicprepare.RequestIPAM` waits up to 30 s for
+   `reservedFor` and rejects an interface name that another NIC of the pod
+   already uses, in the claim or in another claim of the pod; such a pod
+   would otherwise fail later, when the sandbox starts. Then
+   `nicprepare.RequestIPAM` waits up to 30 s for
    `allocated="true"` under either provider key and reads the result.
    Dual-stack values are comma separated; the driver configures all addresses
    on pod interfaces. The NICs of a claim are resolved concurrently. Each NIC

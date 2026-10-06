@@ -189,6 +189,27 @@ func TestPrepareTwoRequestsOnOneDevice(t *testing.T) {
 	require.NoError(t, state.Unprepare(string(claim.UID)))
 }
 
+func TestPrepareRejectsDuplicateInterfaceNames(t *testing.T) {
+	state := newTestDeviceState(t, allocatedPod(testProvider+".net1"))
+
+	// Both requests fall back to the default name net1.
+	_, err := state.Prepare(context.Background(), testClaim(nil, "a", "b"))
+	assert.ErrorContains(t, err, `more than one NIC named "net1"`)
+
+	claimA := testClaim(nil, "a")
+	_, err = state.Prepare(context.Background(), claimA)
+	require.NoError(t, err)
+	claimB := testClaim(nil, "b")
+	claimB.UID = "claim-uid-2"
+	_, err = state.Prepare(context.Background(), claimB)
+	assert.ErrorContains(t, err, "already used by another DRA NIC of pod default/pod1")
+	assert.Len(t, state.nicStore.Specs(testPodUID), 1, "the rejected claim must not add NICs")
+
+	// A repeated prepare of the same claim is no conflict.
+	_, err = state.Prepare(context.Background(), claimA)
+	require.NoError(t, err)
+}
+
 func TestRestartRestoresNICs(t *testing.T) {
 	config := newTestConfig(t, allocatedPod(testProvider))
 	state, err := NewDeviceState(config)
