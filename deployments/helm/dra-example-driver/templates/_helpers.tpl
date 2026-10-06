@@ -132,5 +132,19 @@ The driver name.
 {{- if gt (len $socket) 107 -}}
 {{- fail (printf "DRA socket path is %d bytes; Linux permits at most 107 bytes. Shorten driverName or kubeletPlugin.kubeletPluginsDirectoryPath: %s" (len $socket) $socket) -}}
 {{- end -}}
+{{/* Mirror RollingUpdateRegistrarSocketFile: full UID, 11-byte UID hash, then 22-byte driver/UID hash.
+The current helper accepts 108 bytes, but Go needs one byte for the terminating NUL.
+The placeholders below have the same lengths as the real UID and encoded hashes. */}}
+{{- $registryDir := .Values.kubeletPlugin.kubeletRegistrarDirectoryPath -}}
+{{- $registrationSocket := printf "%s/%s-00000000-0000-0000-0000-000000000000-reg.sock" $registryDir $name | clean -}}
+{{- if gt (len $registrationSocket) 108 -}}
+{{- $registrationSocket = printf "%s/%s-%s-reg.sock" $registryDir $name (repeat 11 "a") | clean -}}
+{{- end -}}
+{{- if gt (len $registrationSocket) 108 -}}
+{{- $registrationSocket = printf "%s/dra-%s-reg.sock" $registryDir (repeat 22 "a") | clean -}}
+{{- end -}}
+{{- if gt (len $registrationSocket) 107 -}}
+{{- fail (printf "Registration socket path is %d bytes; Linux permits at most 107 bytes. Shorten driverName or kubeletPlugin.kubeletRegistrarDirectoryPath." (len $registrationSocket)) -}}
+{{- end -}}
 {{- $name -}}
 {{- end -}}

@@ -21,7 +21,9 @@ deviceProfile: "gpu"
 # Use at most 36 ASCII characters with the default kubelet plugins directory.
 # The full DRA socket path must not exceed 107 bytes on Linux. A longer
 # kubeletPlugin.kubeletPluginsDirectoryPath reduces the space for driverName.
-# The chart checks this path before installation.
+# With the default registration directory, do not use a 28-character name.
+# The current plugin helper selects a 108-byte registration path for that name.
+# The chart checks both socket paths before installation.
 driverName: ""
 
 # deviceClass configures the DeviceClass the driver creates for its devices.

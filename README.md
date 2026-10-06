@@ -493,9 +493,13 @@ DRA socket filename:
 The full path must not exceed **107 bytes** on Linux. The default driver
 names use 34 characters and produce a 105-byte path. A longer
 `kubeletPlugin.kubeletPluginsDirectoryPath` reduces the space for the driver name.
-The chart checks the full path before installation. If you run the binary
-directly, check the path with your actual directory and Pod UID.
 The registration socket uses a hash when necessary. The DRA socket does not.
+The current plugin helper can select a 108-byte registration path.
+With the default registration directory, this occurs for **28-character driver names**.
+Do not use those names. A custom registration directory can cause the same problem.
+The chart checks both socket paths before installation and rejects paths above
+107 bytes. If you run the binary directly, check both paths with your actual
+directories and Pod UID.
 
 ### Breaking changes
 
