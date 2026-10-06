@@ -99,9 +99,10 @@ underlay vs OVN overlay device types, and the tunable `make` variables.
 ## Install with Helm
 
 ```bash
-helm install kube-ovn-dra-driver deployments/helm/kube-ovn-dra-driver \
-  --namespace kube-system \
+helm install kube-ovn-dra-driver oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver \
+  --version <chart version> --namespace kube-system \
   --set deviceProfile=nic
+# or from the checkout: deployments/helm/kube-ovn-dra-driver
 # driverName defaults to "nic.kubeovn.io", which is also kube-ovn-controller's
 # default --dra-nic-driver-name. The optional validating webhook is behind
 # --set webhook.enabled=true.

@@ -18,7 +18,6 @@ TR       ?= tr
 DIST_DIR ?= $(CURDIR)/dist
 HELM     ?= helm
 
-export IMAGE_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'v*')
 export CHART_GIT_TAG ?= $(shell git describe --tags --always --dirty --match 'chart/*')
 
 include $(CURDIR)/common.mk
@@ -720,11 +719,9 @@ $(DOCKER_TARGETS): docker-%: .build-image
 		-w $(PWD) \
 		$(BUILDIMAGE)
 
-.PHONY: push-release-artifacts
-push-release-artifacts:
+# Container images are built and pushed by .github/workflows/image.yaml.
+.PHONY: push-chart
+push-chart:
 	CHART_VERSION="$${CHART_GIT_TAG##chart/}" \
 		HELM=$(HELM) \
 		demo/scripts/push-driver-chart.sh
-	export DRIVER_IMAGE_TAG="${IMAGE_GIT_TAG}"; \
-	demo/scripts/build-driver-image.sh && \
-	demo/scripts/push-driver-image.sh

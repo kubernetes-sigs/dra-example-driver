@@ -26,6 +26,6 @@ APIS := nic/v1alpha1
 PLURAL_EXCEPTIONS  = NicConfig:NicConfig
 
 ifeq ($(IMAGE_NAME),)
-REGISTRY ?= ghcr.io/soer3n
+REGISTRY ?= docker.io/soer3n
 IMAGE_NAME = $(REGISTRY)/$(DRIVER_NAME)
 endif

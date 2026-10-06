@@ -14,10 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Shared environment for the release-artifact scripts (build-driver-image.sh,
-# push-driver-image.sh, push-driver-chart.sh), invoked by `make
-# push-release-artifacts`. The kind cluster lifecycle lives in the Makefile's
-# kind-* targets (demo/kind/kind-no-cni.yaml), not here.
+# Shared environment for push-driver-chart.sh, invoked by `make push-chart`.
+# Container images are built and pushed by .github/workflows/image.yaml. The
+# kind cluster lifecycle lives in the Makefile's kind-* targets, not here.
 
 # A reference to the current directory where this script is located
 SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
@@ -25,25 +24,5 @@ SCRIPTS_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 # The name of the driver
 : ${DRIVER_NAME:=kube-ovn-dra-driver}
 
-# The registry, image and tag for the driver
-: ${DRIVER_IMAGE_REGISTRY:="ghcr.io/soer3n"}
-: ${DRIVER_IMAGE_NAME:="${DRIVER_NAME}"}
-: ${DRIVER_IMAGE_TAG:="$(cat $(git rev-parse --show-toplevel)/deployments/helm/${DRIVER_NAME}/Chart.yaml | grep appVersion | sed 's/"//g' | sed -n 's/^appVersion: //p')"}
-: ${DRIVER_IMAGE_PLATFORM:="ubuntu22.04"}
-
-# The derived name of the driver image to build
-: ${DRIVER_IMAGE:="${DRIVER_IMAGE_REGISTRY}/${DRIVER_IMAGE_NAME}:${DRIVER_IMAGE_TAG}"}
-
-# Container tool, e.g. docker/podman
-if [[ -z "${CONTAINER_TOOL}" ]]; then
-    if [[ -n "$(which docker)" ]]; then
-        echo "Docker found in PATH."
-        CONTAINER_TOOL=docker
-    elif [[ -n "$(which podman)" ]]; then
-        echo "Podman found in PATH."
-        CONTAINER_TOOL=podman
-    else
-        echo "No container tool detected. Please install Docker or Podman."
-        return 1
-    fi
-fi
+# The OCI registry the Helm chart is pushed to
+: ${DRIVER_CHART_REGISTRY:="registry-1.docker.io/soer3n"}

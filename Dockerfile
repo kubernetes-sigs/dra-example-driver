@@ -13,14 +13,18 @@
 # limitations under the License.
 
 ARG GOLANG_VERSION=1.25
-FROM golang:${GOLANG_VERSION} AS builder
+# The builder runs on the build platform and cross-compiles, so multi-arch
+# builds don't compile under emulation.
+FROM --platform=$BUILDPLATFORM golang:${GOLANG_VERSION} AS builder
+ARG TARGETOS=linux
+ARG TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux \
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -ldflags "-s -w" -o /bin/ \
     ./cmd/kube-ovn-dra-kubeletplugin ./cmd/kube-ovn-dra-webhook
 

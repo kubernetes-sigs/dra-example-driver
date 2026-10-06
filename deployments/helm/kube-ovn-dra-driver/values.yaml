@@ -20,7 +20,7 @@ driverName: ""
 
 imagePullSecrets: []
 image:
-  repository: ghcr.io/soer3n/kube-ovn-dra-driver
+  repository: docker.io/soer3n/kube-ovn-dra-driver
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""

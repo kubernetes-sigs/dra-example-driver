@@ -3,38 +3,40 @@
 The kube-ovn NIC DRA driver is released on an as-needed basis. Published
 release artifacts are:
 
-- The `kube-ovn-dra-driver` Helm chart
-- Container images
+- Container images: `docker.io/soer3n/kube-ovn-dra-driver`
+- The `kube-ovn-dra-driver` Helm chart: `oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver`
 
-Both are published to GitHub Container Registry under `ghcr.io/soer3n`. The Helm
-chart may be released independently from the container images, but when new
-images are cut a matching chart release should usually be cut at the same time.
+## Container images
 
-The process is:
+`.github/workflows/image.yaml` builds the image for `linux/amd64` and
+`linux/arm64` on every pull request and pushes it on:
 
-1. Decide whether the container image, the Helm chart, or both should be
-   released.
-2. When releasing new container images, bump the Helm chart's `appVersion` in
-   `deployments/helm/kube-ovn-dra-driver/Chart.yaml` to the image version being
-   cut.
-3. Tag and push:
-    - Container images: a `v`-prefixed [SemVer] tag, e.g. `v0.1.0`
-      (`make IMAGE_GIT_TAG` derives image tags from `v*` tags).
-    - Helm chart: a `chart/`-prefixed [SemVer] tag, e.g. `chart/0.1.0`
-      (the chart version is derived from `chart/*` tags).
-    - The same commit may carry one tag of each form to release both at once.
+- pushes to `main`: tags `main` and `sha-<commit>`,
+- `v`-prefixed [SemVer] tags, e.g. `v0.1.0`: tags `v0.1.0`, `v0.1` and `latest`.
 
-      ```bash
-      git tag -a v0.1.0 -m v0.1.0
-      git tag -a chart/0.1.0 -m chart/0.1.0
-      git push origin v0.1.0 chart/0.1.0
-      ```
-4. Build and push the artifacts (override the registry as needed):
+## Helm chart
 
-    ```bash
-    make REGISTRY=ghcr.io/soer3n push-release-artifacts
-    ```
-5. Draft and publish a [GitHub release][releases] with generated release notes.
+`.github/workflows/chart.yaml` lints the chart on every push and pull request
+and pushes it as an OCI artifact on `chart/`-prefixed tags, e.g. `chart/0.1.0`
+(chart version `0.1.0`), via `make push-chart`.
+
+Both workflows need the repository secrets `DOCKERHUB_USERNAME` and
+`DOCKERHUB_TOKEN` (a Docker Hub access token with read/write access).
+
+## Process
+
+1. When releasing new images, bump the Helm chart's `appVersion` in
+   `deployments/helm/kube-ovn-dra-driver/Chart.yaml` to the image version.
+2. Tag and push. The image tag uses `v<version>`, matching the chart's
+   `appVersion`, the chart tag `chart/<version>`; one commit may carry both:
+
+   ```bash
+   git tag -a v0.1.0 -m v0.1.0
+   git tag -a chart/0.1.0 -m chart/0.1.0
+   git push origin v0.1.0 chart/0.1.0
+   ```
+   The workflows push the image and the chart.
+3. Draft and publish a [GitHub release][releases] with generated release notes.
 
 [SemVer]: https://semver.org/
 [releases]: https://github.com/soer3n/kube-ovn-dra-driver/releases
