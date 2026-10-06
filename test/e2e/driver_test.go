@@ -68,7 +68,9 @@ const (
 type DriverConfig struct {
 	// DriverName overrides the auto-generated DRA driver name. Tests that
 	// share static testdata (e.g. the webhook tests) pin this. Defaults to
-	// the auto-generated release name + ".dra-example-driver.sigs.k8s.io".
+	// the auto-generated release name + ".example.com". Keep these arbitrary
+	// test identities short: the DRA socket path also contains the full pod
+	// UID. UseDefaultDriverName separately covers the longer shipped names.
 	DriverName string
 
 	// UseDefaultDriverName leaves driverName unset in Helm so the chart's
@@ -117,7 +119,7 @@ func installDriver(ctx context.Context, cfg DriverConfig) installedDriver {
 	releaseName := "dra-" + rand.String(6)
 	namespace := "dra-" + rand.String(6)
 	if cfg.DriverName == "" {
-		cfg.DriverName = releaseName + ".dra-example-driver.sigs.k8s.io"
+		cfg.DriverName = releaseName + ".example.com"
 	}
 	if cfg.UseDefaultDriverName {
 		profile := cfg.ExtraValues["deviceProfile"]
