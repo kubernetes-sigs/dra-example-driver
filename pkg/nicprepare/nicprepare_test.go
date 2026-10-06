@@ -20,6 +20,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	resourceapi "k8s.io/api/resource/v1"
@@ -175,6 +176,21 @@ func TestRequestIPAM(t *testing.T) {
 		client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "virt-launcher-vm1-abcde", Namespace: "default", UID: "uid-1"}})
 		if _, err := RequestIPAM(context.Background(), client, claim, result, *dev, "net1"); err == nil {
 			t.Fatal("expected an error for a device without subnetName")
+		}
+	})
+
+	t.Run("names the likely causes when kube-ovn-controller does not allocate", func(t *testing.T) {
+		client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "virt-launcher-vm1-abcde", Namespace: "default", UID: "uid-1"}})
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_, err := RequestIPAM(ctx, client, claim, &resourceapi.DeviceRequestAllocationResult{Device: device.Name, Driver: "nic.kubeovn.io"}, device, "net1")
+		if err == nil {
+			t.Fatal("expected a timeout error")
+		}
+		for _, want := range []string{"pod default/virt-launcher-vm1-abcde", provider + ".kubernetes.io/allocated", provider + ".net1.kubernetes.io/allocated", "--enable-dra-nic", "--dra-nic-driver-name=nic.kubeovn.io", "pod's events"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("error %q does not mention %q", err, want)
+			}
 		}
 	})
 

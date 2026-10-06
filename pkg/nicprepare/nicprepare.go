@@ -109,7 +109,10 @@ func RequestIPAM(
 	// provider by the provider itself. It uses one or the other, never both.
 	alloc, err := annotation.WaitForAllocation(ctx, client, podNS, podName, provider+"."+ifaceName, provider)
 	if err != nil {
-		return nil, fmt.Errorf("wait for kube-ovn-controller to allocate subnet %q: %w", subnetName, err)
+		return nil, fmt.Errorf("kube-ovn-controller did not allocate NIC %q on subnet %q for pod %s/%s "+
+			"(no %s.kubernetes.io/allocated or %s.%s.kubernetes.io/allocated annotation); check the pod's events "+
+			"and that kube-ovn-controller runs with --enable-dra-nic and --dra-nic-driver-name=%s: %w",
+			ifaceName, subnetName, podNS, podName, provider, provider, ifaceName, result.Driver, err)
 	}
 
 	portOwner := podName
