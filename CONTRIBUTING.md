@@ -1,31 +1,26 @@
-# Contributing Guidelines
+# Contributing
 
-Welcome to Kubernetes. We are excited about the prospect of you joining our [community](https://git.k8s.io/community)! The Kubernetes community abides by the CNCF [code of conduct](code-of-conduct.md). Here is an excerpt:
+Issues and pull requests are welcome at
+<https://github.com/soer3n/kube-ovn-dra-driver>.
 
-_As contributors and maintainers of this project, and in the interest of fostering an open and welcoming community, we pledge to respect all people who contribute through reporting issues, posting feature requests, updating documentation, submitting pull requests or patches, and other activities._
+## Development
 
-## Getting Started
+- `make test` runs the unit tests and `logcheck`; `make test-privileged` runs
+  the `pkg/plumbing` datapath tests in network namespaces (needs root).
+- `make lint` runs `golangci-lint`; `make assert-fmt` checks formatting.
+- `make setup-e2e test-e2e teardown-e2e` runs the e2e suite in kind; see
+  [`docs/nic-driver.md`](docs/nic-driver.md) for the demo cluster.
+- Run `make generate` after changing the API types in `api/`.
 
-We have full documentation on how to get started contributing here:
+The driver depends on kube-ovn with `--enable-dra-nic`; changes to the contract
+between both (pod annotations, device attributes, port names) must stay in sync
+with kube-ovn's `docs/dra-nic.md`.
 
-<!---
-If your repo has certain guidelines for contribution, put them here ahead of the general k8s resources
--->
+## Pull requests
 
-- [Contributor License Agreement](https://git.k8s.io/community/CLA.md) Kubernetes projects require that you sign a Contributor License Agreement (CLA) before we can accept your pull requests
-- [Kubernetes Contributor Guide](https://git.k8s.io/community/contributors/guide) - Main contributor documentation, or you can just jump directly to the [contributing section](https://git.k8s.io/community/contributors/guide#contributing)
-- [Contributor Cheat Sheet](https://git.k8s.io/community/contributors/guide/contributor-cheatsheet) - Common resources for existing developers
+- Keep commits focused and sign them off (`git commit -s`), certifying the
+  [Developer Certificate of Origin](https://developercertificate.org/).
+- Add or update tests with every change in behavior.
+- New files carry the Apache 2.0 license header used in the repository.
 
-## Mentorship
-
-- [Mentoring Initiatives](https://git.k8s.io/community/mentoring) - We have a diverse set of mentorship programs available that are always looking for volunteers!
-
-<!---
-Custom Information - if you're copying this template for the first time you can add custom content here, for example:
-
-## Contact Information
-
-- [Slack channel](https://kubernetes.slack.com/messages/kubernetes-users) - Replace `kubernetes-users` with your slack channel string, this will send users directly to your channel. 
-- [Mailing list](URL)
-
--->
+Participation is governed by the [code of conduct](code-of-conduct.md).
