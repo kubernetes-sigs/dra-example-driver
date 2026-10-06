@@ -73,6 +73,43 @@ func TestDriverIdentity(t *testing.T) {
 	}
 }
 
+func TestDriverSocketPathLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		driverName string
+		pluginsDir string
+		wantError  string
+	}{
+		{name: "default"},
+		{name: "107 byte path", driverName: strings.Repeat("a", 24) + ".example.org"},
+		{name: "108 byte path", driverName: strings.Repeat("a", 25) + ".example.org", wantError: "DRA socket path is 108 bytes"},
+		{name: "short directory permits longer name", driverName: strings.Repeat("a", 25) + ".example.org", pluginsDir: "/plugins"},
+		{name: "long directory at limit", pluginsDir: "/var/lib/kubelet/pluginsxx"},
+		{name: "long directory over limit", pluginsDir: "/var/lib/kubelet/pluginsxxx", wantError: "DRA socket path is 108 bytes"},
+		{name: "clean directory before checking", driverName: strings.Repeat("a", 24) + ".example.org", pluginsDir: "/var/lib/kubelet/plugins/./"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chart, err := loader.Load("../../deployments/helm/dra-example-driver")
+			require.NoError(t, err)
+			overrides := map[string]any{"driverName": tc.driverName}
+			if tc.pluginsDir != "" {
+				overrides["kubeletPlugin"] = map[string]any{"kubeletPluginsDirectoryPath": tc.pluginsDir}
+			}
+			values, err := chartutil.ToRenderValues(chart, overrides, common.ReleaseOptions{
+				Name: "test", Namespace: "driver-test", IsInstall: true,
+			}, common.DefaultCapabilities)
+			require.NoError(t, err)
+			_, err = engine.Render(chart, values)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				assert.ErrorContains(t, err, "Shorten driverName or kubeletPlugin.kubeletPluginsDirectoryPath")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
 func TestDeviceHealthPodWatchRBAC(t *testing.T) {
 	for _, tc := range []struct {
 		name    string

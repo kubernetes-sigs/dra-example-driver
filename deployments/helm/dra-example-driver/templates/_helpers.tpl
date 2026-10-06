@@ -126,5 +126,11 @@ resource.k8s.io/v1beta1
 The driver name.
 */}}
 {{- define "dra-example-driver.driverName" -}}
-{{ default (print .Values.deviceProfile ".dra-example-driver.sigs.k8s.io") .Values.driverName }}
+{{- $name := default (print .Values.deviceProfile ".dra-example-driver.sigs.k8s.io") .Values.driverName -}}
+{{/* The chart sets POD_UID. Reserve 36 bytes for its UUID in the DRA socket path. */}}
+{{- $socket := printf "%s/%s/dra-00000000-0000-0000-0000-000000000000.sock" .Values.kubeletPlugin.kubeletPluginsDirectoryPath $name | clean -}}
+{{- if gt (len $socket) 107 -}}
+{{- fail (printf "DRA socket path is %d bytes; Linux permits at most 107 bytes. Shorten driverName or kubeletPlugin.kubeletPluginsDirectoryPath: %s" (len $socket) $socket) -}}
+{{- end -}}
+{{- $name -}}
 {{- end -}}

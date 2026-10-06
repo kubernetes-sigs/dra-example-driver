@@ -9,43 +9,8 @@ It is intended to demonstrate best-practices for how to construct a DRA
 resource driver and wrap it in a [helm chart](https://helm.sh/). It can be used
 as a starting point for implementing a driver for your own set of resources.
 
-## Driver identity and upgrades
-
-The default driver name is `<profile>.dra-example-driver.sigs.k8s.io`, where
-`<profile>` is `gpu`, `cpu`, or `net`. The Helm chart uses the same name for
-the DeviceClass. Set the chart's `driverName` value (or the binaries'
-`--driver-name` flag) to use a custom identity.
-
-This replaces the earlier `<profile>.example.com` defaults. The opaque
-configuration API groups are now `gpu.resource.dra-example-driver.sigs.k8s.io`
-and `net.resource.dra-example-driver.sigs.k8s.io`; their version remains
-`v1alpha1`. Go consumers must update imports from `api/example.com/` to
-`api/dra-example-driver.sigs.k8s.io/`. Health override annotations now use
-`health.dra-example-driver.sigs.k8s.io/<device>`.
-
-Changing the driver name changes the identity used by existing allocations,
-CDI devices, and the kubelet plugin's state directory. It is not an in-place
-migration of allocated claims. For an existing installation:
-
-1. Stop workloads using the old driver and delete their ResourceClaims while
-   the old driver is still running, allowing it to unprepare devices.
-2. Uninstall the old driver and remove any remaining old DeviceClasses and
-   ResourceSlices once no claims use them.
-3. Update workload manifests, ResourceClaimTemplates, opaque configuration
-   `apiVersion` values, CEL selectors, capacity keys, taints, tolerations, and
-   health annotations to the new domains. Install the new driver and recreate
-   the claims and workloads.
-
-The checkpoint group also changes to
-`checkpoint.internal.dra-example-driver.sigs.k8s.io/v1`. Old checkpoints are
-not read by this version; do not copy them into the new state directory.
-Overriding `driverName` with the old name does not preserve the old API groups
-or checkpoint format. Use a fresh test cluster when trying the updated demos.
-Rolling updates between installations using the new identities retain the
-normal checkpoint recovery behavior.
-
-The `registry.example.com` image registry placeholder and the explicit
-`example.com/gpu` extended resource demo are independent, user-selected names.
+This version changes driver names and API groups. Before an upgrade,
+read [Driver identity and upgrades](#driver-identity-and-upgrades).
 
 ## Quickstart and Demo
 
@@ -507,6 +472,66 @@ kind cluster started previously:
 
 #### Other platforms
 Use the cleanup steps documented in [`demo/clusters`](demo/clusters/README.md).
+
+## Driver identity and upgrades
+
+The default driver name is `<profile>.dra-example-driver.sigs.k8s.io`.
+The profiles are `gpu`, `cpu`, and `net`. The Helm chart uses the same name
+for the DeviceClass. Set `driverName` in the chart or `--driver-name` in the
+binaries to use a custom name.
+
+### Custom driver names
+
+With the default chart directories, use at most **36 ASCII characters** for
+`driverName`. The chart sets `POD_UID`, which adds a 36-character UUID to the
+DRA socket filename:
+
+```text
+/var/lib/kubelet/plugins/<driverName>/dra-<podUID>.sock
+```
+
+The full path must not exceed **107 bytes** on Linux. The default driver
+names use 34 characters and produce a 105-byte path. A longer
+`kubeletPlugin.kubeletPluginsDirectoryPath` reduces the space for the driver name.
+The chart checks the full path before installation. If you run the binary
+directly, check the path with your actual directory and Pod UID.
+The registration socket uses a hash when necessary. The DRA socket does not.
+
+### Breaking changes
+
+This version replaces the earlier `example.com` identities. Update these items:
+
+| Item | New value |
+| --- | --- |
+| Default driver and DeviceClass names | `<profile>.dra-example-driver.sigs.k8s.io` |
+| GPU configuration `apiVersion` | `gpu.resource.dra-example-driver.sigs.k8s.io/v1alpha1` |
+| Network configuration `apiVersion` | `net.resource.dra-example-driver.sigs.k8s.io/v1alpha1` |
+| Go import path prefix | `sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/` |
+| Health annotation prefix | `health.dra-example-driver.sigs.k8s.io/` |
+| Checkpoint `apiVersion` | `checkpoint.internal.dra-example-driver.sigs.k8s.io/v1` |
+| Entry in `webhooks[].name` | `dra.dra-example-driver.sigs.k8s.io` |
+
+The driver name also identifies allocations, CDI devices, and the state directory.
+This version does not convert allocated claims or read old checkpoints.
+A custom driver name does not restore the old API groups or checkpoint format.
+
+To replace an existing installation:
+
+1. Stop the workloads that use the old driver.
+2. Delete their ResourceClaims while the old driver still operates. Wait for
+   the driver to release the devices and for Kubernetes to delete the claims.
+3. Uninstall the old driver. Remove old DeviceClasses and ResourceSlices
+   after all claims release them.
+4. Update workload manifests and ResourceClaimTemplates. Use the new API
+   versions, CEL selectors, capacity keys, taints, tolerations, and health annotations.
+5. Install the new driver. Create the claims and workloads again.
+
+Do not copy old checkpoints into the new state directory. Rolling updates
+between installations that use the new identities keep checkpoint recovery.
+Use a new test cluster for the updated demos.
+
+The `registry.example.com` placeholder and the `example.com/gpu` extended
+resource example keep their existing names.
 
 ## Device Profiles
 
