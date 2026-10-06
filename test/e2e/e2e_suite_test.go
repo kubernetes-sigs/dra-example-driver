@@ -18,8 +18,8 @@
 
 // Package e2e contains end-to-end tests for the kube-ovn NIC DRA driver.
 //
-// The suite assumes a running cluster with the driver and kube-ovn (built from
-// the DRA fork) already deployed — bring one up with `make setup-e2e`, which
+// The suite assumes a running cluster with the driver and kube-ovn (with
+// --enable-dra-nic) already deployed — bring one up with `make setup-e2e`, which
 // drives everything through the Makefile's kind-*/kube-ovn targets so all
 // cluster/kube-ovn Helm values stay sourced from a single place. Run with
 // `make test-e2e`; tear down with `make teardown-e2e`.
@@ -49,16 +49,16 @@ const (
 	// driverName must match the DeviceClass / ResourceSlice driver the chart
 	// registers (Helm driverName default; see deployments/helm/...).
 	driverName = "nic.kubeovn.io"
-	// draLabel marks ips.kubeovn.io objects created by the driver. Listing by it
-	// lets the lifecycle specs count reservations without predicting names.
-	draLabel = "dra.kubeovn.io/managed-by"
+	namespace  = "default"
 
 	defaultTimeout = 4 * time.Minute
 	pollInterval   = 5 * time.Second
 )
 
-// ipGVR is the kube-ovn IP CRD (mirrors pkg/kubeovnip).
-var ipGVR = schema.GroupVersionResource{Group: "kubeovn.io", Version: "v1", Resource: "ips"}
+var (
+	ipGVR     = schema.GroupVersionResource{Group: "kubeovn.io", Version: "v1", Resource: "ips"}
+	subnetGVR = schema.GroupVersionResource{Group: "kubeovn.io", Version: "v1", Resource: "subnets"}
+)
 
 var (
 	clientset kubernetes.Interface
