@@ -134,6 +134,13 @@ adds the tap to the VM's domain, since KubeVirt's built-in bindings do not
 resolve DRA networks yet. kube-ovn names the VM's port after the VM, so IP and
 MAC survive VM restarts.
 
+The bridge, tap and DHCP server are a workaround as well: once KubeVirt's
+`managedTap` attachment resolves DRA networks, KubeVirt creates the tap itself,
+and the driver only needs to hand over the veth. The plugin's README describes
+the expected migration, and why reporting the NIC in the ResourceClaim status
+(`status.devices[].networkData`) would also remove the interface naming
+contract between claim templates and VMs.
+
 ## Local dev deployment on kind
 
 A full kube-ovn + NIC DRA stack can be brought up in a local
