@@ -4,23 +4,32 @@
 **Author**: soer3n  
 **Relates to**: [multi-network-api requirements.md](https://github.com/kubernetes-sigs/multi-network-api)
 
-> ⚠️ `kubernetes-sigs/multi-network-api` is still being designed and the
-> direction is unsettled — there are (at least) two competing concrete API
-> proposals in flight:
+> ⚠️ **State as of 2026-10-06:** `kubernetes-sigs/multi-network-api` has a
+> merged requirements document ([#3](https://github.com/kubernetes-sigs/multi-network-api/pull/3),
+> January 2026) and no API types yet. Two competing API proposals are open:
 >
-> - **`PodNetwork`** ([jingjli-goog `api-design-condensed`](https://github.com/jingjli-goog/multi-network-api/tree/api-design-condensed)):
->   cluster-scoped immutable CRD, `spec.provider` + `spec.networkRef` to the
->   impl's own network CR; driver auto-creates one per network.
-> - **`NetworkKind`** ([LionelJouin `network-class-design`](https://github.com/LionelJouin/multi-network-api/tree/network-class-design)):
->   cluster-scoped CRD whose `spec.implementationType` (a `GroupKind`)
->   *classifies* existing impl CRs as pod networks.
+> - **`PodNetwork`** ([#5](https://github.com/kubernetes-sigs/multi-network-api/pull/5),
+>   last updated July 2026): cluster-scoped immutable CRD, `spec.provider` +
+>   `spec.networkRef` to the implementation's own network CR; the driver
+>   creates one per network.
+> - **`PodNetworkKind`** ([#4](https://github.com/kubernetes-sigs/multi-network-api/pull/4),
+>   formerly NetworkKind / NetworkClass, actively revised): cluster-scoped CRD
+>   whose `spec.implementationType` (a `GroupKind`) *classifies* existing
+>   implementation CRs as pod networks, with an optional cluster default
+>   (`DefaultKind`).
 >
-> Both converge on the DRA contract — the driver advertises attach devices in
-> ResourceSlices with standard `multinetwork.networking.k8s.io/…` device
-> attributes (`podNetwork`; `+ podNetworkNamespace`, `networkKind` in the
-> NetworkKind variant) and reports attachment via the ResourceClaim device
-> status. This document predates both and matches neither; it is kept purely
-> as an idea to revisit once upstream converges. The driver does not depend on
+> Both converge on the same DRA contract:
+>
+> - the driver publishes attach devices with the standard device attributes
+>   `multinetwork.networking.k8s.io/podNetwork` (plus `podNetworkNamespace` for
+>   namespaced networks, and `podNetworkKind` in #4), so claims select a
+>   network with CEL on those attributes;
+> - the driver reports the attachment in the ResourceClaim device status:
+>   `status.devices[].networkData` (`interfaceName`, IPs, MAC) and a
+>   `podNetwork` reference in `status.devices[].data`.
+>
+> This document predates both and matches neither; it is kept as an idea to
+> revisit once upstream converges. The driver does not depend on
 > any of this: kube-ovn-controller allocates from the claims and
 > `pkg/plumbing` attaches the NICs (see [`nic-driver.md`](nic-driver.md)).
 
@@ -90,7 +99,7 @@ The seam between the two layers is precisely the three gaps below:
 
 **Caveat — this is a target, not a buildable plan yet.** multi-network-api is
 still pre-API (requirements + two competing proposals, `PodNetwork` vs
-`NetworkKind`, no merged types — see the note at the top). So today the
+`PodNetworkKind`, no merged types — see the note at the top). So today the
 network-identity layer is stood in by NAD/Multus or the driver's own claim
 selectors; the ideas here match neither proposal and are kept only to revisit
 once one wins. The honest pitch is **"a DRA backend that complements
@@ -180,7 +189,18 @@ multi-network-api Network "tenant-net"
 ## What multi-network-api Needs From DRA
 
 For the full integration stack to work cleanly, we identified the following
-gaps in the current `multi-network-api` + DRA API surface:
+gaps in the current `multi-network-api` + DRA API surface.
+
+### 0. What this driver would have to add for either proposal
+
+- publish `multinetwork.networking.k8s.io/podNetwork` (and
+  `podNetworkNamespace` / `podNetworkKind`) next to today's `nic.kubeovn.io/*`
+  attributes, mapping a pod network to a kube-ovn subnet;
+- report each NIC in the claim's `status.devices[].networkData` (interface
+  name, IPs, MAC) and `data`. This is also what would let KubeVirt find a DRA
+  NIC without a naming contract (see the binding plugin's `managedTap` notes).
+
+Neither is implemented yet.
 
 ### 1. `Network` → `DeviceClass` binding
 
@@ -201,29 +221,33 @@ standard field.
 
 **Proposed**: `multi-network-api` should define a standard field (or annotation)
 for the desired interface name, analogous to how NADs work today with
-`"interface": "net1"` in the Multus annotation.
+`"interface": "net1"` in the Multus annotation. Both proposals standardize
+*reporting* the name (`networkData.interfaceName` in the claim status), not
+requesting it.
 
 ### 3. IP pool exhaustion signaling
 
 With the flat IPAM model, the scheduler has no way to know when a subnet's IPs
 are exhausted. This is the key missing piece for scheduler-aware multi-network.
 
-**Proposed path**: KEP-4815 DRA Partitionable Devices (beta in k8s 1.36) allows
-expressing capacity constraints at the resource pool level. An IP pool would
-declare `capacity: 254` (for a /24) and each claim consumes one partition.
-The scheduler would then refuse to schedule pods when the pool is full.
+**Proposed path**: DRA consumable capacity (`DRAConsumableCapacity`, the gate
+this driver already needs for `AllowMultipleAllocations`) lets a device declare
+a capacity that each allocation consumes. A subnet device would declare e.g.
+254 addresses (for a /24), and the scheduler would refuse to schedule pods once
+the pool is used up.
 
 ---
 
 ## Current State vs. Future State
 
-| Capability | Today (this driver) | With multi-network-api + KEP-4815 |
+| Capability | Today (this driver) | With multi-network-api + consumable capacity |
 |---|---|---|
 | Scheduler visibility of NIC allocation | ✅ via ResourceClaim | ✅ |
 | Flat IP pool (no sub-CIDR per node) | ✅ | ✅ |
-| IP exhaustion visible to scheduler | ❌ driver-side only | ✅ via Partitionable Devices |
-| Standard `Network` → claim binding | ❌ manual DeviceClass | 🔜 via multi-network-api `Network` CRD |
-| Standard interface name field | ❌ driver-opaque params | 🔜 |
+| IP exhaustion visible to scheduler | ❌ driver-side only | ✅ via device capacity |
+| Standard network → claim binding | ❌ manual DeviceClass + subnet selector | 🔜 `podNetwork` device attribute (#4 / #5) |
+| Attachment reported in the claim status | ❌ pod annotations only | 🔜 `networkData` (#4 / #5) |
+| Standard interface name field | ❌ driver-opaque params | 🔜 reported in `networkData`; request field open |
 | NetworkPolicy on secondary interface | ❌ | 🔜 multi-network-api roadmap |
 | Service on secondary interface | ❌ | 🔜 multi-network-api roadmap + Gateway API |
 
