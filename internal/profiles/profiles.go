@@ -28,23 +28,10 @@ import (
 
 type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
 
-// NicReleaseInfo carries the identifiers UnprepareResourceClaims needs to
-// release a NIC's IPAM reservation — deleting the ips.kubeovn.io object, which
-// in turn makes kube-ovn GC the overlay logical switch port. Persisted in the
-// driver checkpoint so release survives a plugin restart.
-type NicReleaseInfo struct {
-	PodName      string `json:"podName,omitempty"`
-	PodNamespace string `json:"podNamespace,omitempty"`
-	Provider     string `json:"provider,omitempty"`
-}
-
 type PreparedDevice struct {
 	drapbv1.Device
 	ContainerEdits *cdiapi.ContainerEdits
 	AdminAccess    bool
-	// NIC is set only for the nic profile; it carries what release needs and is
-	// nil for other profiles.
-	NIC *NicReleaseInfo `json:"nic,omitempty"`
 }
 
 type PreparedDevices []*PreparedDevice

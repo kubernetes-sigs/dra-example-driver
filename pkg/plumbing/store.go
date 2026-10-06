@@ -21,25 +21,28 @@ import "sync"
 // PendingStore bridges the two phases of the attach lifecycle, which run in
 // different callbacks at different times:
 //
-//   - PrepareResourceClaims (IPAM done, sandbox not yet created) calls Add to
+//   - PrepareResourceClaims (allocation resolved, no sandbox yet) calls Add to
 //     stash one Spec per NIC, keyed by pod UID.
 //   - The NRI RunPodSandbox hook calls Take(podUID) to drain every Spec for the
 //     pod, fills in the now-known NetnsPath, and runs Attach.
 //
 // A pod may claim more than one NIC, so each key maps to a slice of Specs.
 //
-// NOTE: this in-memory store is lost on plugin restart. The driver already
-// checkpoints PreparedClaims (see cmd/kube-ovn-dra-kubeletplugin/state.go); the
-// real implementation should rebuild PendingStore from that checkpoint on
-// startup so attaches survive a restart between Prepare and RunPodSandbox.
+// The store lives in memory only. A plugin restart between Prepare and
+// RunPodSandbox loses the pending Specs, so that pod starts without its DRA
+// NICs; detaching after a restart falls back to the OVS external_ids (see
+// SandboxHandler.OnStopPodSandbox).
 type PendingStore struct {
 	mu       sync.Mutex
 	byPodUID map[string][]Spec
+	// attached holds the Specs of attached NICs, with the sandbox fields filled
+	// in, so StopPodSandbox can detach them.
+	attached map[string][]Spec
 }
 
 // NewPendingStore returns an empty store.
 func NewPendingStore() *PendingStore {
-	return &PendingStore{byPodUID: make(map[string][]Spec)}
+	return &PendingStore{byPodUID: make(map[string][]Spec), attached: make(map[string][]Spec)}
 }
 
 // Add records a NIC Spec to attach when the pod's sandbox appears.
@@ -59,11 +62,18 @@ func (p *PendingStore) Take(podUID string) []Spec {
 	return specs
 }
 
-// Peek returns the pending Specs for a pod without removing them. Useful for
-// Detach bookkeeping if the driver chooses to retain Specs after Attach instead
-// of reconstructing them from the checkpoint.
-func (p *PendingStore) Peek(podUID string) []Spec {
+// MarkAttached records Specs whose NIC was attached for podUID.
+func (p *PendingStore) MarkAttached(podUID string, specs ...Spec) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return p.byPodUID[podUID]
+	p.attached[podUID] = append(p.attached[podUID], specs...)
+}
+
+// TakeAttached returns and forgets the attached Specs for podUID.
+func (p *PendingStore) TakeAttached(podUID string) []Spec {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	specs := p.attached[podUID]
+	delete(p.attached, podUID)
+	return specs
 }

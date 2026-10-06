@@ -56,10 +56,14 @@ func (a *ovsAttacher) unwireVMIBridge(ctx context.Context, spec Spec) error {
 	return ErrNotImplemented
 }
 
-func (a *ovsAttacher) ensureVMIDHCPServer(spec Spec, bridgeName string) error {
+func (a *ovsAttacher) ensureVMIDHCPServer(ctx context.Context, spec Spec, bridgeName string) error {
 	return ErrNotImplemented
 }
 
 func (a *ovsAttacher) stopVMIDHCPServer(bridgeName string) error {
+	return ErrNotImplemented
+}
+
+func (a *ovsAttacher) DetachPodPorts(ctx context.Context, podName, podNamespace string) error {
 	return ErrNotImplemented
 }

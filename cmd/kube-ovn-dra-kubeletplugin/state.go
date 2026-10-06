@@ -26,7 +26,6 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
-	"k8s.io/client-go/dynamic"
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
@@ -42,10 +41,9 @@ import (
 type AllocatableDevices map[string]resourceapi.Device
 type PreparedClaims map[string]profiles.PreparedDevices
 
-// maxPrepareConcurrency bounds how many per-NIC IPAM reservations run at once
-// during PrepareResourceClaims. Concurrency is what makes prepare latency ~flat
-// in NIC count (vs. Multus's serial per-NIC CNI chain); the cap keeps a
-// many-NIC pod from flooding the kube-ovn controller with simultaneous requests.
+// maxPrepareConcurrency bounds how many NICs of a claim wait for their
+// kube-ovn allocation at once during PrepareResourceClaims, so prepare latency
+// stays ~flat in NIC count without flooding the API server with pod reads.
 const maxPrepareConcurrency = 16
 
 type OpaqueDeviceConfig struct {
@@ -63,9 +61,8 @@ type DeviceState struct {
 	configDecoder     runtime.Decoder
 	configHandler     profiles.ConfigHandler
 	// NIC-specific: set when the profile is nicprofile.ProfileName
-	coreclient    coreclientset.Interface
-	dynamicClient dynamic.Interface
-	isNIC         bool
+	coreclient coreclientset.Interface
+	isNIC      bool
 	// nriStore receives one plumbing.Spec per claimed NIC, keyed by pod UID, so
 	// the NRI sandbox hook can perform the attach once the netns exists.
 	nriStore *plumbing.PendingStore
@@ -125,7 +122,6 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		configDecoder:     decoder,
 		configHandler:     configHandler,
 		coreclient:        config.coreclient,
-		dynamicClient:     config.dynamicClient,
 		isNIC:             config.flags.profile == nicprofile.ProfileName,
 		nriStore:          config.nriStore,
 	}
@@ -149,7 +145,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 	return state, nil
 }
 
-func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
+func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceClaim) ([]*drapbv1.Device, error) {
 	s.Lock()
 	defer s.Unlock()
 
@@ -164,7 +160,7 @@ func (s *DeviceState) Prepare(claim *resourceapi.ResourceClaim) ([]*drapbv1.Devi
 	if preparedClaims[claimUID] != nil {
 		return preparedClaims[claimUID].GetDevices(), nil
 	}
-	preparedDevices, err := s.prepareDevices(claim)
+	preparedDevices, err := s.prepareDevices(ctx, claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
@@ -215,7 +211,7 @@ func (s *DeviceState) Unprepare(claimUID string) error {
 	return nil
 }
 
-func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles.PreparedDevices, error) {
+func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) (profiles.PreparedDevices, error) {
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
@@ -294,10 +290,8 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 		}
 	}
 
-	// NIC IPAM (a kube-ovn controller round-trip per NIC, via the ips.kubeovn.io
-	// CRD — Multus-free) is the slow step. Run it concurrently across all claimed
-	// NICs so prepare latency is ~one round-trip instead of N — the structural win
-	// over Multus's serial per-NIC CNI chain.
+	// Waiting for kube-ovn-controller's allocation is the slow step. Wait for all
+	// claimed NICs concurrently so prepare latency is ~one round-trip instead of N.
 	nicCfgs := make([]*nicprepare.NicDeviceConfig, len(items))
 	if s.isNIC {
 		itemErrs := make([]error, len(items))
@@ -311,7 +305,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 				defer func() { <-sem }()
 				it := items[i]
 				dev := s.allocatable[it.result.Device]
-				cfg, err := nicprepare.RequestIPAMViaIPObject(context.Background(), s.coreclient, s.dynamicClient, claim, it.result, dev, it.ifaceName)
+				cfg, err := nicprepare.RequestIPAM(ctx, s.coreclient, claim, it.result, dev, it.ifaceName)
 				if err != nil {
 					itemErrs[i] = fmt.Errorf("NIC IPAM for device %s: %w", it.result.Device, err)
 					return
@@ -321,20 +315,12 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 		}
 		wg.Wait()
 		if err := errors.Join(itemErrs...); err != nil {
-			// Best-effort rollback of the reservations that did succeed, so a
-			// retry of PrepareResourceClaims isn't blocked by half-created IP
-			// objects (their names are deterministic per pod+provider).
-			for _, cfg := range nicCfgs {
-				if cfg != nil {
-					_ = nicprepare.ReleaseIPAMViaIPObject(context.Background(), s.dynamicClient, cfg)
-				}
-			}
 			return nil, err
 		}
 	}
 
-	// Build the prepared devices in item order, wiring the NRI attach spec and the
-	// release info from the (now-complete) IPAM results.
+	// Build the prepared devices in item order and hand the attach specs from
+	// the (now complete) IPAM results to the NRI hook.
 	preparedDevices := make(profiles.PreparedDevices, 0, len(items))
 	for i, it := range items {
 		result := it.result
@@ -342,7 +328,7 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 		// Stash the attach Spec for the NRI sandbox hook to consume once the pod
 		// netns exists. NetnsPath/ContainerID are filled in there.
 		if nicCfg != nil && s.nriStore != nil {
-			s.nriStore.Add(nicCfg.PodUID, nicSpecFromConfig(nicCfg, s.allocatable[result.Device]))
+			s.nriStore.Add(nicCfg.PodUID, nicSpecFromConfig(nicCfg))
 		}
 
 		device := &profiles.PreparedDevice{
@@ -355,84 +341,37 @@ func (s *DeviceState) prepareDevices(claim *resourceapi.ResourceClaim) (profiles
 			ContainerEdits: perDeviceCDIContainerEdits[result.Device],
 			AdminAccess:    hasAdminAccess,
 		}
-		// Persist what release needs so UnprepareResourceClaims can delete the
-		// ips.kubeovn.io object (which makes kube-ovn GC the overlay LSP).
-		if nicCfg != nil {
-			device.NIC = &profiles.NicReleaseInfo{
-				PodName:      nicCfg.PodName,
-				PodNamespace: nicCfg.PodNamespace,
-				Provider:     nicCfg.Provider,
-			}
-		}
 		preparedDevices = append(preparedDevices, device)
 	}
 
 	return preparedDevices, nil
 }
 
-func (s *DeviceState) unprepareDevices(claimUID string, devices profiles.PreparedDevices) error {
-	if !s.isNIC {
-		return nil
-	}
-	// Release each NIC's IPAM reservation by deleting its ips.kubeovn.io object.
-	// kube-ovn's reserved-IP delete path then removes the overlay LSP. The veth
-	// and OVS port (when the nicAttach datapath is enabled) are torn down
-	// separately by the NRI StopPodSandbox hook. kubeovnip.Release tolerates
-	// NotFound, so a repeated unprepare is a no-op.
-	var errs []error
-	for _, d := range devices {
-		if d.NIC == nil {
-			continue
-		}
-		cfg := &nicprepare.NicDeviceConfig{
-			PodName:      d.NIC.PodName,
-			PodNamespace: d.NIC.PodNamespace,
-			Provider:     d.NIC.Provider,
-		}
-		if err := nicprepare.ReleaseIPAMViaIPObject(context.Background(), s.dynamicClient, cfg); err != nil {
-			errs = append(errs, fmt.Errorf("release IPAM for device %s (claim %s): %w", d.DeviceName, claimUID, err))
-		}
-	}
-	return errors.Join(errs...)
+// unprepareDevices has nothing to release: kube-ovn-controller owns the NIC's
+// address and port, and the NRI StopPodSandbox hook detaches the interface.
+func (s *DeviceState) unprepareDevices(string, profiles.PreparedDevices) error {
+	return nil
 }
 
-// nicSpecFromConfig builds the plumbing.Spec for one NIC from the IPAM result
-// and the device's subnetType/vlanId attributes. NetnsPath and ContainerID are
-// left empty — the NRI sandbox hook fills them in when the sandbox appears.
-func nicSpecFromConfig(cfg *nicprepare.NicDeviceConfig, dev resourceapi.Device) plumbing.Spec {
-	spec := plumbing.Spec{
+// nicSpecFromConfig builds the plumbing.Spec for one NIC from the IPAM result.
+// kube-ovn-controller creates a logical switch port for overlay and underlay
+// subnets alike (underlay ones reach the VLAN through a localnet port), so
+// every NIC is plugged into br-int and bound to its port, like a regular
+// kube-ovn pod. NetnsPath and ContainerID are left empty; the NRI sandbox hook
+// fills them in when the sandbox appears.
+func nicSpecFromConfig(cfg *nicprepare.NicDeviceConfig) plumbing.Spec {
+	return plumbing.Spec{
 		PodUID:       cfg.PodUID,
 		PodName:      cfg.PodName,
 		PodNamespace: cfg.PodNamespace,
 		IfaceName:    cfg.IfaceName,
 		IP:           cfg.IP,
+		ExtraIPs:     cfg.ExtraIPs,
 		MAC:          cfg.MAC,
 		Gateway:      cfg.Gateway,
 		Provider:     cfg.Provider,
-		Type:         plumbing.SubnetTypeOVN,
+		IfaceID:      cfg.LogicalSwitchPort,
 	}
-	if dev.Attributes != nil {
-		if v := dev.Attributes["nic.kubeovn.io/subnetType"]; v.StringValue != nil && *v.StringValue == "vlan" {
-			spec.Type = plumbing.SubnetTypeVLAN
-		}
-		if v := dev.Attributes["nic.kubeovn.io/vlanId"]; v.IntValue != nil {
-			spec.VlanID = int(*v.IntValue)
-		}
-		// For VLAN underlay the bridge is br-<ProviderNetwork>, which is a
-		// different identifier than the subnet provider used for IPAM/IP-CR
-		// naming (cfg.Provider). Override Provider here so providerBridge()
-		// resolves to e.g. br-external rather than br-<subnet-provider>.
-		if spec.Type == plumbing.SubnetTypeVLAN {
-			if v := dev.Attributes["nic.kubeovn.io/providerNetwork"]; v.StringValue != nil && *v.StringValue != "" {
-				spec.Provider = *v.StringValue
-			}
-		}
-	}
-	// OVN overlay ports bind via external_ids:iface-id = the OVN LSP name.
-	if spec.Type == plumbing.SubnetTypeOVN {
-		spec.IfaceID = spec.PortName()
-	}
-	return spec
 }
 
 // checkAdminAccess determines if a resource claim requires admin access.

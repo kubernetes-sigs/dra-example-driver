@@ -20,25 +20,6 @@ import (
 	"testing"
 )
 
-func TestSpecPortName(t *testing.T) {
-	tests := []struct {
-		name     string
-		spec     Spec
-		expected string
-	}{
-		{"default ovn provider", Spec{PodName: "p", PodNamespace: "ns", Provider: "ovn"}, "p.ns"},
-		{"empty provider treated as ovn", Spec{PodName: "p", PodNamespace: "ns", Provider: ""}, "p.ns"},
-		{"explicit provider", Spec{PodName: "p", PodNamespace: "ns", Provider: "external.vlan100-subnet.ovn"}, "p.ns.external.vlan100-subnet.ovn"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.spec.PortName(); got != tt.expected {
-				t.Errorf("PortName() = %q, want %q", got, tt.expected)
-			}
-		})
-	}
-}
-
 func TestSpecValidate(t *testing.T) {
 	base := func() Spec {
 		return Spec{
@@ -48,26 +29,21 @@ func TestSpecValidate(t *testing.T) {
 			IfaceName:    "net1",
 			IP:           "172.23.0.5/24",
 			ContainerID:  "abcdef0123456789",
+			IfaceID:      "p.ns.blue.ns.ovn",
 		}
 	}
-	ovn := func() Spec { s := base(); s.Type = SubnetTypeOVN; s.IfaceID = "p.ns"; return s }
-	vlan := func() Spec { s := base(); s.Type = SubnetTypeVLAN; s.Provider = "external"; s.VlanID = 100; return s }
 
 	tests := []struct {
 		name    string
 		spec    Spec
 		wantErr bool
 	}{
-		{"valid ovn", ovn(), false},
-		{"valid vlan", vlan(), false},
-		{"missing netns", func() Spec { s := ovn(); s.NetnsPath = ""; return s }(), true},
-		{"missing iface", func() Spec { s := ovn(); s.IfaceName = ""; return s }(), true},
-		{"missing ip", func() Spec { s := ovn(); s.IP = ""; return s }(), true},
-		{"missing containerID", func() Spec { s := ovn(); s.ContainerID = ""; return s }(), true},
-		{"ovn missing iface-id", func() Spec { s := ovn(); s.IfaceID = ""; return s }(), true},
-		{"vlan missing provider", func() Spec { s := vlan(); s.Provider = ""; return s }(), true},
-		{"vlan missing vlanID", func() Spec { s := vlan(); s.VlanID = 0; return s }(), true},
-		{"unknown type", func() Spec { s := base(); s.Type = "bogus"; return s }(), true},
+		{"valid", base(), false},
+		{"missing netns", func() Spec { s := base(); s.NetnsPath = ""; return s }(), true},
+		{"missing iface", func() Spec { s := base(); s.IfaceName = ""; return s }(), true},
+		{"missing ip", func() Spec { s := base(); s.IP = ""; return s }(), true},
+		{"missing containerID", func() Spec { s := base(); s.ContainerID = ""; return s }(), true},
+		{"missing iface-id", func() Spec { s := base(); s.IfaceID = ""; return s }(), true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -80,32 +56,77 @@ func TestSpecValidate(t *testing.T) {
 }
 
 func TestVethNames(t *testing.T) {
-	a := &ovsAttacher{hostVethPrefix: "dra"}
+	a := &ovsAttacher{}
 	host, pod, err := a.vethNames(Spec{ContainerID: "abcdef0123456789", IfaceName: "net1"})
 	if err != nil {
 		t.Fatalf("vethNames() unexpected error: %v", err)
 	}
-	if host != "abcdef01_net1_h" {
-		t.Errorf("host = %q, want abcdef01_net1_h", host)
+	wantHost := shortHashName("vh", "abcdef0123456789/net1")
+	wantPod := shortHashName("vc", "abcdef0123456789/net1")
+	if host != wantHost {
+		t.Errorf("host = %q, want %q", host, wantHost)
 	}
-	if pod != "abcdef01_net1_c" {
-		t.Errorf("pod = %q, want abcdef01_net1_c", pod)
+	if pod != wantPod {
+		t.Errorf("pod = %q, want %q", pod, wantPod)
+	}
+	if host == pod {
+		t.Errorf("host and pod names must differ, both = %q", host)
 	}
 	// Kernel interface names must fit IFNAMSIZ (15 chars).
 	if len(host) > 15 || len(pod) > 15 {
 		t.Errorf("veth name exceeds 15 chars: host=%q (%d) pod=%q (%d)", host, len(host), pod, len(pod))
 	}
+	// Deterministic: same input must reproduce the same names (Attach's own
+	// idempotency and Detach both depend on this).
+	host2, pod2, err := a.vethNames(Spec{ContainerID: "abcdef0123456789", IfaceName: "net1"})
+	if err != nil || host2 != host || pod2 != pod {
+		t.Errorf("vethNames() not deterministic: got (%q, %q, %v), want (%q, %q, nil)", host2, pod2, err, host, pod)
+	}
 }
 
-// TestVethNamesTooLong guards the fix for a real crash: an IfaceName long
-// enough to underflow containerID[:12-len(iface)] used to panic with
-// "slice bounds out of range [:-2]" instead of returning an error (hit live
-// against a kube-ovn-network-binding-plugin demo using a 14-char IfaceName).
-func TestVethNamesTooLong(t *testing.T) {
-	a := &ovsAttacher{hostVethPrefix: "dra"}
-	_, _, err := a.vethNames(Spec{ContainerID: "abcdef0123456789", IfaceName: "poddda1950dc07"})
-	if err == nil {
-		t.Fatal("vethNames() with a 14-char IfaceName: want error, got nil")
+// TestVethNamesLongIfaceName guards two historical bugs at once. First, an
+// IfaceName long enough to underflow containerID[:12-len(iface)] used to
+// panic with "slice bounds out of range [:-2]" instead of returning an error
+// (hit live against a kube-ovn-network-binding-plugin demo using a 14-char
+// IfaceName). Second, and more subtly, even a non-underflowing but long
+// IfaceName (this driver's CRD-supplied names like "nicdda1950d" run 11
+// chars) left only 12-len(iface) characters of the containerID to
+// distinguish names, so two unrelated sandboxes whose container IDs merely
+// shared a leading hex digit collided on identical veth names — reproduced
+// live as "look up pod veth ...: Link not found" during a kube-ovn-dra-vmi
+// redeploy. The hash-based scheme has no such underflow or entropy collapse:
+// it must succeed here, produce a fixed-length name, and differ from a
+// same-length-class iface name's names computed from a different key.
+func TestVethNamesLongIfaceName(t *testing.T) {
+	a := &ovsAttacher{}
+	host, pod, err := a.vethNames(Spec{ContainerID: "abcdef0123456789", IfaceName: "poddda1950dc07"})
+	if err != nil {
+		t.Fatalf("vethNames() with a 14-char IfaceName: unexpected error: %v", err)
+	}
+	if len(host) > 15 || len(pod) > 15 {
+		t.Errorf("veth name exceeds 15 chars: host=%q (%d) pod=%q (%d)", host, len(host), pod, len(pod))
+	}
+
+	// Different container IDs sharing a leading hex digit must NOT collide
+	// (the actual bug: the old scheme derived names from only 1 truncated
+	// character of the containerID here, since 12-len("nicdda1950d")=1).
+	hostA, podA, err := a.vethNames(Spec{ContainerID: "cabc000000000000", IfaceName: "nicdda1950d"})
+	if err != nil {
+		t.Fatalf("vethNames() unexpected error: %v", err)
+	}
+	hostB, podB, err := a.vethNames(Spec{ContainerID: "cdef000000000000", IfaceName: "nicdda1950d"})
+	if err != nil {
+		t.Fatalf("vethNames() unexpected error: %v", err)
+	}
+	if hostA == hostB || podA == podB {
+		t.Errorf("different container IDs sharing a leading hex digit collided: A=(%q,%q) B=(%q,%q)", hostA, podA, hostB, podB)
+	}
+}
+
+func TestVethNamesEmptyContainerID(t *testing.T) {
+	a := &ovsAttacher{}
+	if _, _, err := a.vethNames(Spec{ContainerID: "", IfaceName: "net1"}); err == nil {
+		t.Fatal("vethNames() with empty ContainerID: want error, got nil")
 	}
 }
 
@@ -115,23 +136,36 @@ func TestPendingStore(t *testing.T) {
 	s.Add("uid-1", Spec{IfaceName: "net2"})
 	s.Add("uid-2", Spec{IfaceName: "net1"})
 
-	if got := s.Peek("uid-1"); len(got) != 2 {
-		t.Fatalf("Peek(uid-1) len = %d, want 2", len(got))
-	}
-	taken := s.Take("uid-1")
-	if len(taken) != 2 {
-		t.Fatalf("Take(uid-1) len = %d, want 2", len(taken))
+	if taken := s.Take("uid-1"); len(taken) != 2 || taken[0].IfaceName != "net1" || taken[1].IfaceName != "net2" {
+		t.Fatalf("Take(uid-1) = %+v, want net1 and net2 in order", taken)
 	}
 	if got := s.Take("uid-1"); len(got) != 0 {
 		t.Errorf("Take(uid-1) after drain len = %d, want 0", len(got))
 	}
-	if got := s.Peek("uid-2"); len(got) != 1 {
-		t.Errorf("Peek(uid-2) len = %d, want 1", len(got))
+	if got := s.Take("uid-2"); len(got) != 1 {
+		t.Errorf("Take(uid-2) len = %d, want 1", len(got))
+	}
+
+	s.MarkAttached("uid-1", Spec{IfaceName: "net1"})
+	s.MarkAttached("uid-1", Spec{IfaceName: "net2"})
+	if got := s.TakeAttached("uid-1"); len(got) != 2 {
+		t.Errorf("TakeAttached(uid-1) len = %d, want 2", len(got))
+	}
+	if got := s.TakeAttached("uid-1"); len(got) != 0 {
+		t.Errorf("TakeAttached(uid-1) after drain len = %d, want 0", len(got))
 	}
 }
 
-func TestProviderBridge(t *testing.T) {
-	if got := providerBridge("external"); got != "br-external" {
-		t.Errorf("providerBridge(external) = %q, want br-external", got)
+func TestDeviceNames(t *testing.T) {
+	for _, name := range []string{bridgeNameFor("net1"), vethRenameFor("net1"), shortHashName("vh", "a/very/long/key/that/exceeds/ifnamsiz")} {
+		if len(name) > 15 {
+			t.Errorf("%q exceeds IFNAMSIZ", name)
+		}
+	}
+	if bridgeNameFor("net1") == bridgeNameFor("net2") || bridgeNameFor("net1") == vethRenameFor("net1") {
+		t.Error("bridge and veth rename names must be distinct per interface")
+	}
+	if name := bridgeNameFor("net1"); name != shortHashName("kvb", "net1") {
+		t.Errorf("bridgeNameFor(net1) = %q, want the deterministic hash name", name)
 	}
 }

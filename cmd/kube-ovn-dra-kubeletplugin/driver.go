@@ -74,15 +74,15 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		return nil, err
 	}
 
-	// Start the NRI plugin that performs the (currently stubbed) secondary-NIC
-	// attach when a pod sandbox is created. NRI may be unavailable (older
-	// runtime / NRI disabled); that is non-fatal for the IPAM-only mode, so we
-	// log and continue rather than failing driver startup.
+	// Start the NRI plugin that attaches the NICs when a pod sandbox is
+	// created. Without it, claims are still prepared but pods start without
+	// their DRA NICs, so the failure is logged loudly instead of stopping the
+	// driver.
 	logger := klog.FromContext(ctx)
 	handler := plumbing.NewSandboxHandler(config.nriStore, plumbing.NewOVSAttacher())
 	nri, err := startNRIPlugin(ctx, handler)
 	if err != nil {
-		logger.Error(err, "NRI plugin unavailable; secondary-NIC attach disabled (IPAM-only mode)")
+		logger.Error(err, "NRI plugin unavailable; DRA NICs will not be attached to pods")
 	} else {
 		driver.nri = nri
 	}
@@ -116,7 +116,7 @@ func (d *driver) PrepareResourceClaims(ctx context.Context, claims []*resourceap
 func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.ResourceClaim) kubeletplugin.PrepareResult {
 	logger := klog.FromContext(ctx)
 	logger.Info("Preparing claim", "uid", claim.UID, "namespace", claim.Namespace, "name", claim.Name)
-	preparedPBs, err := d.state.Prepare(claim)
+	preparedPBs, err := d.state.Prepare(ctx, claim)
 	if err != nil {
 		logger.Error(err, "Error preparing devices for claim", "uid", claim.UID)
 		return kubeletplugin.PrepareResult{

@@ -20,6 +20,7 @@ package plumbing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os/exec"
@@ -32,6 +33,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"github.com/vishvananda/netns"
 	"golang.org/x/net/ipv4"
+	"golang.org/x/sys/unix"
 	"k8s.io/klog/v2"
 )
 
@@ -47,7 +49,7 @@ func (a *ovsAttacher) createVethPair(ctx context.Context, host, pod string, mtu 
 		PeerName:  pod,
 	}
 	if mtu > 0 {
-		veth.LinkAttrs.MTU = mtu
+		veth.MTU = mtu
 	}
 	if err := netlink.LinkAdd(veth); err != nil {
 		return fmt.Errorf("create veth %s<->%s: %w", host, pod, err)
@@ -71,12 +73,31 @@ func (a *ovsAttacher) createVethPair(ctx context.Context, host, pod string, mtu 
 // moveIntoNetns moves the pod-side veth (named pod) into the sandbox netns and
 // renames it to ifaceName. The link is left DOWN so configurePodIface can set
 // its MAC before bringing it up.
+//
+// Idempotent: if ifaceName already exists inside the target netns, the move+
+// rename already happened on a previous (partially-failed) Attach for this
+// same Spec — createVethPair's own idempotency check would otherwise
+// short-circuit ("host still exists") on a retry, while this function
+// unconditionally looked up "pod" in the CALLER's netns and failed, since
+// that peer no longer lives there once it's been moved+renamed away. That
+// contradicted Attach's documented idempotency guarantee and reproduced
+// live as "look up pod veth ...: Link not found" on a retried Attach whose
+// earlier attempt got past this step but failed in a later one (e.g.
+// attachToOVS or wireVMIBridge).
 func (a *ovsAttacher) moveIntoNetns(ctx context.Context, pod, netnsPath, ifaceName string) error {
 	ns, err := netns.GetFromPath(netnsPath)
 	if err != nil {
 		return fmt.Errorf("open netns %s: %w", netnsPath, err)
 	}
 	defer ns.Close()
+
+	if h, err := netlink.NewHandleAt(ns); err == nil {
+		_, alreadyMoved := h.LinkByName(ifaceName)
+		h.Close()
+		if alreadyMoved == nil {
+			return nil // already moved and renamed on a previous attempt
+		}
+	}
 
 	link, err := netlink.LinkByName(pod)
 	if err != nil {
@@ -143,12 +164,23 @@ func (a *ovsAttacher) configurePodIface(ctx context.Context, spec Spec) error {
 		}
 	}
 
-	addr, err := netlink.ParseAddr(spec.IP)
-	if err != nil {
-		return fmt.Errorf("parse IP %q: %w", spec.IP, err)
+	addresses := []string{spec.IP}
+	if !spec.KubeVirtVMI {
+		addresses = append(addresses, spec.ExtraIPs...)
 	}
-	if err := h.AddrAdd(link, addr); err != nil && !isExists(err) {
-		return fmt.Errorf("add address %s to %s: %w", spec.IP, spec.IfaceName, err)
+	for _, ip := range addresses {
+		addr, err := netlink.ParseAddr(ip)
+		if err != nil {
+			return fmt.Errorf("parse IP %q: %w", ip, err)
+		}
+		if addr.IP.To4() == nil {
+			// The address is unique in its subnet; skip duplicate address detection
+			// so it is usable right away, as kube-ovn-cni does for pod interfaces.
+			addr.Flags |= unix.IFA_F_NODAD
+		}
+		if err := h.AddrAdd(link, addr); err != nil && !isExists(err) {
+			return fmt.Errorf("add address %s to %s: %w", ip, spec.IfaceName, err)
+		}
 	}
 
 	if err := h.LinkSetUp(link); err != nil {
@@ -175,57 +207,50 @@ func (a *ovsAttacher) configurePodIface(ctx context.Context, spec Spec) error {
 	return nil
 }
 
-// attachToOVS adds the host veth to the correct bridge:
-//   - OVN overlay  → br-int, with external_ids:iface-id so OVN binds the LSP.
-//   - VLAN underlay → br-<provider>, access port tagged with the VLAN id.
+// attachToOVS adds the host veth to br-int with external_ids:iface-id set to
+// the logical switch port, so OVN binds the port to this chassis.
 func (a *ovsAttacher) attachToOVS(ctx context.Context, hostVeth string, spec Spec) error {
-	ipNoMask := ipWithoutMask(spec.IP)
-
-	switch spec.Type {
-	case SubnetTypeOVN:
-		ifaceID := spec.IfaceID
-		if ifaceID == "" {
-			ifaceID = spec.PortName()
-		}
-		return ovsVsctl(ctx,
-			"--may-exist", "add-port", integrationBridge, hostVeth,
-			"--", "set", "interface", hostVeth,
-			"external_ids:iface-id="+ifaceID,
-			"external_ids:vendor="+cniVendor,
-			"external_ids:pod_name="+spec.PodName,
-			"external_ids:pod_namespace="+spec.PodNamespace,
-			"external_ids:ip="+ipNoMask,
-			"external_ids:pod_netns="+spec.NetnsPath,
-		)
-	case SubnetTypeVLAN:
-		bridge := providerBridge(spec.Provider)
-		return ovsVsctl(ctx,
-			"--may-exist", "add-port", bridge, hostVeth,
-			fmt.Sprintf("tag=%d", spec.VlanID),
-			"--", "set", "interface", hostVeth,
-			"external_ids:vendor="+cniVendor,
-			"external_ids:pod_name="+spec.PodName,
-			"external_ids:pod_namespace="+spec.PodNamespace,
-			"external_ids:ip="+ipNoMask,
-			"external_ids:pod_netns="+spec.NetnsPath,
-		)
-	default:
-		return fmt.Errorf("plumbing: unknown SubnetType %q", spec.Type)
-	}
+	ipNoMask := strings.Join(ipsWithoutMask(append([]string{spec.IP}, spec.ExtraIPs...)), ",")
+	return ovsVsctl(ctx,
+		"--may-exist", "add-port", integrationBridge, hostVeth,
+		"--", "set", "interface", hostVeth,
+		"external_ids:iface-id="+spec.IfaceID,
+		"external_ids:vendor="+cniVendor,
+		"external_ids:"+ownerExternalID+"="+ownerName,
+		"external_ids:pod_name="+spec.PodName,
+		"external_ids:pod_namespace="+spec.PodNamespace,
+		"external_ids:ip="+ipNoMask,
+		"external_ids:pod_netns="+spec.NetnsPath,
+	)
 }
 
-// detachFromOVS removes the host veth's port from its bridge.
-func (a *ovsAttacher) detachFromOVS(ctx context.Context, hostVeth string, spec Spec) error {
-	var bridge string
-	switch spec.Type {
-	case SubnetTypeOVN:
-		bridge = integrationBridge
-	case SubnetTypeVLAN:
-		bridge = providerBridge(spec.Provider)
-	default:
-		return fmt.Errorf("plumbing: unknown SubnetType %q", spec.Type)
+// detachFromOVS removes the host veth's port from br-int.
+func (a *ovsAttacher) detachFromOVS(ctx context.Context, hostVeth string, _ Spec) error {
+	return ovsVsctl(ctx, "--if-exists", "del-port", integrationBridge, hostVeth)
+}
+
+// DetachPodPorts removes the OVS ports this driver created for the pod, found
+// by the owner and pod external_ids, and deletes their host veths.
+func (a *ovsAttacher) DetachPodPorts(ctx context.Context, podName, podNamespace string) error {
+	out, err := exec.CommandContext(ctx, "ovs-vsctl", "--bare", "--columns=name", "find", "interface",
+		"external_ids:"+ownerExternalID+"="+ownerName,
+		"external_ids:pod_name="+podName,
+		"external_ids:pod_namespace="+podNamespace,
+	).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("find ovs ports of pod %s/%s: %w: %s", podNamespace, podName, err, strings.TrimSpace(string(out)))
 	}
-	return ovsVsctl(ctx, "--if-exists", "del-port", bridge, hostVeth)
+	var errs []error
+	for _, name := range strings.Fields(string(out)) {
+		if err := ovsVsctl(ctx, "--if-exists", "del-port", name); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if err := a.cleanupHostVeth(ctx, name); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // cleanupHostVeth deletes the host-side veth, which removes its pod-side peer.
@@ -275,7 +300,7 @@ func (a *ovsAttacher) wireVMIBridge(ctx context.Context, spec Spec) error {
 		// Already wired by a previous Attach. The DHCP server, however, is
 		// per-process (not per-netns) state: a driver restart loses it even
 		// though the bridge/tap survive, so it must still be (re-)ensured.
-		return a.ensureVMIDHCPServer(spec, bridgeName)
+		return a.ensureVMIDHCPServer(ctx, spec, bridgeName)
 	}
 
 	vethName := vethRenameFor(spec.IfaceName)
@@ -453,7 +478,7 @@ func (a *ovsAttacher) wireVMIBridge(ctx context.Context, spec Spec) error {
 		}
 	}
 
-	return a.ensureVMIDHCPServer(spec, bridgeName)
+	return a.ensureVMIDHCPServer(ctx, spec, bridgeName)
 }
 
 // ensureVMIDHCPServer starts the per-VMI single-client DHCP server bound to
@@ -477,7 +502,7 @@ func (a *ovsAttacher) wireVMIBridge(ctx context.Context, spec Spec) error {
 // force-delete, or driver restart between Attach and Detach) can never
 // block a new pod's own server from starting, regardless of whether that
 // network name was ever used before.
-func (a *ovsAttacher) ensureVMIDHCPServer(spec Spec, bridgeName string) error {
+func (a *ovsAttacher) ensureVMIDHCPServer(ctx context.Context, spec Spec, bridgeName string) error {
 	a.dhcpMu.Lock()
 	_, running := a.dhcpServers[spec.NetnsPath]
 	a.dhcpMu.Unlock()
@@ -489,6 +514,11 @@ func (a *ovsAttacher) ensureVMIDHCPServer(spec Spec, bridgeName string) error {
 	if err != nil {
 		return fmt.Errorf("parse Spec.IP %q for DHCP server: %w", spec.IP, err)
 	}
+	if ip.To4() == nil {
+		// The guest learns its address by DHCPv4 only; IPv6 needs RA/DHCPv6.
+		klog.FromContext(ctx).Info("No DHCPv4 server for a VMI NIC with an IPv6 address", "iface", spec.IfaceName, "ip", spec.IP)
+		return nil
+	}
 	mac, err := net.ParseMAC(spec.MAC)
 	if err != nil {
 		return fmt.Errorf("parse Spec.MAC %q for DHCP server: %w", spec.MAC, err)
@@ -498,7 +528,7 @@ func (a *ovsAttacher) ensureVMIDHCPServer(spec Spec, bridgeName string) error {
 		return err
 	}
 
-	listener, err := newNetnsUDP4FilterListener(spec.NetnsPath, bridgeName, ":67")
+	listener, err := newNetnsUDP4FilterListener(ctx, spec.NetnsPath, bridgeName, ":67")
 	if err != nil {
 		return fmt.Errorf("start DHCP listener on %s: %w", bridgeName, err)
 	}
@@ -514,13 +544,13 @@ func (a *ovsAttacher) ensureVMIDHCPServer(spec Spec, bridgeName string) error {
 	a.dhcpServers[spec.NetnsPath] = listener
 	a.dhcpMu.Unlock()
 
+	logger := klog.FromContext(ctx)
 	go func() {
-		if err := dhcp.Serve(listener, handler); err != nil {
-			// dhcp.Serve returns once stopVMIDHCPServer closes the listener
-			// during Detach — that is the expected, silent shutdown path, not
-			// a real error, but log it in case it's actually a fault.
-			klog.V(4).Infof("plumbing: DHCP server for %s stopped: %v", bridgeName, err)
-		}
+		// dhcp.Serve returns once stopVMIDHCPServer closes the listener
+		// during Detach — that is the expected, silent shutdown path, not
+		// a real error, but log it in case it's actually a fault.
+		err := dhcp.Serve(listener, handler)
+		logger.V(4).Info("DHCP server stopped", "bridge", bridgeName, "err", err)
 	}()
 	return nil
 }
@@ -552,7 +582,7 @@ func (a *ovsAttacher) stopVMIDHCPServer(netnsPath string) error {
 // reason (multiple such listeners coexisting in one netns, one per bridge).
 // Without it here too, virt-launcher's own bind failed outright with
 // "address already in use" and crashed the whole VMI — confirmed live.
-func newNetnsUDP4FilterListener(netnsPath, ifaceName, laddr string) (dhcpServeCloser, error) {
+func newNetnsUDP4FilterListener(ctx context.Context, netnsPath, ifaceName, laddr string) (dhcpServeCloser, error) {
 	ns, err := netns.GetFromPath(netnsPath)
 	if err != nil {
 		return nil, fmt.Errorf("open netns %s: %w", netnsPath, err)
@@ -590,7 +620,7 @@ func newNetnsUDP4FilterListener(netnsPath, ifaceName, laddr string) (dhcpServeCl
 			return opErr
 		},
 	}
-	l, err := lc.ListenPacket(context.Background(), "udp4", laddr)
+	l, err := lc.ListenPacket(ctx, "udp4", laddr)
 	if err != nil {
 		return nil, err
 	}
@@ -712,6 +742,17 @@ func ovsVsctl(ctx context.Context, args ...string) error {
 		return fmt.Errorf("ovs-vsctl %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// ipsWithoutMask strips the CIDR suffix of every non-empty address.
+func ipsWithoutMask(cidrs []string) []string {
+	ips := make([]string, 0, len(cidrs))
+	for _, cidr := range cidrs {
+		if cidr != "" {
+			ips = append(ips, ipWithoutMask(cidr))
+		}
+	}
+	return ips
 }
 
 // ipWithoutMask strips the CIDR suffix, e.g. "172.23.0.5/24" -> "172.23.0.5".

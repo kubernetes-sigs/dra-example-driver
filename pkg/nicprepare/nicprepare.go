@@ -14,32 +14,16 @@
  * limitations under the License.
  */
 
-// Package nicprepare implements the kube-ovn NIC lifecycle for DRA-allocated
-// virtual NICs.
+// Package nicprepare resolves the kube-ovn allocation of a DRA-allocated NIC.
 //
-// # Design
-//
-// All plumbing is delegated to the existing kube-ovn stack — there is no
-// direct OVS, netlink, or veth management in this driver.
-//
-// The driver's only job is to write (and later remove) kube-ovn pod
-// annotations. kube-ovn-controller reacts to those annotations and:
-//
-//  1. Allocates an IP/MAC from the requested Subnet (writes back
-//     ovn.kubernetes.io/ip_address_<iface>, mac_address_<iface>, gateway_<iface>).
-//  2. Creates / binds the OVN Logical Switch Port.
-//
-// kube-ovn-cni then wires the actual veth + OVS port when the container
-// runtime calls the CNI plugin during pod sandbox creation — exactly as it
-// would for a regular kube-ovn pod. No NRI hook, no Phase 2.
-//
-// # Lifecycle
-//
-//   - RequestIPAM  — called from PrepareResourceClaims; writes the
-//     logical_switch annotation and waits for kube-ovn-controller to confirm.
-//   - ReleaseIPAM  — called from UnprepareResourceClaims or on error; removes
-//     all kube-ovn annotations for the interface so the address returns to
-//     the subnet pool.
+// kube-ovn-controller (--enable-dra-nic) treats every device allocated by this
+// driver as a pod network attachment, the same way it treats a Multus one: it
+// allocates the address and MAC, creates the logical switch port and ip CR,
+// and writes the result to the pod's per-provider annotations. The driver
+// allocates nothing itself. RequestIPAM waits for that result in
+// PrepareResourceClaims and returns what the NRI hook needs to plug the NIC.
+// Nothing must be released either: kube-ovn-controller releases the address
+// when the pod is deleted, or keeps it for a keep-vm-ip KubeVirt VM.
 package nicprepare
 
 import (
@@ -51,16 +35,16 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/dynamic"
 	coreclientset "k8s.io/client-go/kubernetes"
 
 	"github.com/soer3n/kube-ovn-dra-driver/pkg/annotation"
-	"github.com/soer3n/kube-ovn-dra-driver/pkg/kubeovnip"
 )
 
-// NicDeviceConfig holds everything the driver needs to track for one NIC.
-// It is created during PrepareResourceClaims and stored keyed by pod UID so
-// ReleaseIPAM can clean up annotations if UnprepareResourceClaims is called.
+// defaultProvider is the provider of the pod's primary kube-ovn NIC.
+const defaultProvider = "ovn"
+
+// NicDeviceConfig holds everything the driver needs to plug one NIC. It is
+// created during PrepareResourceClaims.
 type NicDeviceConfig struct {
 	// DeviceName is the DRA device name (e.g. "subnet-myvlan").
 	DeviceName string
@@ -68,14 +52,23 @@ type NicDeviceConfig struct {
 	IfaceName string
 	// SubnetName is the kube-ovn Subnet name.
 	SubnetName string
-	// Provider is the kube-ovn Subnet's spec.provider — the key used for all
-	// per-NIC annotations (and for annotation cleanup on release).
+	// Provider is the kube-ovn Subnet's spec.provider, which keys the NIC's
+	// annotations and logical switch port.
 	Provider string
 	// PodName, PodNamespace and PodUID identify the target pod. PodUID is the
 	// key the NRI sandbox hook uses to find the pending attach Spec.
 	PodName      string
 	PodNamespace string
 	PodUID       string
+
+	// LogicalSwitchPort is the OVN port the attach binds to via
+	// external_ids:iface-id. kube-ovn names it after the VM instead of the pod
+	// for keep-vm-ip VMs.
+	LogicalSwitchPort string
+
+	// ExtraIPs are the NIC's addresses of the other IP family (dual-stack), in
+	// CIDR notation. IP is the IPv4 address in that case.
+	ExtraIPs []string
 
 	// IPAM result, captured from WaitForAllocation. Carried so the caller can
 	// build a plumbing.Spec for the attach step without re-reading annotations.
@@ -85,15 +78,8 @@ type NicDeviceConfig struct {
 	Gateway string
 }
 
-// RequestIPAM writes the kube-ovn subnet annotation on the pod and waits for
-// kube-ovn-controller to confirm the allocation.
-//
-// Called from PrepareResourceClaims (slow path is fine here).
-// The pod sandbox does not need to exist yet — annotations can be set before
-// the container runtime starts the sandbox.
-//
-// kube-ovn-cni automatically wires the veth + OVS port when the CNI plugin
-// runs on sandbox creation; no further action is needed from this driver.
+// RequestIPAM waits for kube-ovn-controller to allocate the NIC from the claim
+// and reads the result from the pod's per-provider annotations.
 func RequestIPAM(
 	ctx context.Context,
 	client coreclientset.Interface,
@@ -102,81 +88,6 @@ func RequestIPAM(
 	device resourceapi.Device,
 	ifaceName string,
 ) (*NicDeviceConfig, error) {
-	// 1. Resolve the pod this claim is reserved for.
-	podName, podNS, podUID, err := lookupPodForClaim(ctx, client, claim)
-	if err != nil {
-		return nil, fmt.Errorf("find pod for claim %s/%s: %w", claim.Namespace, claim.Name, err)
-	}
-
-	// 2. Extract the target subnet and provider from the device attributes.
-	subnetName := extractSubnetName(device)
-	if subnetName == "" {
-		return nil, fmt.Errorf("device %s has no subnetName attribute", device.Name)
-	}
-	// kube-ovn keys per-NIC annotations by the subnet's provider. The default
-	// OVN network uses the sentinel provider "ovn"; underlay/secondary subnets
-	// carry an explicit provider (e.g. "external.vlan100-subnet.ovn").
-	provider := extractProvider(device)
-	if provider == "" {
-		provider = "ovn"
-	}
-
-	// 3. Write <provider>.kubernetes.io/logical_switch=<subnetName>.
-	//    kube-ovn-controller reconciles this and writes back the allocated
-	//    ip_address / mac_address / cidr / gateway annotations + allocated=true.
-	writer := annotation.NewWriter(client)
-	if err := writer.RequestSubnet(ctx, podNS, podName, provider, subnetName); err != nil {
-		return nil, fmt.Errorf("write kube-ovn subnet annotation: %w", err)
-	}
-
-	// 4. Wait for confirmation — ensures the address is reserved before
-	//    PrepareResourceClaims returns.
-	alloc, err := annotation.WaitForAllocation(ctx, client, podNS, podName, provider)
-	if err != nil {
-		_ = writer.ReleaseSubnet(ctx, podNS, podName, provider)
-		return nil, fmt.Errorf("wait for kube-ovn IPAM on provider %q: %w", provider, err)
-	}
-
-	return &NicDeviceConfig{
-		DeviceName:   result.Device,
-		IfaceName:    ifaceName,
-		SubnetName:   subnetName,
-		Provider:     provider,
-		PodName:      podName,
-		PodNamespace: podNS,
-		PodUID:       podUID,
-		IP:           alloc.IP,
-		MAC:          alloc.MAC,
-		CIDR:         alloc.CIDR,
-		Gateway:      alloc.Gateway,
-	}, nil
-}
-
-// ReleaseIPAM removes the kube-ovn annotations for this NIC from the pod,
-// returning the address to the subnet pool.
-//
-// Called from UnprepareResourceClaims or during error cleanup.
-func ReleaseIPAM(ctx context.Context, client coreclientset.Interface, cfg *NicDeviceConfig) error {
-	return annotation.NewWriter(client).ReleaseSubnet(ctx, cfg.PodNamespace, cfg.PodName, cfg.Provider)
-}
-
-// RequestIPAMViaIPObject is the Multus-free IPAM path: instead of writing the
-// per-provider pod annotation (which kube-ovn-controller only reconciles for
-// providers it learns from a NetworkAttachmentDefinition), it reserves an
-// address by creating an ips.kubeovn.io object. No NAD, no Multus.
-//
-// It resolves the pod, reserves the address, and reads the Subnet's gateway/CIDR
-// (the IP object carries a bare address with no mask/gateway) so the returned
-// NicDeviceConfig has a CIDR-form IP ready for the plumbing attach.
-func RequestIPAMViaIPObject(
-	ctx context.Context,
-	client coreclientset.Interface,
-	dc dynamic.Interface,
-	claim *resourceapi.ResourceClaim,
-	result *resourceapi.DeviceRequestAllocationResult,
-	device resourceapi.Device,
-	ifaceName string,
-) (*NicDeviceConfig, error) {
 	podName, podNS, podUID, err := lookupPodForClaim(ctx, client, claim)
 	if err != nil {
 		return nil, fmt.Errorf("find pod for claim %s/%s: %w", claim.Namespace, claim.Name, err)
@@ -186,58 +97,88 @@ func RequestIPAMViaIPObject(
 	if subnetName == "" {
 		return nil, fmt.Errorf("device %s has no subnetName attribute", device.Name)
 	}
-	// A DRA-attached NIC is always a SECONDARY interface, so the subnet must carry
-	// a dedicated provider (kube-ovn's multus convention "<name>.<ns>.ovn"). kube-
-	// ovn derives the IP object / LSP name from PodNameToPortName(pod, ns, provider)
-	// and requires it to match the subnet's spec.provider. The default provider
-	// "ovn" (or empty) names the pod's PRIMARY port "<pod>.<ns>", so it can never
-	// back a secondary NIC — reject it with a clear message instead of creating an
-	// IP object kube-ovn will silently never reconcile (which would hang prepare).
+	// The controller keys the result annotations by the subnet's provider, so
+	// the published provider attribute must match the subnet's spec.provider.
 	provider := extractProvider(device)
 	if err := validateSecondaryProvider(provider, subnetName); err != nil {
 		return nil, err
 	}
 
-	alloc, err := kubeovnip.Reserve(ctx, dc, kubeovnip.ReserveParams{
-		SubnetName: subnetName,
-		Provider:   provider,
-		PodName:    podName,
-		Namespace:  podNS,
-	})
+	// Like repeated Multus attachments, kube-ovn-controller keys NICs that share a
+	// provider in one pod by "<provider>.<interfaceName>", and a NIC alone on its
+	// provider by the provider itself. It uses one or the other, never both.
+	alloc, err := annotation.WaitForAllocation(ctx, client, podNS, podName, provider+"."+ifaceName, provider)
 	if err != nil {
-		return nil, fmt.Errorf("reserve IP object for subnet %q: %w", subnetName, err)
+		return nil, fmt.Errorf("wait for kube-ovn-controller to allocate subnet %q: %w", subnetName, err)
 	}
 
-	gateway, cidr, err := kubeovnip.SubnetGatewayCIDR(ctx, dc, subnetName)
-	if err != nil {
-		_ = kubeovnip.Release(ctx, dc, kubeovnip.IPName(podName, podNS, provider))
-		return nil, fmt.Errorf("read subnet %q gateway/cidr: %w", subnetName, err)
+	portOwner := podName
+	if alloc.VMName != "" {
+		portOwner = alloc.VMName
 	}
+	ips, cidr, gateway := dualStackAddresses(alloc.IP, alloc.CIDR, alloc.Gateway)
 
 	return &NicDeviceConfig{
-		DeviceName:   result.Device,
-		IfaceName:    ifaceName,
-		SubnetName:   subnetName,
-		Provider:     provider,
-		PodName:      podName,
-		PodNamespace: podNS,
-		PodUID:       podUID,
-		IP:           withMask(alloc.IP, cidr),
-		MAC:          alloc.MAC,
-		CIDR:         cidr,
-		Gateway:      gateway,
+		DeviceName:        result.Device,
+		IfaceName:         ifaceName,
+		SubnetName:        subnetName,
+		Provider:          provider,
+		PodName:           podName,
+		PodNamespace:      podNS,
+		PodUID:            podUID,
+		LogicalSwitchPort: portName(portOwner, podNS, alloc.Provider),
+		IP:                ips[0],
+		ExtraIPs:          ips[1:],
+		MAC:               alloc.MAC,
+		CIDR:              cidr,
+		Gateway:           gateway,
 	}, nil
 }
 
-// ReleaseIPAMViaIPObject deletes the ips.kubeovn.io object, returning the
-// address to the subnet pool.
-func ReleaseIPAMViaIPObject(ctx context.Context, dc dynamic.Interface, cfg *NicDeviceConfig) error {
-	return kubeovnip.Release(ctx, dc, kubeovnip.IPName(cfg.PodName, cfg.PodNamespace, cfg.Provider))
+// dualStackAddresses pairs kube-ovn's comma separated ip_address, cidr and
+// gateway annotations by IP family and returns the addresses in CIDR notation,
+// IPv4 first, with the CIDR and gateway of the first one.
+func dualStackAddresses(ipList, cidrList, gatewayList string) (ips []string, cidr, gateway string) {
+	cidrs := strings.Split(cidrList, ",")
+	gateways := strings.Split(gatewayList, ",")
+	byFamily := func(values []string, v4 bool) string {
+		for _, value := range values {
+			ip, _, _ := strings.Cut(value, "/")
+			if parsed := net.ParseIP(ip); parsed != nil && (parsed.To4() != nil) == v4 {
+				return value
+			}
+		}
+		return ""
+	}
+	for _, v4 := range []bool{true, false} {
+		ip := byFamily(strings.Split(ipList, ","), v4)
+		if ip == "" {
+			continue
+		}
+		familyCIDR, familyGateway := byFamily(cidrs, v4), byFamily(gateways, v4)
+		if len(ips) == 0 {
+			cidr, gateway = familyCIDR, familyGateway
+		}
+		ips = append(ips, withMask(ip, familyCIDR))
+	}
+	if len(ips) == 0 {
+		ips = []string{withMask(ipList, cidrList)}
+	}
+	return ips, cidr, gateway
+}
+
+// portName returns the logical switch port name kube-ovn-controller uses for a
+// pod or VM NIC, matching kube-ovn's ovs.PodNameToPortName.
+func portName(owner, namespace, provider string) string {
+	if provider == "" || provider == defaultProvider {
+		return owner + "." + namespace
+	}
+	return owner + "." + namespace + "." + provider
 }
 
 // withMask combines a bare IP (e.g. "172.23.0.5") with the mask length of the
 // subnet CIDR (e.g. "172.23.0.0/24") to produce "172.23.0.5/24". If ip already
-// has a mask or cidr is unparizable, ip is returned unchanged.
+// has a mask or cidr cannot be parsed, ip is returned unchanged.
 func withMask(ip, cidr string) string {
 	if ip == "" || strings.Contains(ip, "/") {
 		return ip
@@ -301,10 +242,10 @@ func extractSubnetName(device resourceapi.Device) string {
 // would make kube-ovn either hijack the primary port or silently ignore the
 // reservation.
 func validateSecondaryProvider(provider, subnetName string) error {
-	if provider == "" || provider == "ovn" {
+	if provider == "" || provider == defaultProvider {
 		return fmt.Errorf("subnet %q uses the default provider %q and cannot be attached as a "+
 			"secondary NIC; set a dedicated spec.provider on the kube-ovn Subnet (e.g. %q)",
-			subnetName, "ovn", subnetName+".<namespace>.ovn")
+			subnetName, defaultProvider, subnetName+".<namespace>.ovn")
 	}
 	return nil
 }

@@ -16,8 +16,9 @@
 
 // Package nic implements a DRA device profile that exposes kube-ovn Subnets
 // as allocatable NIC devices. Each Subnet becomes one device in the
-// ResourceSlice for the node. Pods that claim a device get a virtual NIC
-// plumbed into their netns backed by the corresponding kube-ovn Subnet.
+// ResourceSlice for the node. kube-ovn-controller allocates a claimed device's
+// address from the Subnet named by its subnetName attribute; the driver then
+// plumbs the NIC into the pod.
 package nic
 
 import (
@@ -48,8 +49,7 @@ var subnetGVR = schema.GroupVersionResource{
 }
 
 // kube-ovn Vlan GVR. A Subnet references a Vlan by name via spec.vlan; the Vlan
-// holds the 802.1q id (spec.id) and the ProviderNetwork name (spec.provider),
-// which is what determines the underlay bridge (br-<providerNetwork>).
+// holds the 802.1q id (spec.id) and the ProviderNetwork name (spec.provider).
 var vlanGVR = schema.GroupVersionResource{
 	Group:    "kubeovn.io",
 	Version:  "v1",
@@ -101,11 +101,9 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			vpc = v
 		}
 
-		// A VLAN underlay subnet does NOT carry the id on the Subnet itself;
-		// it references a Vlan CR via spec.vlan. Resolve that Vlan to get the
-		// 802.1q id (spec.id) and the ProviderNetwork (spec.provider), which is
-		// the underlay bridge selector. Without this, every subnet defaults to
-		// "ovn" and VLAN ports wrongly land on br-int with an OVN iface-id.
+		// A VLAN underlay subnet does not carry the id on the Subnet itself; it
+		// references a Vlan CR via spec.vlan. Resolve that Vlan so claims can
+		// select underlay subnets by type, VLAN id or ProviderNetwork.
 		if vlanName, _ := spec["vlan"].(string); vlanName != "" {
 			vlan, err := p.dynamicClient.Resource(vlanGVR).Get(ctx, vlanName, metav1.GetOptions{})
 			if err != nil {
@@ -132,8 +130,6 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			attrs["nic.kubeovn.io/provider"] = resourceapi.DeviceAttribute{StringValue: ptr.To(provider)}
 		}
 		if providerNetwork != "" {
-			// ProviderNetwork name selects the underlay bridge (br-<providerNetwork>).
-			// Distinct from the subnet provider above, which IPAM uses for IP-CR naming.
 			attrs["nic.kubeovn.io/providerNetwork"] = resourceapi.DeviceAttribute{StringValue: ptr.To(providerNetwork)}
 		}
 		if vpc != "" {
@@ -145,9 +141,9 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 			Attributes: attrs,
 			// A kube-ovn Subnet is a shared IP pool, not an exclusive device:
 			// many pods can each take an address from it. Allow the device to be
-			// allocated to multiple claims (each pod still gets its own
-			// ips.kubeovn.io / IP / LSP). Requires the DRAConsumableCapacity
-			// feature gate (alpha in 1.34/1.35) on apiserver + scheduler + kubelet.
+			// allocated to multiple claims (each pod still gets its own address
+			// and logical switch port). Requires the DRAConsumableCapacity
+			// feature gate on apiserver, scheduler and kubelet.
 			AllowMultipleAllocations: ptr.To(true),
 		})
 	}

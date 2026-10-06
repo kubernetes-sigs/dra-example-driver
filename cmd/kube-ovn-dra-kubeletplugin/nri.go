@@ -18,7 +18,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/containerd/nri/pkg/api"
@@ -51,10 +50,6 @@ type nriPlugin struct {
 
 // startNRIPlugin constructs the plugin, connects to the NRI socket, and starts
 // serving in the background.
-//
-// NRI may not be available (older runtime, NRI disabled). That is not fatal for
-// the IPAM-only mode, so a connection failure is logged and returned to the
-// caller, which decides whether to proceed without the attach path.
 func startNRIPlugin(ctx context.Context, handler *plumbing.SandboxHandler) (*nriPlugin, error) {
 	p := &nriPlugin{handler: handler}
 
@@ -100,13 +95,8 @@ func (p *nriPlugin) RunPodSandbox(ctx context.Context, sb *api.PodSandbox) error
 	}
 
 	if err := p.handler.OnRunPodSandbox(ctx, sb.GetUid(), sb.GetId(), netnsPath, sb.GetLabels()); err != nil {
-		// During the skeleton phase the datapath is stubbed; treat the
-		// not-implemented sentinel as non-fatal so pods still start. Once the
-		// attach is real, a failure here SHOULD fail the sandbox.
-		if errors.Is(err, plumbing.ErrNotImplemented) {
-			logger.V(2).Info("RunPodSandbox: attach not implemented yet (skeleton)", "netns", netnsPath)
-			return nil
-		}
+		// Failing the sandbox makes kubelet retry; a pod with missing NICs would
+		// otherwise run without ever noticing.
 		logger.Error(err, "RunPodSandbox: attach failed", "netns", netnsPath)
 		return err
 	}
@@ -114,14 +104,10 @@ func (p *nriPlugin) RunPodSandbox(ctx context.Context, sb *api.PodSandbox) error
 }
 
 // StopPodSandbox is invoked when the sandbox is torn down. We detach the NICs
-// for the pod (IPAM release stays in UnprepareResourceClaims).
+// of the pod; kube-ovn-controller releases their addresses.
 func (p *nriPlugin) StopPodSandbox(ctx context.Context, sb *api.PodSandbox) error {
 	logger := klog.FromContext(ctx).WithValues("pod", sb.GetName(), "namespace", sb.GetNamespace(), "uid", sb.GetUid())
-	if err := p.handler.OnStopPodSandbox(ctx, sb.GetUid()); err != nil {
-		if errors.Is(err, plumbing.ErrNotImplemented) {
-			logger.V(2).Info("StopPodSandbox: detach not implemented yet (skeleton)")
-			return nil
-		}
+	if err := p.handler.OnStopPodSandbox(ctx, sb.GetUid(), sb.GetName(), sb.GetNamespace()); err != nil {
 		logger.Error(err, "StopPodSandbox: detach failed")
 		return err
 	}

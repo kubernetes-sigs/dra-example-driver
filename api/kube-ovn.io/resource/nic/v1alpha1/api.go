@@ -17,6 +17,9 @@
 package v1alpha1
 
 import (
+	"fmt"
+	"strings"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -54,7 +57,22 @@ func (c *NicConfig) Normalize() error {
 	return nil
 }
 
-// Validate checks the configuration.
+// maxInterfaceNameLength is the kernel's IFNAMSIZ minus the terminating NUL.
+const maxInterfaceNameLength = 15
+
+// Validate checks the configuration. An empty InterfaceName is valid and
+// defaults to "net1".
 func (c *NicConfig) Validate() error {
+	name := c.InterfaceName
+	switch {
+	case name == "":
+		return nil
+	case len(name) > maxInterfaceNameLength:
+		return fmt.Errorf("interfaceName %q is longer than %d characters", name, maxInterfaceNameLength)
+	case name == "." || name == "..":
+		return fmt.Errorf("interfaceName %q is not a valid interface name", name)
+	case strings.ContainsAny(name, "/: \t\n"):
+		return fmt.Errorf("interfaceName %q must not contain '/', ':' or whitespace", name)
+	}
 	return nil
 }
