@@ -198,8 +198,32 @@ func TestDatapathVMINIC(t *testing.T) {
 			t.Fatalf("wireVMIBridge() error = %v", err)
 		}
 	}
-
+	// A repeated attach of the wired NIC, e.g. from NRI Synchronize after a
+	// plugin restart, must leave the tap alone.
 	h := podHandle(t, spec.NetnsPath)
+	tapBefore, err := h.LinkByName("net1")
+	if err != nil {
+		t.Fatalf("tap missing: %v", err)
+	}
+	plumbPodIface(t, a, spec)
+	if err := a.wireVMIBridge(ctx, spec); err != nil {
+		t.Fatalf("wireVMIBridge() after a repeated attach error = %v", err)
+	}
+	tapAfter, err := h.LinkByName("net1")
+	if err != nil {
+		t.Fatalf("tap missing after a repeated attach: %v", err)
+	}
+	if tapAfter.Attrs().HardwareAddr.String() != tapBefore.Attrs().HardwareAddr.String() {
+		t.Errorf("repeated attach changed the tap MAC from %s to %s", tapBefore.Attrs().HardwareAddr, tapAfter.Attrs().HardwareAddr)
+	}
+	if addrs, _ := h.AddrList(tapAfter, netlink.FAMILY_ALL); len(addrs) != 0 {
+		for _, addr := range addrs {
+			if addr.IP.IsGlobalUnicast() {
+				t.Errorf("repeated attach configured %s on the tap", addr.IPNet)
+			}
+		}
+	}
+
 	tap, err := h.LinkByName("net1")
 	if err != nil || tap.Type() != "tuntap" {
 		t.Fatalf("net1 = %v (%v), want the tap device", tap, err)

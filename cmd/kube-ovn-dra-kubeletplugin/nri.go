@@ -41,8 +41,8 @@ const (
 const networkNamespaceType = "network"
 
 // nriPlugin bridges NRI pod-sandbox events to the plumbing.SandboxHandler. It
-// implements the stub's RunPodSandbox / StopPodSandbox interfaces (detected by
-// reflection in stub.New).
+// implements the stub's Synchronize / RunPodSandbox / StopPodSandbox
+// interfaces (detected by reflection in stub.New).
 type nriPlugin struct {
 	stub    stub.Stub
 	handler *plumbing.SandboxHandler
@@ -80,9 +80,27 @@ func (p *nriPlugin) stop() {
 	}
 }
 
+// Synchronize is invoked when the plugin (re)connects to the runtime, with all
+// existing pod sandboxes. It attaches the NICs of running pods again, which
+// covers a sandbox started while the plugin was down; Attach is idempotent.
+// Errors are logged only: failing Synchronize would drop the NRI connection.
+func (p *nriPlugin) Synchronize(ctx context.Context, pods []*api.PodSandbox, _ []*api.Container) ([]*api.ContainerUpdate, error) {
+	for _, sb := range pods {
+		netnsPath := networkNamespacePath(sb)
+		if netnsPath == "" {
+			continue
+		}
+		if err := p.handler.OnSynchronizeSandbox(ctx, sb.GetUid(), sb.GetId(), netnsPath, sb.GetLabels()); err != nil {
+			klog.FromContext(ctx).Error(err, "Synchronize: attach failed",
+				"pod", sb.GetName(), "namespace", sb.GetNamespace(), "uid", sb.GetUid(), "netns", netnsPath)
+		}
+	}
+	return nil, nil
+}
+
 // RunPodSandbox is invoked by the runtime when a pod sandbox is created — after
-// its network namespace exists. We drain any NIC Specs the prepare path stashed
-// for this pod and attach them.
+// its network namespace exists. We attach the NICs the prepare path added for
+// this pod.
 func (p *nriPlugin) RunPodSandbox(ctx context.Context, sb *api.PodSandbox) error {
 	logger := klog.FromContext(ctx).WithValues("pod", sb.GetName(), "namespace", sb.GetNamespace(), "uid", sb.GetUid())
 

@@ -49,12 +49,12 @@ func (r *recordingAttacher) DetachPodPorts(_ context.Context, podName, podNamesp
 }
 
 func TestSandboxHandlerDetachesAttachedNICs(t *testing.T) {
-	store := NewPendingStore()
+	store := NewNICStore()
 	attacher := &recordingAttacher{}
 	h := NewSandboxHandler(store, attacher)
 
-	store.Add("uid-1", Spec{IfaceName: "net1"})
-	store.Add("uid-1", Spec{IfaceName: "net2"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net1"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net2"})
 	labels := map[string]string{kubevirtLabelKey: kubevirtVirtLauncherLabel}
 	if err := h.OnRunPodSandbox(context.Background(), "uid-1", "cid", "/var/run/netns/x", labels); err != nil {
 		t.Fatalf("OnRunPodSandbox() error = %v", err)
@@ -85,11 +85,11 @@ func TestSandboxHandlerDetachesAttachedNICs(t *testing.T) {
 }
 
 func TestSandboxHandlerPlainPod(t *testing.T) {
-	store := NewPendingStore()
+	store := NewNICStore()
 	attacher := &recordingAttacher{}
 	h := NewSandboxHandler(store, attacher)
 
-	store.Add("uid-1", Spec{IfaceName: "net1"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net1"})
 	if err := h.OnRunPodSandbox(context.Background(), "uid-1", "cid", "/var/run/netns/x", map[string]string{"app": "web"}); err != nil {
 		t.Fatalf("OnRunPodSandbox() error = %v", err)
 	}
@@ -107,12 +107,12 @@ func TestSandboxHandlerPlainPod(t *testing.T) {
 }
 
 func TestSandboxHandlerRollsBackPartialAttach(t *testing.T) {
-	store := NewPendingStore()
+	store := NewNICStore()
 	attacher := &recordingAttacher{failIface: "net2"}
 	h := NewSandboxHandler(store, attacher)
 
-	store.Add("uid-1", Spec{IfaceName: "net1"})
-	store.Add("uid-1", Spec{IfaceName: "net2"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net1"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net2"})
 	if err := h.OnRunPodSandbox(context.Background(), "uid-1", "cid", "/var/run/netns/x", nil); err == nil {
 		t.Fatal("OnRunPodSandbox() succeeded, want the attach error")
 	}
@@ -121,5 +121,53 @@ func TestSandboxHandlerRollsBackPartialAttach(t *testing.T) {
 	}
 	if got := store.TakeAttached("uid-1"); len(got) != 0 {
 		t.Errorf("rolled back NICs still recorded as attached: %+v", got)
+	}
+}
+
+func TestSandboxHandlerReattachesRecreatedSandbox(t *testing.T) {
+	store := NewNICStore()
+	attacher := &recordingAttacher{}
+	h := NewSandboxHandler(store, attacher)
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net1"})
+
+	for _, sandbox := range []string{"sandbox-1", "sandbox-2"} {
+		if err := h.OnRunPodSandbox(context.Background(), "uid-1", sandbox, "/var/run/netns/"+sandbox, nil); err != nil {
+			t.Fatalf("OnRunPodSandbox(%s) error = %v", sandbox, err)
+		}
+		if err := h.OnStopPodSandbox(context.Background(), "uid-1", "pod", "default"); err != nil {
+			t.Fatalf("OnStopPodSandbox(%s) error = %v", sandbox, err)
+		}
+	}
+	if len(attacher.attached) != 2 || attacher.attached[1].ContainerID != "sandbox-2" {
+		t.Errorf("attached = %+v, want the NIC attached to both sandboxes", attacher.attached)
+	}
+
+	store.RemoveClaim("claim")
+	if err := h.OnRunPodSandbox(context.Background(), "uid-1", "sandbox-3", "/var/run/netns/x", nil); err != nil {
+		t.Fatalf("OnRunPodSandbox() after unprepare error = %v", err)
+	}
+	if len(attacher.attached) != 2 {
+		t.Errorf("an unprepared claim's NIC was attached again: %+v", attacher.attached)
+	}
+}
+
+func TestSandboxHandlerSynchronizeKeepsWorkingNICs(t *testing.T) {
+	store := NewNICStore()
+	attacher := &recordingAttacher{failIface: "net1"}
+	h := NewSandboxHandler(store, attacher)
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net1"})
+	store.Add(Spec{PodUID: "uid-1", ClaimUID: "claim", IfaceName: "net2"})
+
+	if err := h.OnSynchronizeSandbox(context.Background(), "uid-1", "cid", "/var/run/netns/x", nil); err == nil {
+		t.Fatal("OnSynchronizeSandbox() succeeded, want the attach error of net1")
+	}
+	if len(attacher.attached) != 1 || attacher.attached[0].IfaceName != "net2" {
+		t.Errorf("attached = %+v, want net2 attached despite net1 failing", attacher.attached)
+	}
+	if len(attacher.detached) != 0 {
+		t.Errorf("Synchronize detached %+v from a running pod", attacher.detached)
+	}
+	if got := store.TakeAttached("uid-1"); len(got) != 1 {
+		t.Errorf("attached records = %+v, want net2", got)
 	}
 }

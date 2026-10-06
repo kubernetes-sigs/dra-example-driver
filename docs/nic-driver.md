@@ -47,7 +47,7 @@ The contract between both sides is written up in kube-ovn's `docs/dra-nic.md`.
 | `internal/profiles/nic/` | NIC device profile — enumerates kube-ovn Subnets via the dynamic client |
 | `pkg/annotation/` | Reads kube-ovn-controller's allocation from the pod annotations |
 | `pkg/nicprepare/` | Resolves a claimed NIC: pod, subnet, provider key, logical switch port, addresses |
-| `pkg/plumbing/` | Veth/OVS/netns attach, KubeVirt bridge + tap + DHCP, NRI sandbox handler, `PendingStore` |
+| `pkg/plumbing/` | Veth/OVS/netns attach, KubeVirt bridge + tap + DHCP, NRI sandbox handler, `NICStore` |
 | `cmd/kube-ovn-dra-kubeletplugin/` | kubelet plugin: ResourceSlices, prepare/unprepare, NRI plugin |
 | `cmd/kube-ovn-dra-webhook/` | Optional validating webhook for `NicConfig` |
 
@@ -75,9 +75,12 @@ The contract between both sides is written up in kube-ovn's `docs/dra-nic.md`.
    `reservedFor`, then `nicprepare.RequestIPAM` waits up to 30 s for
    `allocated="true"` under either provider key and reads the result.
    Dual-stack values are comma separated; the driver configures all addresses
-   on pod interfaces. The NICs of a claim are resolved concurrently. The result
-   becomes a `plumbing.Spec` in the `PendingStore`, keyed by pod UID.
-5. **Attach.** The NRI `RunPodSandbox` hook takes the pod's Specs, fills in
+   on pod interfaces. The NICs of a claim are resolved concurrently. Each NIC
+   becomes a `plumbing.Spec` in the `NICStore`, keyed by pod and claim, and in
+   the checkpoint, which restores the store after a plugin restart. The Specs
+   stay until the claim is unprepared, so a recreated sandbox of the pod gets
+   its NICs again.
+5. **Attach.** The NRI `RunPodSandbox` hook reads the pod's Specs, fills in
    the netns path and sandbox ID, and runs `Attach` per NIC: create a veth pair
    (names hashed from sandbox ID and interface, IFNAMSIZ-safe), move the pod
    end into the netns and rename it, set MAC, MTU, addresses (IPv6 without DAD)
@@ -85,12 +88,16 @@ The contract between both sides is written up in kube-ovn's `docs/dra-nic.md`.
    `br-int` with `external_ids:iface-id=<logical switch port>` plus
    `vendor=kube-ovn`, `pod_name`, `pod_namespace`, `ip`, `pod_netns` and the
    owner mark `kube-ovn-dra-driver=nic`. If one NIC fails, the NICs already
-   attached are detached again and the sandbox fails.
+   attached are detached again and the sandbox fails. When the plugin
+   (re)connects, NRI `Synchronize` runs the same attach for every running
+   sandbox, which covers a pod started while the plugin was down; `Attach` is
+   idempotent and skips what exists.
 6. **Detach.** The NRI `StopPodSandbox` hook detaches the NICs it attached and
    then removes every OVS port with the pod's owner mark, which also covers
    pods attached before a plugin restart. A keep-vm-ip VM's port outlives its
    pods, so a leftover port would steal the binding from the next pod.
-7. **Release.** Nothing: `NodeUnprepareResources` only drops the checkpoint and
+7. **Release.** Nothing: `NodeUnprepareResources` only drops the NICs from the
+   store, the checkpoint and
    CDI spec. kube-ovn-controller releases the address when the pod is deleted,
    or keeps it for a VM that still exists, as for Multus attachments.
 
@@ -126,9 +133,6 @@ MAC survive VM restarts.
 
 - The plugin enumerates subnets once at startup. Restart it after adding
   subnets (`make nic-example-deploy` does).
-- The `PendingStore` lives in memory: if the plugin restarts between
-  `NodePrepareResources` and `RunPodSandbox`, that pod starts without its DRA
-  NICs.
 
 ## Local dev deployment on kind
 

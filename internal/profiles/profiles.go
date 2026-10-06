@@ -24,6 +24,8 @@ import (
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1beta1"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
+
+	"github.com/soer3n/kube-ovn-dra-driver/pkg/plumbing"
 )
 
 // PerDeviceCDIContainerEdits holds the container edits per allocation result,
@@ -40,6 +42,9 @@ type PreparedDevice struct {
 	drapbv1.Device
 	ContainerEdits *cdiapi.ContainerEdits
 	AdminAccess    bool
+	// NIC is the attach Spec of the device's NIC, persisted so the plugin can
+	// attach it again after a restart.
+	NIC *plumbing.Spec `json:"nic,omitempty"`
 }
 
 type PreparedDevices []*PreparedDevice

@@ -79,7 +79,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	// their DRA NICs, so the failure is logged loudly instead of stopping the
 	// driver.
 	logger := klog.FromContext(ctx)
-	handler := plumbing.NewSandboxHandler(config.nriStore, plumbing.NewOVSAttacher())
+	handler := plumbing.NewSandboxHandler(config.nicStore, plumbing.NewOVSAttacher())
 	nri, err := startNRIPlugin(ctx, handler)
 	if err != nil {
 		logger.Error(err, "NRI plugin unavailable; DRA NICs will not be attached to pods")

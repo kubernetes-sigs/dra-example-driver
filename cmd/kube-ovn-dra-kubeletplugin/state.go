@@ -63,9 +63,9 @@ type DeviceState struct {
 	// NIC-specific: set when the profile is nicprofile.ProfileName
 	coreclient coreclientset.Interface
 	isNIC      bool
-	// nriStore receives one plumbing.Spec per claimed NIC, keyed by pod UID, so
-	// the NRI sandbox hook can perform the attach once the netns exists.
-	nriStore *plumbing.PendingStore
+	// nicStore receives one plumbing.Spec per claimed NIC, so the NRI sandbox
+	// hooks can attach it once the netns exists.
+	nicStore *plumbing.NICStore
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -123,7 +123,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		configHandler:     configHandler,
 		coreclient:        config.coreclient,
 		isNIC:             config.flags.profile == nicprofile.ProfileName,
-		nriStore:          config.nriStore,
+		nicStore:          config.nicStore,
 	}
 
 	checkpoints, err := state.checkpointManager.ListCheckpoints()
@@ -133,6 +133,9 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 
 	for _, c := range checkpoints {
 		if c == DriverPluginCheckpointFile {
+			if err := state.restoreNICs(); err != nil {
+				return nil, err
+			}
 			return state, nil
 		}
 	}
@@ -325,10 +328,16 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	for i, it := range items {
 		result := it.result
 		nicCfg := nicCfgs[i]
-		// Stash the attach Spec for the NRI sandbox hook to consume once the pod
-		// netns exists. NetnsPath/ContainerID are filled in there.
-		if nicCfg != nil && s.nriStore != nil {
-			s.nriStore.Add(nicCfg.PodUID, nicSpecFromConfig(nicCfg))
+		// Hand the attach Spec to the NRI sandbox hooks, which fill in
+		// NetnsPath and ContainerID once the pod netns exists.
+		var nic *plumbing.Spec
+		if nicCfg != nil {
+			spec := nicSpecFromConfig(nicCfg)
+			spec.ClaimUID = string(claim.UID)
+			nic = &spec
+			if s.nicStore != nil {
+				s.nicStore.Add(spec)
+			}
 		}
 
 		device := &profiles.PreparedDevice{
@@ -340,6 +349,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			},
 			ContainerEdits: perDeviceCDIContainerEdits[profiles.ResultKey(result)],
 			AdminAccess:    hasAdminAccess,
+			NIC:            nic,
 		}
 		preparedDevices = append(preparedDevices, device)
 	}
@@ -347,9 +357,33 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	return preparedDevices, nil
 }
 
-// unprepareDevices has nothing to release: kube-ovn-controller owns the NIC's
-// address and port, and the NRI StopPodSandbox hook detaches the interface.
-func (s *DeviceState) unprepareDevices(string, profiles.PreparedDevices) error {
+// unprepareDevices forgets the claim's NICs. Nothing is released:
+// kube-ovn-controller owns the NICs' addresses and ports, and the NRI
+// StopPodSandbox hook detaches the interfaces.
+func (s *DeviceState) unprepareDevices(claimUID string, _ profiles.PreparedDevices) error {
+	if s.nicStore != nil {
+		s.nicStore.RemoveClaim(claimUID)
+	}
+	return nil
+}
+
+// restoreNICs adds the NICs of the checkpointed claims back to the NIC store
+// after a plugin restart, so the NRI hooks can still attach them.
+func (s *DeviceState) restoreNICs() error {
+	if s.nicStore == nil {
+		return nil
+	}
+	checkpoint := newCheckpoint()
+	if err := s.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint); err != nil {
+		return fmt.Errorf("unable to sync from checkpoint: %v", err)
+	}
+	for _, devices := range checkpoint.V1.PreparedClaims {
+		for _, device := range devices {
+			if device.NIC != nil {
+				s.nicStore.Add(*device.NIC)
+			}
+		}
+	}
 	return nil
 }
 

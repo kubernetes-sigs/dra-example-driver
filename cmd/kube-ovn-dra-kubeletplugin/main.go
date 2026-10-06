@@ -62,11 +62,10 @@ type Config struct {
 
 	profile profiles.Profile
 
-	// nriStore bridges the NIC IPAM/prepare path to the NRI sandbox hook: the
-	// prepare path stashes one plumbing.Spec per NIC keyed by pod UID, and the
-	// NRI RunPodSandbox hook drains it to perform the attach. Shared so both
-	// DeviceState and the NRI plugin use the same instance.
-	nriStore *plumbing.PendingStore
+	// nicStore bridges the prepare path and the NRI sandbox hooks: prepare adds
+	// one plumbing.Spec per NIC, and the NRI hooks attach the pod's NICs.
+	// Shared so both DeviceState and the NRI plugin use the same instance.
+	nicStore *plumbing.NICStore
 }
 
 var validProfiles = map[string]func(flags Flags, clientSets flags.ClientSets) profiles.Profile{
@@ -189,7 +188,7 @@ func newApp() *cli.App {
 				flags:      flags,
 				coreclient: clientSets.Core,
 				profile:    newProfile(*flags, clientSets),
-				nriStore:   plumbing.NewPendingStore(),
+				nicStore:   plumbing.NewNICStore(),
 			}
 
 			return RunPlugin(ctx, config)

@@ -61,10 +61,10 @@ func TestNetworkNamespacePath(t *testing.T) {
 }
 
 func TestNRIPluginSandboxEvents(t *testing.T) {
-	store := plumbing.NewPendingStore()
+	store := plumbing.NewNICStore()
 	attacher := &recordingAttacher{}
 	p := &nriPlugin{handler: plumbing.NewSandboxHandler(store, attacher)}
-	store.Add(testPodUID, plumbing.Spec{IfaceName: "net1"})
+	store.Add(plumbing.Spec{PodUID: testPodUID, ClaimUID: "claim", IfaceName: "net1"})
 
 	// A sandbox without a network namespace is skipped and keeps its NICs pending.
 	require.NoError(t, p.RunPodSandbox(context.Background(), sandbox()))
@@ -77,4 +77,23 @@ func TestNRIPluginSandboxEvents(t *testing.T) {
 
 	require.NoError(t, p.StopPodSandbox(context.Background(), sandbox()))
 	assert.Equal(t, []string{testNS + "/" + testPod}, attacher.swept)
+}
+
+func TestNRIPluginSynchronize(t *testing.T) {
+	store := plumbing.NewNICStore()
+	attacher := &recordingAttacher{}
+	p := &nriPlugin{handler: plumbing.NewSandboxHandler(store, attacher)}
+	store.Add(plumbing.Spec{PodUID: testPodUID, ClaimUID: "claim", IfaceName: "net1"})
+
+	other := &api.PodSandbox{Id: "sandbox-2", Uid: "other-uid", Name: "other", Namespace: testNS,
+		Linux: &api.LinuxPodSandbox{Namespaces: []*api.LinuxNamespace{{Type: networkNamespaceType, Path: "/var/run/netns/y"}}}}
+	updates, err := p.Synchronize(context.Background(), []*api.PodSandbox{
+		sandbox(), // no network namespace
+		sandbox(&api.LinuxNamespace{Type: networkNamespaceType, Path: "/var/run/netns/x"}),
+		other, // no DRA NICs
+	}, nil)
+	require.NoError(t, err)
+	assert.Empty(t, updates)
+	require.Len(t, attacher.attached, 1)
+	assert.Equal(t, "/var/run/netns/x", attacher.attached[0].NetnsPath)
 }

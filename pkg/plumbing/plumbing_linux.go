@@ -147,6 +147,12 @@ func (a *ovsAttacher) configurePodIface(ctx context.Context, spec Spec) error {
 	if err != nil {
 		return fmt.Errorf("look up %s in netns: %w", spec.IfaceName, err)
 	}
+	if link.Type() == "tuntap" {
+		// A repeated attach of a wired KubeVirt NIC: the name belongs to the tap
+		// now, and the veth it replaced keeps its configuration. wireVMIBridge
+		// re-checks the bridge and the DHCP server.
+		return nil
+	}
 
 	// MAC must be set while the link is down (moveIntoNetns left it down).
 	if spec.MAC != "" {

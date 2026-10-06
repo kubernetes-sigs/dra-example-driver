@@ -70,10 +70,10 @@ attachment. The driver waits for the result.
 │  kubelet ── NodePrepareResources ──► driver.go ──► state.go            │
 │                                       nicprepare.RequestIPAM()         │
 │                                         wait for allocated=true        │
-│                                       PendingStore.Add(podUID, Spec)   │
+│                                       NICStore.Add(Spec) + checkpoint  │
 │                                                                        │
 │  containerd ── NRI RunPodSandbox ──► nri.go ──► SandboxHandler         │
-│                                       PendingStore.Take(podUID)        │
+│                                       NICStore.Specs(podUID)           │
 │                                       Attacher.Attach() per NIC:       │
 │                                         veth + netns config +          │
 │                                         br-int port (iface-id = LSP)   │
@@ -105,10 +105,12 @@ ResourceSlices and forwards `PrepareResourceClaims` /
 - **`Prepare`** — decodes the opaque `NicConfig`s (claim configs take
   precedence over class configs), resolves every NIC of the claim
   concurrently with `nicprepare.RequestIPAM`, adds one `plumbing.Spec` per NIC
-  to the `PendingStore` and writes the CDI spec and checkpoint. A repeated
+  to the `NICStore`, and writes the CDI spec and the checkpoint, which holds
+  the Specs too, so a restarted plugin restores the store. A repeated
   call for a checkpointed claim returns the stored devices.
-- **`Unprepare`** — removes the CDI spec and the checkpoint entry. Nothing is
-  released: kube-ovn-controller owns the address and port.
+- **`Unprepare`** — removes the claim's NICs from the store, the CDI spec and
+  the checkpoint entry. Nothing is released: kube-ovn-controller owns the
+  address and port.
 
 ### `cmd/kube-ovn-dra-kubeletplugin/nri.go`
 
@@ -139,7 +141,8 @@ RequestIPAM(ctx, client, claim, result, device, ifaceName) → NicDeviceConfig
 
 ### `pkg/plumbing/`
 
-- **`SandboxHandler`** — drains the `PendingStore` on `RunPodSandbox`, rolls
+- **`SandboxHandler`** — attaches the pod's NICs from the `NICStore` on
+  `RunPodSandbox` and, without rollback, on `Synchronize`; rolls
   back on partial failure, records attached NICs and detaches them on
   `StopPodSandbox`, followed by a sweep of all OVS ports owned by the pod.
 - **`ovsAttacher`** (`plumbing_linux.go`) — veth pair, move and rename into the
@@ -225,6 +228,8 @@ Sub-CIDR model (default NodeIpam):
 NRI (Node Resource Interface) is the containerd plugin API used to intercept
 container lifecycle events. The driver registers as an NRI plugin that handles:
 
+- **`Synchronize`** — called on every (re)connect with all existing sandboxes;
+  attaches missing NICs of running pods.
 - **`RunPodSandbox`** — the sandbox network namespace exists and its path is
   in the event. Phase 2 plumbing.
 - **`StopPodSandbox`** — the sandbox stops. Triggers the detach.

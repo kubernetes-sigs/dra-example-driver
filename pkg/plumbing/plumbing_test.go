@@ -130,26 +130,42 @@ func TestVethNamesEmptyContainerID(t *testing.T) {
 	}
 }
 
-func TestPendingStore(t *testing.T) {
-	s := NewPendingStore()
-	s.Add("uid-1", Spec{IfaceName: "net1"})
-	s.Add("uid-1", Spec{IfaceName: "net2"})
-	s.Add("uid-2", Spec{IfaceName: "net1"})
+func TestNICStore(t *testing.T) {
+	s := NewNICStore()
+	s.Add(Spec{PodUID: "uid-1", ClaimUID: "claim-a", IfaceName: "net1"})
+	s.Add(Spec{PodUID: "uid-1", ClaimUID: "claim-b", IfaceName: "net2"})
+	s.Add(Spec{PodUID: "uid-2", ClaimUID: "claim-c", IfaceName: "net1"})
+	s.Add(Spec{PodUID: "uid-1", ClaimUID: "claim-a", IfaceName: "net1", IP: "10.0.0.5/24"})
 
-	if taken := s.Take("uid-1"); len(taken) != 2 || taken[0].IfaceName != "net1" || taken[1].IfaceName != "net2" {
-		t.Fatalf("Take(uid-1) = %+v, want net1 and net2 in order", taken)
+	specs := s.Specs("uid-1")
+	if len(specs) != 2 || specs[0].IP != "10.0.0.5/24" || specs[1].IfaceName != "net2" {
+		t.Fatalf("Specs(uid-1) = %+v, want net1 (replaced) and net2", specs)
 	}
-	if got := s.Take("uid-1"); len(got) != 0 {
-		t.Errorf("Take(uid-1) after drain len = %d, want 0", len(got))
+	specs[0].NetnsPath = "/changed"
+	if s.Specs("uid-1")[0].NetnsPath != "" {
+		t.Error("Specs must return a copy")
 	}
-	if got := s.Take("uid-2"); len(got) != 1 {
-		t.Errorf("Take(uid-2) len = %d, want 1", len(got))
+	if got := s.Specs("uid-1"); len(got) != 2 {
+		t.Errorf("Specs must not drain the store, got %d", len(got))
+	}
+
+	s.RemoveClaim("claim-a")
+	if got := s.Specs("uid-1"); len(got) != 1 || got[0].ClaimUID != "claim-b" {
+		t.Errorf("after RemoveClaim(claim-a) Specs(uid-1) = %+v, want claim-b only", got)
+	}
+	s.RemoveClaim("claim-b")
+	if got := s.Specs("uid-1"); got != nil {
+		t.Errorf("after removing all claims Specs(uid-1) = %+v, want nil", got)
+	}
+	if got := s.Specs("uid-2"); len(got) != 1 {
+		t.Errorf("Specs(uid-2) len = %d, want 1", len(got))
 	}
 
 	s.MarkAttached("uid-1", Spec{IfaceName: "net1"})
+	s.MarkAttached("uid-1", Spec{IfaceName: "net1", ContainerID: "again"})
 	s.MarkAttached("uid-1", Spec{IfaceName: "net2"})
-	if got := s.TakeAttached("uid-1"); len(got) != 2 {
-		t.Errorf("TakeAttached(uid-1) len = %d, want 2", len(got))
+	if got := s.TakeAttached("uid-1"); len(got) != 2 || got[0].ContainerID != "again" {
+		t.Errorf("TakeAttached(uid-1) = %+v, want net1 (replaced) and net2", got)
 	}
 	if got := s.TakeAttached("uid-1"); len(got) != 0 {
 		t.Errorf("TakeAttached(uid-1) after drain len = %d, want 0", len(got))

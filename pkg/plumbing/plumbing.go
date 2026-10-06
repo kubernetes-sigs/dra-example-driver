@@ -28,12 +28,14 @@
 // The allocation is resolved in PrepareResourceClaims, before the pod sandbox
 // exists. The attach can only run once the sandbox netns is created, so it is
 // driven from an NRI hook (RunPodSandbox). The two phases are bridged by a
-// PendingStore (see store.go): Prepare registers a Spec keyed by pod UID; the
-// NRI hook drains it and calls Attach.
+// NICStore (see store.go): Prepare registers a Spec per NIC; the NRI hook
+// reads the pod's Specs and calls Attach.
 //
-//	PrepareResourceClaims ──> wait for kube-ovn ──> PendingStore.Add(podUID, Spec)
-//	NRI RunPodSandbox      ──> PendingStore.Take(podUID) ──> Attacher.Attach
-//	NRI StopPodSandbox     ──> PendingStore.TakeAttached(podUID) ──> Attacher.Detach
+//	PrepareResourceClaims   ──> wait for kube-ovn ──> NICStore.Add(Spec)
+//	NRI RunPodSandbox       ──> NICStore.Specs(podUID) ──> Attacher.Attach
+//	NRI Synchronize         ──> the same for every running sandbox
+//	NRI StopPodSandbox      ──> NICStore.TakeAttached(podUID) ──> Attacher.Detach
+//	UnprepareResourceClaims ──> NICStore.RemoveClaim(claimUID)
 package plumbing
 
 import (
@@ -64,12 +66,14 @@ const (
 // in PrepareResourceClaims from the DRA device attributes + the kube-ovn IPAM
 // result, then consumed later by the NRI sandbox hook.
 type Spec struct {
-	// --- identity (used as the PendingStore key and for OVS external_ids) ---
+	// --- identity (used as the NICStore key and for OVS external_ids) ---
 
 	// PodUID / PodName / PodNamespace identify the target pod.
 	PodUID       string
 	PodName      string
 	PodNamespace string
+	// ClaimUID is the ResourceClaim the NIC was allocated from.
+	ClaimUID string
 
 	// --- where to plumb ---
 

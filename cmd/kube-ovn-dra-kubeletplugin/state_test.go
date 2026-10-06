@@ -53,6 +53,13 @@ const (
 // the kube-ovn subnet "blue", using temporary CDI and checkpoint directories.
 func newTestDeviceState(t *testing.T, pods ...runtime.Object) *DeviceState {
 	t.Helper()
+	state, err := NewDeviceState(newTestConfig(t, pods...))
+	require.NoError(t, err)
+	return state
+}
+
+func newTestConfig(t *testing.T, pods ...runtime.Object) *Config {
+	t.Helper()
 	subnet := &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "kubeovn.io/v1",
 		"kind":       "Subnet",
@@ -73,11 +80,9 @@ func newTestDeviceState(t *testing.T, pods ...runtime.Object) *DeviceState {
 		},
 		coreclient: fake.NewSimpleClientset(pods...),
 		profile:    nicprofile.NewProfile(testNode, dynamicClient),
-		nriStore:   plumbing.NewPendingStore(),
+		nicStore:   plumbing.NewNICStore(),
 	}
-	state, err := NewDeviceState(config)
-	require.NoError(t, err)
-	return state
+	return config
 }
 
 // allocatedPod returns the pod with kube-ovn's allocation annotations for the
@@ -137,7 +142,7 @@ func TestPrepareUnprepare(t *testing.T) {
 		assert.Len(t, devices[0].CdiDeviceIds, 2, "claim device and common device")
 	}
 
-	specs := state.nriStore.Take(testPodUID)
+	specs := state.nicStore.Specs(testPodUID)
 	require.Len(t, specs, 2)
 	byIface := map[string]plumbing.Spec{}
 	for _, spec := range specs {
@@ -152,12 +157,17 @@ func TestPrepareUnprepare(t *testing.T) {
 	again, err := state.Prepare(context.Background(), claimA)
 	require.NoError(t, err)
 	assert.Len(t, again, 1)
-	assert.Empty(t, state.nriStore.Take(testPodUID), "a checkpointed claim must not be planned again")
+	assert.Len(t, state.nicStore.Specs(testPodUID), 2, "a checkpointed claim must not be added twice")
 
+	require.NoError(t, state.Unprepare(string(claimA.UID)))
+	specs = state.nicStore.Specs(testPodUID)
+	require.Len(t, specs, 1, "unprepare drops the claim's NICs")
+	assert.Equal(t, "net2", specs[0].IfaceName)
 	for _, claim := range []*resourceapi.ResourceClaim{claimA, claimB} {
 		require.NoError(t, state.Unprepare(string(claim.UID)))
 		require.NoError(t, state.Unprepare(string(claim.UID)), "unprepare is idempotent")
 	}
+	assert.Empty(t, state.nicStore.Specs(testPodUID))
 	checkpoint := newCheckpoint()
 	require.NoError(t, state.checkpointManager.GetCheckpoint(DriverPluginCheckpointFile, checkpoint))
 	assert.Empty(t, checkpoint.V1.PreparedClaims)
@@ -172,11 +182,34 @@ func TestPrepareTwoRequestsOnOneDevice(t *testing.T) {
 	require.Len(t, devices, 2)
 	assert.NotEqual(t, devices[0].CdiDeviceIds[1], devices[1].CdiDeviceIds[1])
 
-	specs := state.nriStore.Take(testPodUID)
+	specs := state.nicStore.Specs(testPodUID)
 	require.Len(t, specs, 2)
 	ifaces := []string{specs[0].IfaceName, specs[1].IfaceName}
 	assert.ElementsMatch(t, []string{"net1", "net2"}, ifaces)
 	require.NoError(t, state.Unprepare(string(claim.UID)))
+}
+
+func TestRestartRestoresNICs(t *testing.T) {
+	config := newTestConfig(t, allocatedPod(testProvider))
+	state, err := NewDeviceState(config)
+	require.NoError(t, err)
+	claim := testClaim(nil, "a")
+	_, err = state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	// A restarted plugin starts with an empty NIC store and the same checkpoint.
+	restarted := *config
+	restarted.nicStore = plumbing.NewNICStore()
+	state, err = NewDeviceState(&restarted)
+	require.NoError(t, err)
+	specs := restarted.nicStore.Specs(testPodUID)
+	require.Len(t, specs, 1)
+	assert.Equal(t, string(claim.UID), specs[0].ClaimUID)
+	assert.Equal(t, "pod1.default."+testProvider, specs[0].IfaceID)
+	assert.Equal(t, "10.10.0.5/24", specs[0].IP)
+
+	require.NoError(t, state.Unprepare(string(claim.UID)))
+	assert.Empty(t, restarted.nicStore.Specs(testPodUID))
 }
 
 func TestPrepareErrors(t *testing.T) {
@@ -201,7 +234,7 @@ func TestPrepareErrors(t *testing.T) {
 	notReserved.Status.ReservedFor = nil
 	_, err = state.Prepare(context.Background(), notReserved)
 	assert.ErrorContains(t, err, "NIC IPAM")
-	assert.Empty(t, state.nriStore.Take(testPodUID))
+	assert.Empty(t, state.nicStore.Specs(testPodUID))
 }
 
 func TestNicSpecFromConfig(t *testing.T) {
