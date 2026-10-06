@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
 	coreclientset "k8s.io/client-go/kubernetes"
@@ -60,6 +61,8 @@ type DeviceState struct {
 	checkpointManager checkpointmanager.CheckpointManager
 	configDecoder     runtime.Decoder
 	configHandler     profiles.ConfigHandler
+	profile           profiles.Profile
+	nodeName          string
 	// NIC-specific: set when the profile is nicprofile.ProfileName
 	coreclient coreclientset.Interface
 	isNIC      bool
@@ -106,12 +109,7 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		},
 	)
 
-	allocatable := make(AllocatableDevices)
-	for _, slice := range driverResources.Pools[config.flags.nodeName].Slices {
-		for _, device := range slice.Devices {
-			allocatable[device.Name] = device
-		}
-	}
+	allocatable := allocatableDevices(driverResources, config.flags.nodeName)
 
 	state := &DeviceState{
 		driverName:        config.flags.driverName,
@@ -121,6 +119,8 @@ func NewDeviceState(config *Config) (*DeviceState, error) {
 		checkpointManager: checkpointManager,
 		configDecoder:     decoder,
 		configHandler:     configHandler,
+		profile:           config.profile,
+		nodeName:          config.flags.nodeName,
 		coreclient:        config.coreclient,
 		isNIC:             config.flags.profile == nicprofile.ProfileName,
 		nicStore:          config.nicStore,
@@ -374,6 +374,35 @@ func (s *DeviceState) unprepareDevices(claimUID string, _ profiles.PreparedDevic
 		s.nicStore.RemoveClaim(claimUID)
 	}
 	return nil
+}
+
+// allocatableDevices returns the devices of the node's pool by name.
+func allocatableDevices(resources resourceslice.DriverResources, nodeName string) AllocatableDevices {
+	allocatable := make(AllocatableDevices)
+	for _, slice := range resources.Pools[nodeName].Slices {
+		for _, device := range slice.Devices {
+			allocatable[device.Name] = device
+		}
+	}
+	return allocatable
+}
+
+// RefreshDevices enumerates the devices again, e.g. after a subnet was added,
+// and reports whether they changed. Claims prepared before keep working when
+// their device disappears; new claims for it fail as not allocatable.
+func (s *DeviceState) RefreshDevices() (resourceslice.DriverResources, bool, error) {
+	resources, err := s.profile.EnumerateDevices()
+	if err != nil {
+		return resourceslice.DriverResources{}, false, fmt.Errorf("enumerate devices: %w", err)
+	}
+	s.Lock()
+	defer s.Unlock()
+	if equality.Semantic.DeepEqual(resources, s.driverResources) {
+		return resources, false, nil
+	}
+	s.driverResources = resources
+	s.allocatable = allocatableDevices(resources, s.nodeName)
+	return resources, true, nil
 }
 
 // checkInterfaceNames rejects interface names that two NICs of a pod would

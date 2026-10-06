@@ -84,8 +84,8 @@ Each run prints a `DRA vs Multus — create→Ready (s)` line per count.
 … --out .bench`, which emits `dra.yaml` and `multus.yaml` (and, for
 underlay/mixed, the benchmark subnets). It then:
 
-1. (underlay/mixed only) applies the bench subnets and restarts the plugin so it
-   re-enumerates them.
+1. (underlay/mixed only) applies the bench subnets and waits until the plugin
+   publishes them.
 2. `measure(dra.yaml)` → apply, wait Ready, record seconds, delete.
 3. `measure(multus.yaml)` → same.
 4. prints the comparison.

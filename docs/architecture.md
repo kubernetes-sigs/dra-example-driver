@@ -121,8 +121,10 @@ retries instead of running a pod with missing NICs.
 
 ### `internal/profiles/nic/`
 
-Lists kube-ovn `Subnet`s (and their `Vlan`s) at startup and publishes each as
-a device; see the mapping below. `ApplyConfig` adds the CDI environment
+Lists kube-ovn `Subnet`s (and their `Vlan`s) and publishes each as a device;
+see the mapping below. `WatchDevices` watches both, and the plugin
+republishes the ResourceSlice after a change (debounced, only when the
+devices changed). `ApplyConfig` adds the CDI environment
 variables `KUBE_OVN_NIC_<INTERFACE>_SUBNET` and `KUBE_OVN_NIC_<INTERFACE>_DEVICE`,
 e.g. `KUBE_OVN_NIC_NET1_SUBNET=ovn-subnet`.
 

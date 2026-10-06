@@ -17,6 +17,7 @@
 package profiles
 
 import (
+	"context"
 	"errors"
 
 	resourceapi "k8s.io/api/resource/v1"
@@ -61,6 +62,9 @@ func (pds PreparedDevices) GetDevices() []*drapbv1.Device {
 type Profile interface {
 	ConfigHandler
 	EnumerateDevices() (resourceslice.DriverResources, error)
+	// WatchDevices watches the sources of the devices and calls onChange after
+	// a change that may alter them. It returns once the watch is established.
+	WatchDevices(ctx context.Context, onChange func()) error
 }
 
 // ConfigHandler handles opaque configuration set for requests in ResourceClaims.

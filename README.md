@@ -86,7 +86,7 @@ make kind-create             # kind cluster, no CNI, DRA feature-gates on
 make clab-deploy             # OPTIONAL: containerlab VLAN uplink + FRR BGP gateway (needs sudo)
 make kind-deploy-kube-ovn    # kube-ovn CNI with --enable-dra-nic -> nodes Ready
 make kind-deploy-multus      # OPTIONAL: Multus, only for the DRA vs Multus benchmark
-make kind-deploy-nic-prereqs # provider network, VLANs and subnets (before the driver)
+make kind-deploy-nic-prereqs # provider network, VLANs and subnets
 make kind-build-driver       # docker build -> kind load
 make kind-deploy-driver      # helm install (deviceProfile=nic)
 make kind-deploy-nic-example # ResourceClaim + demo pod

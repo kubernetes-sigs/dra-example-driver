@@ -74,6 +74,18 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		return nil, err
 	}
 
+	// Republish the devices when kube-ovn subnets change.
+	trigger := make(chan struct{}, 1)
+	if err := config.profile.WatchDevices(ctx, func() {
+		select {
+		case trigger <- struct{}{}:
+		default:
+		}
+	}); err != nil {
+		return nil, fmt.Errorf("watch devices: %w", err)
+	}
+	go refreshDevicesLoop(ctx, trigger, refreshDelay, state.RefreshDevices, helper.PublishResources)
+
 	// Start the NRI plugin that attaches the NICs when a pod sandbox is
 	// created. Without it, claims are still prepared but pods start without
 	// their DRA NICs, so the failure is logged loudly instead of stopping the

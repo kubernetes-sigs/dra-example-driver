@@ -193,7 +193,6 @@ BENCH_REPS         ?= 1
 # rest via multus-dynamic-networks-controller (not deployed by kind-demo; see
 # https://github.com/k8snetworkplumbingwg/multus-dynamic-networks-controller).
 HOTPLUG_BASE       ?= 2
-PLUGIN_DS_SELECTOR ?= app.kubernetes.io/instance=kube-ovn-nic-dra
 
 CONTAINERLAB_TOPOLOGY ?= $(CURDIR)/demo/containerlab/vlan-topology.yaml
 
@@ -476,13 +475,24 @@ kind-vlan-tag-workaround:
 		echo "  localnet.$$subnet tag_request=$$id"; \
 	done
 
+## wait-for-nic-devices: wait until the driver publishes every kube-ovn subnet as
+## a device. It picks up new subnets within seconds.
+.PHONY: wait-for-nic-devices
+wait-for-nic-devices:
+	@echo "Waiting for the driver to publish all subnets..."
+	@for subnet in $$(kubectl get subnets -o jsonpath='{.items[*].metadata.name}'); do \
+		for i in $$(seq 60); do \
+			kubectl get resourceslices -o jsonpath='{range .items[?(@.spec.driver=="$(NIC_DRIVER_NAME)")]}{range .spec.devices[*]}{.name}{"\n"}{end}{end}' \
+				| grep -qx "subnet-$$subnet" && break; \
+			[ $$i -lt 60 ] || { echo "subnet $$subnet is not published"; exit 1; }; \
+			sleep 2; \
+		done; \
+	done
+
 ## kind-deploy-nic-prereqs: apply the subnets the driver and any NIC claim
 ## depend on — but NOT a specific ResourceClaim/pod. The
 ## DeviceClass itself (nic.kubeovn.io) is Helm-managed by kind-deploy-driver,
-## not applied here.
-## Deploy this BEFORE the driver: the plugin enumerates kube-ovn Subnets once at
-## startup (no watch), so the subnets must exist before it starts or the
-## ResourceSlice comes up empty.
+## not applied here. The driver watches subnets, so the order does not matter.
 kind-deploy-nic-prereqs: kind-deploy-kube-ovn-fixtures
 
 ## kind-deploy-nic-example: prerequisites + the demo ResourceClaim and pod.
@@ -499,10 +509,7 @@ kind-deploy-nic-example: kind-deploy-nic-prereqs
 ## equal VLAN/overlay split) and time pod creation -> Ready. COUNT defaults to 4.
 COUNT ?= 4
 nic-example-deploy: kind-deploy-kube-ovn-fixtures
-	@echo "Refreshing driver so newly-added subnets appear in the ResourceSlice..."
-	@echo "  (the driver enumerates subnets at startup only; restart picks up new ones)"
-	-kubectl rollout restart daemonset -n kube-system -l app.kubernetes.io/instance=kube-ovn-nic-dra
-	-kubectl rollout status daemonset -n kube-system -l app.kubernetes.io/instance=kube-ovn-nic-dra --timeout=90s
+	@$(MAKE) --no-print-directory wait-for-nic-devices
 	@echo "Deploying $(COUNT)-NIC example (nic-demo-$(COUNT))..."
 	kubectl apply -f $(NIC_DEMO_DIR)/examples/$(COUNT)nic.yaml
 	@start=$$(date +%s); \
@@ -519,21 +526,20 @@ nic-example-clean:
 ## nic-bench: compare DRA vs Multus secondary-NIC spin-up for BENCH_COUNT NICs.
 ## BENCH_MODE=overlay|underlay|mixed. overlay reuses the demo overlay subnets;
 ## underlay/mixed create benchmark subnets (need `make clab-deploy` for eth1) and
-## restart the plugin so it enumerates them. Requires Multus (make
+## wait until the plugin publishes them. Requires Multus (make
 ## kind-deploy-multus) and the driver running. Measures create -> Ready wall-clock.
 nic-bench:
 	@command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 	@set -e; OUT=$(BENCH_DIR); \
 	HOTPLUG_BASE=$(HOTPLUG_BASE) python3 $(NIC_DEMO_DIR)/examples/generate.py bench --mode $(BENCH_MODE) --count $(BENCH_COUNT) --out $$OUT; \
 	if [ -f $$OUT/subnets.yaml ]; then \
-	  echo "==> applying benchmark subnets ($(BENCH_MODE)) and restarting the plugin"; \
+	  echo "==> applying benchmark subnets ($(BENCH_MODE))"; \
 	  echo "    (left in place afterward, not deleted here — nic-bench-sweep reuses"; \
 	  echo "     overlapping VLAN/subnet IDs across counts, and deleting-then-immediately-"; \
 	  echo "     recreating them from the next count races kube-ovn's async CR deletion;"; \
 	  echo "     run 'make nic-bench-clean' when done benchmarking)"; \
 	  kubectl apply -f $$OUT/subnets.yaml; sleep 10; \
-	  kubectl rollout restart daemonset -n kube-system -l $(PLUGIN_DS_SELECTOR); \
-	  kubectl rollout status  daemonset -n kube-system -l $(PLUGIN_DS_SELECTOR) --timeout=120s; \
+	  $(MAKE) --no-print-directory wait-for-nic-devices; \
 	fi; \
 	measure() { \
 	  pod=$$1; file=$$2; \
@@ -601,9 +607,7 @@ nic-bench-clean:
 
 ## kind-deploy-vlan-peer: deploy per-VLAN peer pods on the control-plane node.
 kind-deploy-vlan-peer: kind-deploy-kube-ovn-fixtures
-	@echo "Refreshing driver so all VLAN subnets appear in the ResourceSlice..."
-	-kubectl rollout restart daemonset -n kube-system -l app.kubernetes.io/instance=kube-ovn-nic-dra
-	-kubectl rollout status daemonset -n kube-system -l app.kubernetes.io/instance=kube-ovn-nic-dra --timeout=90s
+	@$(MAKE) --no-print-directory wait-for-nic-devices
 	kubectl apply -f $(NIC_DEMO_DIR)/07-vlan-peer-pod.yaml
 	@echo "Waiting for all VLAN peers + worker pod to be Ready..."
 	kubectl wait --for=condition=Ready pod -l app=vlan-peer-test --timeout=300s

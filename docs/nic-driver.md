@@ -54,7 +54,9 @@ The contract between both sides is written up in kube-ovn's `docs/dra-nic.md`.
 ## Allocation and attach flow
 
 1. **Devices.** The NIC profile publishes each kube-ovn `Subnet` as device
-   `subnet-<name>` with the attribute `nic.kubeovn.io/subnetName`. kube-ovn-
+   `subnet-<name>` with the attribute `nic.kubeovn.io/subnetName`. It watches
+   Subnets and Vlans and republishes the ResourceSlice within seconds of a
+   change; status updates are ignored. kube-ovn-
    controller reads that attribute from the newest ResourceSlice generation of
    the device's pool. The subnet must have a dedicated `spec.provider` (e.g.
    `<subnet>.<namespace>.ovn`); the default provider `ovn` belongs to `eth0`
@@ -132,11 +134,6 @@ adds the tap to the VM's domain, since KubeVirt's built-in bindings do not
 resolve DRA networks yet. kube-ovn names the VM's port after the VM, so IP and
 MAC survive VM restarts.
 
-### Known limitations
-
-- The plugin enumerates subnets once at startup. Restart it after adding
-  subnets (`make nic-example-deploy` does).
-
 ## Local dev deployment on kind
 
 A full kube-ovn + NIC DRA stack can be brought up in a local
@@ -184,7 +181,7 @@ make kind-create            # kind cluster, no CNI, DRA gates on (nodes NotReady
 make clab-deploy            # OPTIONAL: containerlab VLAN uplink + FRR BGP gateway (needs sudo)
 make kind-deploy-kube-ovn   # install kube-ovn CNI via its Helm chart -> nodes become Ready
 make kind-deploy-multus     # OPTIONAL: Multus (thick mode), only for make nic-bench
-make kind-deploy-nic-prereqs # provider network, VLANs, subnets (before the driver)
+make kind-deploy-nic-prereqs # provider network, VLANs, subnets
 make kind-build-driver      # docker build -> kind load docker-image nic.kubeovn.io:dev
 make kind-deploy-driver     # helm install kube-ovn-nic-dra (deviceProfile=nic)
 make kind-deploy-nic-example # ResourceClaim + demo pod

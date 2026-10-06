@@ -28,10 +28,14 @@ import (
 	"strings"
 
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/dynamic/dynamicinformer"
+	"k8s.io/client-go/tools/cache"
 	"k8s.io/dynamic-resource-allocation/resourceslice"
 	"k8s.io/utils/ptr"
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
@@ -160,6 +164,46 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 		},
 	}
 	return resources, nil
+}
+
+// WatchDevices implements profiles.Profile. It watches kube-ovn Subnets and
+// Vlans and calls onChange when one is added, deleted or its spec changes.
+// Status updates, which kube-ovn writes on every address allocation, are
+// ignored.
+func (p Profile) WatchDevices(ctx context.Context, onChange func()) error {
+	factory := dynamicinformer.NewDynamicSharedInformerFactory(p.dynamicClient, 0)
+	handler := cache.ResourceEventHandlerFuncs{
+		AddFunc: func(any) { onChange() },
+		UpdateFunc: func(oldObj, newObj any) {
+			if !specEqual(oldObj, newObj) {
+				onChange()
+			}
+		},
+		DeleteFunc: func(any) { onChange() },
+	}
+	var synced []cache.InformerSynced
+	for _, gvr := range []schema.GroupVersionResource{subnetGVR, vlanGVR} {
+		informer := factory.ForResource(gvr).Informer()
+		if _, err := informer.AddEventHandler(handler); err != nil {
+			return fmt.Errorf("watch %s: %w", gvr.Resource, err)
+		}
+		synced = append(synced, informer.HasSynced)
+	}
+	factory.Start(ctx.Done())
+	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
+		return fmt.Errorf("sync kube-ovn subnet and vlan informers: %w", ctx.Err())
+	}
+	return nil
+}
+
+// specEqual reports whether two unstructured objects have the same spec.
+func specEqual(oldObj, newObj any) bool {
+	oldU, ok1 := oldObj.(*unstructured.Unstructured)
+	newU, ok2 := newObj.(*unstructured.Unstructured)
+	if !ok1 || !ok2 {
+		return false
+	}
+	return equality.Semantic.DeepEqual(oldU.Object["spec"], newU.Object["spec"])
 }
 
 // SchemeBuilder implements profiles.ConfigHandler.

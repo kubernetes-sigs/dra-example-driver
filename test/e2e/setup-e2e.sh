@@ -29,12 +29,10 @@ if [ "${E2E_CONTAINERLAB:-0}" = "1" ]; then
   make clab-deploy
 fi
 make kind-deploy-kube-ovn
-# Subnets + DeviceClass MUST exist before the driver starts: the plugin
-# enumerates kube-ovn Subnets once at startup (no watch), so deploying them
-# afterwards would leave the ResourceSlice empty.
 make kind-deploy-nic-prereqs
 make kind-build-driver
 make kind-deploy-driver
+make wait-for-nic-devices
 
 # The e2e suite applies/removes its own ResourceClaim+pod fixture, so the base
 # demo claim/pod (kind-deploy-nic-example) is intentionally NOT deployed here.

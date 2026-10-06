@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/dynamic"
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
@@ -58,18 +59,31 @@ func newTestDeviceState(t *testing.T, pods ...runtime.Object) *DeviceState {
 	return state
 }
 
-func newTestConfig(t *testing.T, pods ...runtime.Object) *Config {
-	t.Helper()
-	subnet := &unstructured.Unstructured{Object: map[string]interface{}{
+var testSubnetGVR = schema.GroupVersionResource{Group: "kubeovn.io", Version: "v1", Resource: "subnets"}
+
+func testSubnet(name, provider string) *unstructured.Unstructured {
+	return &unstructured.Unstructured{Object: map[string]interface{}{
 		"apiVersion": "kubeovn.io/v1",
 		"kind":       "Subnet",
-		"metadata":   map[string]interface{}{"name": "blue"},
-		"spec":       map[string]interface{}{"provider": testProvider},
+		"metadata":   map[string]interface{}{"name": name},
+		"spec":       map[string]interface{}{"provider": provider},
 	}}
+}
+
+func newTestConfig(t *testing.T, pods ...runtime.Object) *Config {
+	t.Helper()
+	config, _ := newTestConfigWithClient(t, pods...)
+	return config
+}
+
+// newTestConfigWithClient is newTestConfig that also returns the fake kube-ovn
+// client holding the subnet "blue".
+func newTestConfigWithClient(t *testing.T, pods ...runtime.Object) (*Config, dynamic.Interface) {
+	t.Helper()
 	dynamicClient := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
-		{Group: "kubeovn.io", Version: "v1", Resource: "subnets"}: "SubnetList",
-		{Group: "kubeovn.io", Version: "v1", Resource: "vlans"}:   "VlanList",
-	}, subnet)
+		testSubnetGVR: "SubnetList",
+		{Group: "kubeovn.io", Version: "v1", Resource: "vlans"}: "VlanList",
+	}, testSubnet("blue", testProvider))
 	config := &Config{
 		flags: &Flags{
 			nodeName:                    testNode,
@@ -82,7 +96,7 @@ func newTestConfig(t *testing.T, pods ...runtime.Object) *Config {
 		profile:    nicprofile.NewProfile(testNode, dynamicClient),
 		nicStore:   plumbing.NewNICStore(),
 	}
-	return config
+	return config, dynamicClient
 }
 
 // allocatedPod returns the pod with kube-ovn's allocation annotations for the
@@ -345,4 +359,23 @@ func TestDriverPrepareUnprepareResourceClaims(t *testing.T) {
 	unprepared, err := d.UnprepareResourceClaims(context.Background(), []kubeletplugin.NamespacedObject{{UID: ok.UID}})
 	require.NoError(t, err)
 	assert.NoError(t, unprepared[ok.UID])
+}
+
+func TestRefreshDevices(t *testing.T) {
+	config, client := newTestConfigWithClient(t)
+	state, err := NewDeviceState(config)
+	require.NoError(t, err)
+
+	_, changed, err := state.RefreshDevices()
+	require.NoError(t, err)
+	assert.False(t, changed, "nothing changed since startup")
+
+	_, err = client.Resource(testSubnetGVR).Create(context.Background(), testSubnet("red", "red.default.ovn"), metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	resources, changed, err := state.RefreshDevices()
+	require.NoError(t, err)
+	assert.True(t, changed)
+	assert.Len(t, resources.Pools[testNode].Slices[0].Devices, 2)
+	assert.Contains(t, state.allocatable, "subnet-red", "a claim for the new subnet must be allocatable")
 }
