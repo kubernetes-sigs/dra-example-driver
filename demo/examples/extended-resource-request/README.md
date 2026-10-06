@@ -86,8 +86,8 @@ GPU_DEVICE_0=gpu-0
 {
   "extendedResourceClaimStatus": [
     {
-      "name": "deviceclass.resource.kubernetes.io/gpu.example.com",
-      "resourceClaimName": "pod0-deviceclass.resource.kubernetes.io-gpu.example.com-0"
+      "name": "deviceclass.resource.kubernetes.io/gpu.dra-example-driver.sigs.k8s.io",
+      "resourceClaimName": "pod0-deviceclass.resource.kubernetes.io-gpu.dra-example-driver.sigs.k8s.io-0"
     }
   ]
 }

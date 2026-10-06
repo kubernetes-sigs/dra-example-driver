@@ -35,11 +35,11 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	configapi "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/gpu/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 )
 
-const driverName = "gpu.example.com"
+const driverName = "gpu.dra-example-driver.sigs.k8s.io"
 
 func TestReadyEndpoint(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(readyHandler))

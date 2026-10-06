@@ -413,7 +413,7 @@ func TestBuildDeviceStatus_Disabled(t *testing.T) {
 	}
 	result := &resourceapi.DeviceRequestAllocationResult{
 		Device: "gpu-0",
-		Driver: "gpu.example.com",
+		Driver: "gpu.dra-example-driver.sigs.k8s.io",
 		Pool:   "test-node",
 	}
 
@@ -437,14 +437,14 @@ func TestBuildDeviceStatus_Enabled(t *testing.T) {
 	}
 	result := &resourceapi.DeviceRequestAllocationResult{
 		Device: "gpu-0",
-		Driver: "gpu.example.com",
+		Driver: "gpu.dra-example-driver.sigs.k8s.io",
 		Pool:   "test-node",
 	}
 
 	got := profile.BuildDeviceStatus(allocatable, result)
 	require.NotNil(t, got)
 	assert.Equal(t, "gpu-0", got.Device)
-	assert.Equal(t, "gpu.example.com", got.Driver)
+	assert.Equal(t, "gpu.dra-example-driver.sigs.k8s.io", got.Driver)
 	assert.Equal(t, "test-node", got.Pool)
 	require.NotNil(t, got.Data)
 
@@ -461,7 +461,7 @@ func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
 	profile := NewProfile("test-node", 1, 0, true, false, false, false, nil)
 	result := &resourceapi.DeviceRequestAllocationResult{
 		Device: "gpu-0",
-		Driver: "gpu.example.com",
+		Driver: "gpu.dra-example-driver.sigs.k8s.io",
 		Pool:   "test-node",
 	}
 

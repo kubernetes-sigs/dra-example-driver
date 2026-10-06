@@ -130,7 +130,7 @@ status:
         bindingFailureConditions:
         - BindingFailureConditions
         device: gpu-0
-        driver: gpu.example.com
+        driver: gpu.dra-example-driver.sigs.k8s.io
         pool: dra-example-driver-cluster-worker
         request: gpu
   devices:
@@ -141,7 +141,7 @@ status:
       status: "True"
       type: BindingConditions
     device: gpu-0
-    driver: gpu.example.com
+    driver: gpu.dra-example-driver.sigs.k8s.io
     pool: dra-example-driver-cluster-worker
   reservedFor:
   - name: pod0

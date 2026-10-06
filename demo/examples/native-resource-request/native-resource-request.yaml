@@ -18,16 +18,16 @@ spec:
       requests:
       - name: cpu0
         exactly:
-          deviceClassName: cpu.example.com
+          deviceClassName: cpu.dra-example-driver.sigs.k8s.io
           capacity:
             requests:
-              cpu.example.com/cpu: "1"
+              cpu.dra-example-driver.sigs.k8s.io/cpu: "1"
       - name: cpu1
         exactly:
-          deviceClassName: cpu.example.com
+          deviceClassName: cpu.dra-example-driver.sigs.k8s.io
           capacity:
             requests:
-              cpu.example.com/cpu: "1"
+              cpu.dra-example-driver.sigs.k8s.io/cpu: "1"
 
 ---
 apiVersion: v1

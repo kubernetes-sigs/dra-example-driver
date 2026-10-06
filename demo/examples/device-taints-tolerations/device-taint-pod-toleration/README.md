@@ -11,7 +11,7 @@ This example demonstrates how device tolerations work in Dynamic Resource Alloca
 ```mermaid
 graph TD
     subgraph DeviceTaint["Device Taint Applied"]
-        DTR[DeviceTaintRule<br/>Key: gpu.example.com/unhealthy<br/>Effect: NoExecute]
+        DTR[DeviceTaintRule<br/>Key: gpu.dra-example-driver.sigs.k8s.io/unhealthy<br/>Effect: NoExecute]
         G1[GPU Device<br/>Tainted]
         DTR -.->|Taints| G1
     end
@@ -89,7 +89,7 @@ For more information about device taints and tolerations, see the [Kubernetes do
 - **ResourceClaimTemplate**: Includes toleration matching the device taint
   ```yaml
   tolerations:
-  - key: gpu.example.com/unhealthy
+  - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
     operator: Equal
     value: "true"
     effect: NoExecute
@@ -146,9 +146,9 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           tolerations:
-          - key: gpu.example.com/unhealthy
+          - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
             operator: Equal
             value: "true"
             effect: NoExecute

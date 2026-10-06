@@ -61,17 +61,17 @@ spec:
       - name: gpu
         firstAvailable:
         - name: bleeding-edge-gpu
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           selectors:
           - cel:
-              expression: "device.attributes['gpu.example.com'].model == 'BLEEDING-EDGE-GPU'"
+              expression: "device.attributes['gpu.dra-example-driver.sigs.k8s.io'].model == 'BLEEDING-EDGE-GPU'"
         - name: huge-gpu
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           selectors:
           - cel:
-              expression: "device.capacity['gpu.example.com'].memory.compareTo(quantity('1Ti')) >= 0"
+              expression: "device.capacity['gpu.dra-example-driver.sigs.k8s.io'].memory.compareTo(quantity('1Ti')) >= 0"
         - name: older-gpu
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
 
 ---
 # pod1: preference. Both subrequests match, so the scheduler chooses the
@@ -88,12 +88,12 @@ spec:
       - name: gpu
         firstAvailable:
         - name: latest-gpu
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           selectors:
           - cel:
-              expression: "device.attributes['gpu.example.com'].model == 'LATEST-GPU-MODEL'"
+              expression: "device.attributes['gpu.dra-example-driver.sigs.k8s.io'].model == 'LATEST-GPU-MODEL'"
         - name: older-gpu
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
 
 ---
 apiVersion: v1

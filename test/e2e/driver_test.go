@@ -68,8 +68,14 @@ const (
 type DriverConfig struct {
 	// DriverName overrides the auto-generated DRA driver name. Tests that
 	// share static testdata (e.g. the webhook tests) pin this. Defaults to
-	// the auto-generated release name + ".example.com".
+	// the auto-generated release name + ".example.com". Keep these arbitrary
+	// test identities short: the DRA socket path also contains the full pod
+	// UID. UseDefaultDriverName separately covers the longer shipped names.
 	DriverName string
+
+	// UseDefaultDriverName leaves driverName unset in Helm so the chart's
+	// actual profile default is exercised. Use only in Serial tests.
+	UseDefaultDriverName bool
 
 	// ExtendedResourceName advertises the DeviceClass under a KEP-5004 extended resource name. Defaults to "" (disabled).
 	ExtendedResourceName string
@@ -114,6 +120,13 @@ func installDriver(ctx context.Context, cfg DriverConfig) installedDriver {
 	namespace := "dra-" + rand.String(6)
 	if cfg.DriverName == "" {
 		cfg.DriverName = releaseName + ".example.com"
+	}
+	if cfg.UseDefaultDriverName {
+		profile := cfg.ExtraValues["deviceProfile"]
+		if profile == "" {
+			profile = "gpu"
+		}
+		cfg.DriverName = profile + ".dra-example-driver.sigs.k8s.io"
 	}
 	if cfg.NumDevices == 0 {
 		cfg.NumDevices = defaultDriverNumDevices
@@ -176,6 +189,9 @@ func buildHelmValues(cfg DriverConfig, namespace string) map[string]any {
 		"webhook": map[string]any{
 			"enabled": cfg.WebhookEnabled,
 		},
+	}
+	if cfg.UseDefaultDriverName {
+		delete(values, "driverName")
 	}
 	if cfg.ExtendedResourceName != "" {
 		values["deviceClass"] = map[string]any{
@@ -353,7 +369,7 @@ func verifyWebhook(ctx context.Context, deviceClassName string) {
 	testClaim := &resourceapi.ResourceClaim{
 		ObjectMeta: metav1.ObjectMeta{
 			// ResourceClaim names use DNS-1123 subdomain validation, which
-			// allows the dots in the driver name (e.g. "gpu.example.com").
+			// allows the dots in the driver name (e.g. "gpu.dra-example-driver.sigs.k8s.io").
 			Name:      "webhook-test-" + deviceClassName,
 			Namespace: "default",
 		},

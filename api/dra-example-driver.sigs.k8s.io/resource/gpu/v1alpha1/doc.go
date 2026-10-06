@@ -15,6 +15,6 @@
  */
 
 // +k8s:deepcopy-gen=package
-// +groupName=net.resource.example.com
+// +groupName=gpu.resource.dra-example-driver.sigs.k8s.io
 
 package v1alpha1
