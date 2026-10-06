@@ -25,3 +25,6 @@ jobs:
       run: ls -al artifacts/
     - name: Test
       run: go test -v -race ./...
+    - name: Test datapath (root)
+      if: runner.os == 'Linux'
+      run: make test-privileged

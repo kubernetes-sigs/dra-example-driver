@@ -1,21 +1,19 @@
-# Shared-subnet example: TWO pods each take a secondary NIC from the SAME
-# kube-ovn Subnet (ovn-subnet, OVN overlay — no containerlab needed).
+# Two secondary NICs of ONE pod on the SAME kube-ovn Subnet (ovn-subnet, OVN
+# overlay — no containerlab needed), from two claims.
 #
-# A Subnet is a shared IP pool, not an exclusive device, so the driver publishes
-# its ResourceSlice device with AllowMultipleAllocations=true. Each pod still gets
-# its own address, MAC and logical switch port from kube-ovn-controller.
+# kube-ovn keys a NIC by its subnet's provider. When several NICs of a pod share
+# the provider, kube-ovn-controller keys each by "<provider>.<interfaceName>",
+# the same rule it uses for repeated Multus attachments of one
+# NetworkAttachmentDefinition, so each NIC gets its own address and logical
+# switch port.
 #
-# Requires the DRAConsumableCapacity feature gate (alpha) — enabled in
-# demo/kind/kind-no-cni.yaml on apiserver, scheduler and kubelet. Without it the
-# second pod stays Pending ("cannot allocate all claims").
-#
-#   kubectl apply -f demo/nic-example/examples/shared-subnet.yaml
-#   kubectl get pod shared-a shared-b -o wide
+#   kubectl apply -f demo/nic-example/examples/same-subnet-2nic.yaml
+#   kubectl exec same-subnet-2nic -- ip -br addr
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
-  name: shared-a
+  name: same-subnet-net1
   namespace: default
 spec:
   devices:
@@ -39,7 +37,7 @@ spec:
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
 metadata:
-  name: shared-b
+  name: same-subnet-net2
   namespace: default
 spec:
   devices:
@@ -58,44 +56,24 @@ spec:
           parameters:
             apiVersion: nic.resource.kube-ovn.io/v1alpha1
             kind: NicConfig
-            interfaceName: net1
+            interfaceName: net2
 ---
 apiVersion: v1
 kind: Pod
 metadata:
-  name: shared-a
+  name: same-subnet-2nic
   namespace: default
 spec:
   resourceClaims:
-    - name: nics
-      resourceClaimName: shared-a
+    - name: net1
+      resourceClaimName: same-subnet-net1
+    - name: net2
+      resourceClaimName: same-subnet-net2
   containers:
     - name: demo
       image: nicolaka/netshoot@sha256:47b907d662d139d1e2f22bfe14f4efca1e3f1feed283572f47c970c780c03b61
       command: ["sleep", "infinity"]
       resources:
         claims:
-          - name: nics
-      securityContext:
-        capabilities:
-          add: ["NET_ADMIN"]
----
-apiVersion: v1
-kind: Pod
-metadata:
-  name: shared-b
-  namespace: default
-spec:
-  resourceClaims:
-    - name: nics
-      resourceClaimName: shared-b
-  containers:
-    - name: demo
-      image: nicolaka/netshoot@sha256:47b907d662d139d1e2f22bfe14f4efca1e3f1feed283572f47c970c780c03b61
-      command: ["sleep", "infinity"]
-      resources:
-        claims:
-          - name: nics
-      securityContext:
-        capabilities:
-          add: ["NET_ADMIN"]
+          - name: net1
+          - name: net2

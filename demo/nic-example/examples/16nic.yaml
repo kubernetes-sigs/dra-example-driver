@@ -13,112 +13,112 @@ spec:
     requests:
       - name: nic0
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan100-subnet'"
           count: 1
       - name: nic1
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan200-subnet'"
           count: 1
       - name: nic2
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan300-subnet'"
           count: 1
       - name: nic3
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan400-subnet'"
           count: 1
       - name: nic4
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan500-subnet'"
           count: 1
       - name: nic5
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan600-subnet'"
           count: 1
       - name: nic6
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan700-subnet'"
           count: 1
       - name: nic7
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan800-subnet'"
           count: 1
       - name: nic8
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet'"
           count: 1
       - name: nic9
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-2'"
           count: 1
       - name: nic10
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-3'"
           count: 1
       - name: nic11
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-4'"
           count: 1
       - name: nic12
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-5'"
           count: 1
       - name: nic13
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-6'"
           count: 1
       - name: nic14
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-7'"
           count: 1
       - name: nic15
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-8'"

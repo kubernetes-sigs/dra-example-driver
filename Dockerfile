@@ -20,23 +20,16 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_LDFLAGS_ALLOW='-Wl,--unresolved-symbols=ignore-in-object-files' \
-    CGO_ENABLED=0 GOOS=linux \
-    go build -ldflags "-s -w" -o /bin/kube-ovn-dra-kubeletplugin \
-    github.com/soer3n/kube-ovn-dra-driver/cmd/kube-ovn-dra-kubeletplugin
+RUN CGO_ENABLED=0 GOOS=linux \
+    go build -ldflags "-s -w" -o /bin/ \
+    ./cmd/kube-ovn-dra-kubeletplugin ./cmd/kube-ovn-dra-webhook
 
-# NIC variant: includes ovs-vsctl so the Multus-free attach datapath can manage
-# OVS ports. Build with `--target nic`. ovs-vsctl is a client that talks to the
-# host ovsdb socket (mounted by the chart when kubeletPlugin.nicAttach.enabled).
-FROM debian:stable-slim AS nic
+# ovs-vsctl talks to the host ovsdb socket the chart mounts, so the kubelet
+# plugin can attach NICs to br-int; iproute2 provides the bridge command used
+# for the KubeVirt tap wiring.
+FROM debian:stable-slim
 RUN apt-get update \
     && apt-get install -y --no-install-recommends openvswitch-switch iproute2 \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=builder /bin/kube-ovn-dra-kubeletplugin /usr/local/bin/kube-ovn-dra-kubeletplugin
-ENTRYPOINT ["/usr/local/bin/kube-ovn-dra-kubeletplugin"]
-
-# Default (IPAM-only mode, no host OVS needed): minimal distroless image. Kept
-# last so a plain `docker build` with no --target produces this.
-FROM gcr.io/distroless/static:nonroot
-COPY --from=builder /bin/kube-ovn-dra-kubeletplugin /usr/local/bin/kube-ovn-dra-kubeletplugin
+COPY --from=builder /bin/kube-ovn-dra-kubeletplugin /bin/kube-ovn-dra-webhook /usr/local/bin/
 ENTRYPOINT ["/usr/local/bin/kube-ovn-dra-kubeletplugin"]

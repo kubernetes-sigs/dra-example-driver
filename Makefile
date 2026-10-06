@@ -98,6 +98,14 @@ COVERAGE_FILE := coverage.out
 test: build cmds
 	go test -v -coverprofile=$(COVERAGE_FILE) $(MODULE)/...
 
+# The datapath tests in pkg/plumbing create network namespaces and need root;
+# they skip otherwise.
+.PHONY: test-privileged
+test-privileged:
+	go test -c -o $(CURDIR)/plumbing.test ./pkg/plumbing
+	sudo $(CURDIR)/plumbing.test -test.v
+	rm -f $(CURDIR)/plumbing.test
+
 coverage: test
 	cat $(COVERAGE_FILE) | grep -v "_mock.go" > $(COVERAGE_FILE).no-mocks
 	go tool cover -func=$(COVERAGE_FILE).no-mocks
@@ -128,12 +136,17 @@ NIC_DEMO_DIR      ?= $(CURDIR)/demo/nic-example
 # different release, e.g. KIND_NODE_IMAGE=kindest/node:v1.34.3.
 KIND_NODE_IMAGE   ?= kindest/node:v1.35.0
 
-# kube-ovn version – keep in sync with go.mod indirect dependencies.
-KUBE_OVN_VERSION  ?= v1.15.9
+# kube-ovn ref to deploy the chart from. DRA NICs need kube-ovn-controller with
+# --enable-dra-nic, which is not in a kube-ovn release yet; the default is the
+# branch of the upstream pull request. A bare release tag also does not resolve
+# against a typical local clone (tags aren't fetched by default) and silently
+# falls through to curl'ing the release tarball below.
+KUBE_OVN_VERSION  ?= dra-nic-upstream
 # Local kube-ovn clone used to source the Helm chart offline (avoids fetching
 # the whole source tarball from GitHub). The chart is read from the
-# $(KUBE_OVN_VERSION) git tag; if the clone/tag is absent, the deploy falls back
-# to curl'ing the GitHub release tarball.
+# $(KUBE_OVN_VERSION) git ref; if the clone/ref is absent, the deploy falls back
+# to curl'ing the GitHub release tarball (this fallback only makes sense for an
+# actual upstream release tag, not the branch above — see KUBE_OVN_REPO).
 KUBE_OVN_REPO     ?= $(CURDIR)/../kube-ovn
 # Multus version (thick CNI daemonset).
 MULTUS_VERSION    ?= v4.2.3
@@ -141,12 +154,11 @@ MULTUS_VERSION    ?= v4.2.3
 # Images preloaded into the kind cluster so the demo never has to pull them at
 # runtime (mirrors the edge-router e2e image preload in kubermatic-virtualization).
 #
-# The demo deploys a kube-ovn image carrying the DRA controller changes (the
-# "dra.kubeovn.io/managed-by" reserved-IP LSP path + GC sparing), not the upstream
-# release — otherwise the DRA logic is absent. By default it pulls the published
-# image docker.io/soer3n/kube-ovn:dra-driver-<version> (tag tied to the kube-ovn
-# base it was built on). To use a local build instead, override the vars, e.g.
-#   cd ../kube-ovn && make local-dev        # builds kubeovn/kube-ovn:<VERSION>
+# The demo deploys a kube-ovn image built from $(KUBE_OVN_VERSION), not the
+# upstream release, which lacks --enable-dra-nic. By default it pulls
+# docker.io/soer3n/kube-ovn:dra-driver-<version>. To use a local build instead,
+# override the vars, e.g.
+#   cd ../kube-ovn && make build-go && docker build -t docker.io/kubeovn/kube-ovn:dev -f dist/images/Dockerfile dist/images/
 #   make ... KUBE_OVN_REGISTRY=docker.io/kubeovn KUBE_OVN_IMAGE_TAG=dev
 # netshoot is pinned by digest.
 KUBE_OVN_REGISTRY   ?= docker.io/soer3n
@@ -177,6 +189,11 @@ BENCH_COUNT        ?= 8
 BENCH_COUNTS       ?= 2 4 8
 BENCH_DIR          ?= $(CURDIR)/.bench
 BENCH_TIMEOUT      ?= 300s
+BENCH_REPS         ?= 1
+# NICs the Multus hot-plug benchmark arm starts with before hot-plugging the
+# rest via multus-dynamic-networks-controller (not deployed by kind-demo; see
+# https://github.com/k8snetworkplumbingwg/multus-dynamic-networks-controller).
+HOTPLUG_BASE       ?= 2
 PLUGIN_DS_SELECTOR ?= app.kubernetes.io/instance=kube-ovn-nic-dra
 
 CONTAINERLAB_TOPOLOGY ?= $(CURDIR)/demo/containerlab/vlan-topology.yaml
@@ -185,7 +202,7 @@ CONTAINERLAB_TOPOLOGY ?= $(CURDIR)/demo/containerlab/vlan-topology.yaml
         kind-kube-ovn-status kind-test-kube-ovn kind-test-kube-ovn-clean \
         kind-build-driver kind-deploy-driver kind-deploy-nic-prereqs kind-deploy-nic-example \
         kind-demo nic-example-deploy nic-example-clean kind-check-deps \
-        kind-deploy-podnetwork-crd kind-deploy-kube-ovn-fixtures \
+        kind-deploy-kube-ovn-fixtures kind-vlan-tag-workaround \
         kind-test-vlan kind-deploy-vlan-peer \
         clab-deploy clab-destroy clab-clean-ports kind-frr-update-peers kind-frr-status \
         kind-vlan-nat
@@ -210,8 +227,11 @@ clab-deploy: clab-clean-ports
 	$(MAKE) kind-frr-update-peers
 	@echo "Deploying containerlab VLAN topology + FRR gateway (requires sudo)..."
 	sudo containerlab deploy -t $(CONTAINERLAB_TOPOLOGY) --reconfigure
-	@echo "Allowing demo VLANs (100-800) on bridge ports..."
-	for vid in 100 200 300 400 500 600 700 800; do \
+	@echo "Allowing demo VLANs (100-800) and benchmark VLANs (1101-1108) on bridge ports..."
+	# 1101-1108 = demo/nic-example/examples/generate.py's BENCH_VLAN_BASE(1100) + 1..MAX_VLANS(8);
+	# without these, a bench underlay pod's interface never comes up (not just "no traffic" as
+	# docs/benchmarking.md's caveat implies) since kube-ovn can never bind an untagged VLAN.
+	for vid in 100 200 300 400 500 600 700 800 1101 1102 1103 1104 1105 1106 1107 1108; do \
 		for p in port1 port2 port3; do \
 			sudo bridge vlan add vid $$vid dev $$p; \
 		done; \
@@ -363,6 +383,7 @@ kind-deploy-kube-ovn: kind-preload-images
 		--set ipv4.POD_GATEWAY=10.244.0.1 \
 		--set ipv4.SVC_CIDR=10.96.0.0/12 \
 		--set ipv4.JOIN_CIDR=100.64.0.0/16 \
+		--set func.ENABLE_DRA_NIC=true \
 		--timeout=300s --wait; \
 	rm -rf $$CHART_TMP
 	@echo "Waiting for nodes to become Ready (CNI is now up)..."
@@ -408,13 +429,17 @@ kind-deploy-multus:
 kind-build-driver:
 	$(CONTAINER_TOOL) build \
 		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-		--target nic \
 		-t $(NIC_DRIVER_NAME):dev \
 		-f $(CURDIR)/Dockerfile \
 		$(CURDIR)
 	kind load docker-image $(NIC_DRIVER_NAME):dev --name $(KIND_CLUSTER_NAME)
 
 ## kind-deploy-driver: install the NIC DRA kubelet-plugin via Helm.
+## Tolerates the control-plane's NoSchedule taint so the demo's 2-node kind
+## cluster gets a ResourceSlice on BOTH nodes — needed for fixtures that pin
+## pods to the control-plane (07-vlan-peer-pod.yaml, 08-ovn-peer-pod.yaml),
+## which otherwise stay Pending ("cannot allocate all claims": no device
+## published for that node).
 kind-deploy-driver:
 	$(HELM) upgrade --install kube-ovn-nic-dra \
 		$(CURDIR)/deployments/helm/kube-ovn-dra-driver \
@@ -424,15 +449,8 @@ kind-deploy-driver:
 		--set image.repository=$(NIC_DRIVER_NAME) \
 		--set image.tag=dev \
 		--set image.pullPolicy=Never \
-		--set kubeletPlugin.nicAttach.enabled=true \
+		--set-json 'kubeletPlugin.tolerations=[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]' \
 		--wait
-
-## kind-deploy-podnetwork-crd: install the local PodNetwork CRD (multi-network-api stand-in).
-kind-deploy-podnetwork-crd:
-	@echo "Installing PodNetwork CRD (experimental multi-network-api stand-in)..."
-	kubectl apply -f $(NIC_DEMO_DIR)/crds/podnetwork-crd.yaml
-	@echo "Waiting for CRD to be established..."
-	kubectl wait --for=condition=Established crd/podnetworks.multinetwork.networking.k8s.io --timeout=30s
 
 ## kind-deploy-kube-ovn-fixtures: apply the kube-ovn underlay fixtures
 ## (ProviderNetwork, VLANs and the VLAN/overlay Subnets) and wait for reconcile.
@@ -441,24 +459,35 @@ kind-deploy-kube-ovn-fixtures:
 	kubectl apply -f $(NIC_DEMO_DIR)/00-kube-ovn-subnets.yaml
 	@echo "Waiting 10s for subnet controllers to reconcile..."
 	sleep 10
+	@$(MAKE) --no-print-directory kind-vlan-tag-workaround
 
-## kind-deploy-nic-prereqs: apply the subnets, PodNetwork CRD and DeviceClass the
-## driver and any NIC claim depend on — but NOT a specific ResourceClaim/pod.
+## kind-vlan-tag-workaround: set tag_request on the localnet port of every VLAN
+## subnet. OVN 26.03's northd derives Logical_Switch_Port.tag from tag_request,
+## and kube-ovn only writes tag, so VLAN subnets lose their 802.1q tag.
+kind-vlan-tag-workaround:
+	@set -e; \
+	ip=$$(kubectl -n kube-system get pod -l app=ovn-central -o jsonpath='{.items[0].status.podIP}'); \
+	for pair in $$(kubectl get subnets -o jsonpath='{range .items[?(@.spec.vlan)]}{.metadata.name}={.spec.vlan}{"\n"}{end}'); do \
+		subnet=$${pair%%=*}; id=$$(kubectl get vlan $${pair#*=} -o jsonpath='{.spec.id}'); \
+		for i in $$(seq 30); do \
+			kubectl -n kube-system exec deploy/ovn-central -c ovn-central -- \
+				ovn-nbctl --db=tcp:$$ip:6641 set logical_switch_port localnet.$$subnet tag_request=$$id 2>/dev/null && break; \
+			sleep 2; \
+		done; \
+		echo "  localnet.$$subnet tag_request=$$id"; \
+	done
+
+## kind-deploy-nic-prereqs: apply the subnets the driver and any NIC claim
+## depend on — but NOT a specific ResourceClaim/pod. The
+## DeviceClass itself (nic.kubeovn.io) is Helm-managed by kind-deploy-driver,
+## not applied here.
 ## Deploy this BEFORE the driver: the plugin enumerates kube-ovn Subnets once at
 ## startup (no watch), so the subnets must exist before it starts or the
 ## ResourceSlice comes up empty.
 kind-deploy-nic-prereqs: kind-deploy-kube-ovn-fixtures
-	@echo "Applying DeviceClass..."
-	kubectl apply -f $(NIC_DEMO_DIR)/01-device-class.yaml
-	@# The PodNetwork CRD is the experimental multi-network-api stand-in (the
-	@# 06-podnetwork.yaml object is commented out); it is NOT needed by the DRA
-	@# IPAM/attach path, so it is intentionally not a hard prerequisite. Apply it
-	@# explicitly with `make kind-deploy-podnetwork-crd` if you want it.
 
 ## kind-deploy-nic-example: prerequisites + the demo ResourceClaim and pod.
 kind-deploy-nic-example: kind-deploy-nic-prereqs
-	@echo "Applying PodNetwork object (multi-network-api mode)..."
-# 	kubectl apply -f $(NIC_DEMO_DIR)/06-podnetwork.yaml
 	@echo "Applying ResourceClaim..."
 	kubectl apply -f $(NIC_DEMO_DIR)/02-resource-claim.yaml
 	@echo "Launching demo pod..."
@@ -471,8 +500,6 @@ kind-deploy-nic-example: kind-deploy-nic-prereqs
 ## equal VLAN/overlay split) and time pod creation -> Ready. COUNT defaults to 4.
 COUNT ?= 4
 nic-example-deploy: kind-deploy-kube-ovn-fixtures
-	@echo "Applying DeviceClass..."
-	kubectl apply -f $(NIC_DEMO_DIR)/01-device-class.yaml
 	@echo "Refreshing driver so newly-added subnets appear in the ResourceSlice..."
 	@echo "  (the driver enumerates subnets at startup only; restart picks up new ones)"
 	-kubectl rollout restart daemonset -n kube-system -l app.kubernetes.io/instance=kube-ovn-nic-dra
@@ -489,7 +516,7 @@ nic-example-deploy: kind-deploy-kube-ovn-fixtures
 nic-example-clean:
 	kubectl delete -f $(NIC_DEMO_DIR)/examples/$(COUNT)nic.yaml --ignore-not-found
 
-.PHONY: nic-bench nic-bench-sweep
+.PHONY: nic-bench nic-bench-sweep nic-bench-clean
 ## nic-bench: compare DRA vs Multus secondary-NIC spin-up for BENCH_COUNT NICs.
 ## BENCH_MODE=overlay|underlay|mixed. overlay reuses the demo overlay subnets;
 ## underlay/mixed create benchmark subnets (need `make clab-deploy` for eth1) and
@@ -498,9 +525,13 @@ nic-example-clean:
 nic-bench:
 	@command -v python3 >/dev/null || { echo "python3 is required"; exit 1; }
 	@set -e; OUT=$(BENCH_DIR); \
-	python3 $(NIC_DEMO_DIR)/examples/generate.py bench --mode $(BENCH_MODE) --count $(BENCH_COUNT) --out $$OUT; \
+	HOTPLUG_BASE=$(HOTPLUG_BASE) python3 $(NIC_DEMO_DIR)/examples/generate.py bench --mode $(BENCH_MODE) --count $(BENCH_COUNT) --out $$OUT; \
 	if [ -f $$OUT/subnets.yaml ]; then \
 	  echo "==> applying benchmark subnets ($(BENCH_MODE)) and restarting the plugin"; \
+	  echo "    (left in place afterward, not deleted here — nic-bench-sweep reuses"; \
+	  echo "     overlapping VLAN/subnet IDs across counts, and deleting-then-immediately-"; \
+	  echo "     recreating them from the next count races kube-ovn's async CR deletion;"; \
+	  echo "     run 'make nic-bench-clean' when done benchmarking)"; \
 	  kubectl apply -f $$OUT/subnets.yaml; sleep 10; \
 	  kubectl rollout restart daemonset -n kube-system -l $(PLUGIN_DS_SELECTOR); \
 	  kubectl rollout status  daemonset -n kube-system -l $(PLUGIN_DS_SELECTOR) --timeout=120s; \
@@ -513,18 +544,61 @@ nic-bench:
 	  e=$$(date +%s); echo $$((e-s)); \
 	  kubectl delete -f $$file --ignore-not-found --wait=true >/dev/null 2>&1 || true; \
 	}; \
-	echo "==> timing DRA ($(BENCH_COUNT) NICs, $(BENCH_MODE))"; dra=$$(measure bench-dra $$OUT/dra.yaml); \
-	echo "==> timing Multus ($(BENCH_COUNT) NICs, $(BENCH_MODE))"; mu=$$(measure bench-multus $$OUT/multus.yaml); \
-	if [ -f $$OUT/subnets.yaml ]; then kubectl delete -f $$OUT/subnets.yaml --ignore-not-found >/dev/null 2>&1 || true; fi; \
-	printf "\n=== secondary-NIC spin-up: %s NICs (%s) ===\n" "$(BENCH_COUNT)" "$(BENCH_MODE)"; \
-	printf "  DRA    : %ss  (create -> Ready)\n" "$$dra"; \
-	printf "  Multus : %ss  (create -> Ready)\n" "$$mu"
+	median() { \
+	  printf '%s\n' "$$@" | sort -n | awk '{a[NR]=$$1} END{n=NR; if(n%2==1) printf "%d", a[(n+1)/2]; else printf "%.1f", (a[n/2]+a[n/2+1])/2}'; \
+	}; \
+	dra_vals=""; mu_vals=""; hp_base_vals=""; hp_hot_vals=""; \
+	for rep in $$(seq 1 $(BENCH_REPS)); do \
+	  echo "==> [$$rep/$(BENCH_REPS)] timing DRA ($(BENCH_COUNT) NICs, $(BENCH_MODE))"; \
+	  d=$$(measure bench-dra $$OUT/dra.yaml); dra_vals="$$dra_vals $$d"; \
+	  echo "==> [$$rep/$(BENCH_REPS)] timing Multus ($(BENCH_COUNT) NICs, $(BENCH_MODE))"; \
+	  m=$$(measure bench-multus $$OUT/multus.yaml); mu_vals="$$mu_vals $$m"; \
+	  if [ -f $$OUT/multus-hotplug.yaml ]; then \
+	    echo "==> [$$rep/$(BENCH_REPS)] timing Multus+hotplug ($(HOTPLUG_BASE)->$(BENCH_COUNT) NICs, $(BENCH_MODE))"; \
+	    kubectl delete -f $$OUT/multus-hotplug.yaml --ignore-not-found --wait=true >/dev/null 2>&1 || true; \
+	    s=$$(date +%s); kubectl apply -f $$OUT/multus-hotplug.yaml >/dev/null; \
+	    kubectl wait --for=condition=Ready pod/bench-multus-hotplug --timeout=$(BENCH_TIMEOUT) >/dev/null; \
+	    e=$$(date +%s); hb=$$((e-s)); hp_base_vals="$$hp_base_vals $$hb"; \
+	    full=$$(cat $$OUT/multus-hotplug-full-networks.txt); \
+	    s=$$(date +%s); \
+	    kubectl annotate pod bench-multus-hotplug k8s.v1.cni.cncf.io/networks="$$full" --overwrite >/dev/null; \
+	    until [ "$$(kubectl exec bench-multus-hotplug -- sh -c 'ip -o link show 2>/dev/null | grep -c "^[0-9]*: net"' 2>/dev/null || echo 0)" -ge "$(BENCH_COUNT)" ]; do \
+	      sleep 1; \
+	      now=$$(date +%s); \
+	      if [ $$((now-s)) -gt $(patsubst %s,%,$(BENCH_TIMEOUT)) ]; then echo "hot-plug timed out waiting for $(BENCH_COUNT) interfaces" >&2; break; fi; \
+	    done; \
+	    e=$$(date +%s); hh=$$((e-s)); hp_hot_vals="$$hp_hot_vals $$hh"; \
+	    kubectl delete -f $$OUT/multus-hotplug.yaml --ignore-not-found --wait=true >/dev/null 2>&1 || true; \
+	  fi; \
+	done; \
+	printf "\n=== secondary-NIC spin-up: %s NICs (%s), median of %s run(s) ===\n" "$(BENCH_COUNT)" "$(BENCH_MODE)" "$(BENCH_REPS)"; \
+	printf "  DRA              : %ss  (raw:%s)\n" "$$(median $$dra_vals)" "$$dra_vals"; \
+	printf "  Multus (static)  : %ss  (raw:%s)\n" "$$(median $$mu_vals)" "$$mu_vals"; \
+	if [ -n "$$hp_hot_vals" ]; then \
+	  printf "  Multus+hotplug   : %ss create->Ready(%s NICs) + %ss hot-plug(->%s NICs)  (raw base:%s hot:%s)\n" \
+	    "$$(median $$hp_base_vals)" "$(HOTPLUG_BASE)" "$$(median $$hp_hot_vals)" "$(BENCH_COUNT)" "$$hp_base_vals" "$$hp_hot_vals"; \
+	fi
 
 ## nic-bench-sweep: run nic-bench across BENCH_COUNTS (e.g. BENCH_COUNTS=\"2 4 8 16\").
 nic-bench-sweep:
 	@for c in $(BENCH_COUNTS); do \
 		$(MAKE) --no-print-directory nic-bench BENCH_COUNT=$$c BENCH_MODE=$(BENCH_MODE); \
 	done
+
+## nic-bench-clean: delete benchmark subnets/vlans/pods left behind by nic-bench
+## (underlay/mixed modes don't auto-delete between runs — see nic-bench comment).
+## Deletes Subnets first and waits for them to actually terminate before deleting
+## their Vlans: kube-ovn-controller's subnet-deletion finalizer needs the Vlan to
+## still exist to finish cleanup, so deleting both at once (e.g. a single
+## `kubectl delete -f subnets.yaml`) can permanently deadlock the Subnet in
+## Terminating (needs a manual `kubectl patch ... finalizers:[]` to recover).
+nic-bench-clean:
+	kubectl delete pod bench-dra bench-multus bench-multus-hotplug --ignore-not-found
+	kubectl delete resourceclaim bench-dra bench-multus bench-multus-hotplug --ignore-not-found
+	@if [ -f $(BENCH_DIR)/subnets.yaml ]; then \
+	  kubectl delete subnet -l bench=nic-dra --ignore-not-found --wait=true --timeout=60s; \
+	  kubectl delete vlan -l bench=nic-dra --ignore-not-found; \
+	fi
 
 ## kind-deploy-vlan-peer: deploy per-VLAN peer pods on the control-plane node.
 kind-deploy-vlan-peer: kind-deploy-kube-ovn-fixtures

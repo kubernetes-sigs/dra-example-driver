@@ -1,9 +1,6 @@
-# Initial ResourceClaim — the pod starts with ONE underlay + ONE overlay NIC:
+# ResourceClaim for the demo pod (03-pod.yaml): ONE underlay + ONE overlay NIC:
 #   nic0 -> vlan100-subnet (VLAN 100 underlay, 172.23.0.0/24)  -> net1
 #   nic1 -> ovn-subnet     (OVN overlay,        10.200.0.0/24) -> net2
-#
-# The hotplug demo (04/05) then adds a SECOND underlay (vlan200) and a SECOND
-# overlay (ovn-subnet-2) to the already-running pod.
 ---
 apiVersion: resource.k8s.io/v1
 kind: ResourceClaim
@@ -15,14 +12,14 @@ spec:
     requests:
       - name: nic0
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan100-subnet'"
           count: 1
       - name: nic1
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet'"

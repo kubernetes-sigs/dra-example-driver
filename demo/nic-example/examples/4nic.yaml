@@ -13,28 +13,28 @@ spec:
     requests:
       - name: nic0
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan100-subnet'"
           count: 1
       - name: nic1
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan200-subnet'"
           count: 1
       - name: nic2
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet'"
           count: 1
       - name: nic3
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet-2'"

@@ -55,6 +55,23 @@ topology:
         - ip link add link eth1 name eth1.600 type vlan id 600
         - ip link add link eth1 name eth1.700 type vlan id 700
         - ip link add link eth1 name eth1.800 type vlan id 800
+        # Benchmark VLAN sub-interfaces (1101-1108 -> 10.<210+i>.0.1/24 gateway),
+        # matching bench_underlay()'s BENCH_VLAN_BASE(1100)+i in
+        # demo/nic-example/examples/generate.py. Without these, kube-ovn's
+        # gateway-reachability check for a bench underlay NIC never succeeds
+        # (ARP for the gateway IP times out — the interface never comes up,
+        # not just "no north-south traffic" as docs/benchmarking.md's old
+        # caveat implied). Also needs the bridge VLAN allowlist in the
+        # Makefile's clab-deploy target (1101-1108 alongside the demo's
+        # 100-800).
+        - ip link add link eth1 name eth1.1101 type vlan id 1101
+        - ip link add link eth1 name eth1.1102 type vlan id 1102
+        - ip link add link eth1 name eth1.1103 type vlan id 1103
+        - ip link add link eth1 name eth1.1104 type vlan id 1104
+        - ip link add link eth1 name eth1.1105 type vlan id 1105
+        - ip link add link eth1 name eth1.1106 type vlan id 1106
+        - ip link add link eth1 name eth1.1107 type vlan id 1107
+        - ip link add link eth1 name eth1.1108 type vlan id 1108
         - ip addr add 172.23.0.253/24 dev eth1.100
         - ip addr add 172.24.0.253/24 dev eth1.200
         - ip addr add 172.25.0.253/24 dev eth1.300
@@ -63,6 +80,14 @@ topology:
         - ip addr add 172.28.0.253/24 dev eth1.600
         - ip addr add 172.29.0.253/24 dev eth1.700
         - ip addr add 172.30.0.253/24 dev eth1.800
+        - ip addr add 10.211.0.1/24 dev eth1.1101
+        - ip addr add 10.212.0.1/24 dev eth1.1102
+        - ip addr add 10.213.0.1/24 dev eth1.1103
+        - ip addr add 10.214.0.1/24 dev eth1.1104
+        - ip addr add 10.215.0.1/24 dev eth1.1105
+        - ip addr add 10.216.0.1/24 dev eth1.1106
+        - ip addr add 10.217.0.1/24 dev eth1.1107
+        - ip addr add 10.218.0.1/24 dev eth1.1108
         - ip link set eth1.100 up
         - ip link set eth1.200 up
         - ip link set eth1.300 up
@@ -71,6 +96,14 @@ topology:
         - ip link set eth1.600 up
         - ip link set eth1.700 up
         - ip link set eth1.800 up
+        - ip link set eth1.1101 up
+        - ip link set eth1.1102 up
+        - ip link set eth1.1103 up
+        - ip link set eth1.1104 up
+        - ip link set eth1.1105 up
+        - ip link set eth1.1106 up
+        - ip link set eth1.1107 up
+        - ip link set eth1.1108 up
         - /usr/lib/frr/frrinit.sh start
 
     # kind control-plane

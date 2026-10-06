@@ -38,11 +38,13 @@ kubeletPlugin:
   priorityClassName: "system-node-critical"
   updateStrategy:
     type: RollingUpdate
-    # for seamless rolling updates, maxSurge can be greater than 0.
-    # See: https://pkg.go.dev/k8s.io/dynamic-resource-allocation/kubeletplugin#RollingUpdate
+    # The kubeletplugin runs with hostNetwork and a fixed healthcheck port
+    # (51515), so it cannot surge: a new pod started before the old one is
+    # killed can never bind that port and crash-loops forever, hanging the
+    # rollout. maxUnavailable must do the work instead.
     rollingUpdate:
-      maxSurge: 1
-      maxUnavailable: 0
+      maxSurge: 0
+      maxUnavailable: 1
   podAnnotations: {}
   podSecurityContext: {}
   nodeSelector: {}
@@ -50,15 +52,11 @@ kubeletPlugin:
   affinity: {}
   kubeletRegistrarDirectoryPath: /var/lib/kubelet/plugins_registry
   kubeletPluginsDirectoryPath: /var/lib/kubelet/plugins
-  # nicAttach enables the Multus-free NIC attach datapath (NRI hook + OVS).
-  # When enabled the plugin pod runs privileged with host network/PID and mounts
-  # the host OVS run dir so it can create veth pairs, enter pod netns, and run
-  # ovs-vsctl. Enables the Multus-free attach path; leave disabled to run in
-  # IPAM-only mode alongside Multus.
-  # NOTE: requires a runtime image that ships ovs-vsctl (the default
-  # distroless/static image does not).
+  # nicAttach configures the NIC attach datapath (NRI hook + OVS). The plugin
+  # pod runs privileged with host network/PID and mounts the host OVS run dir,
+  # so it can create veth pairs, enter pod netns and run ovs-vsctl. The image
+  # must ship ovs-vsctl (the Dockerfile's default stage does).
   nicAttach:
-    enabled: false
     ovsRunDir: /var/run/openvswitch
     # Host directory holding pod network namespaces (CNI bind-mounts them here as
     # cni-<id>). Mounted with HostToContainer propagation so the NRI hook can
@@ -69,8 +67,6 @@ kubeletPlugin:
       securityContext: {}
       resources: {}
     plugin:
-      securityContext:
-        runAsUser: 0
       resources: {}
       # Port running a gRPC health service checked by a livenessProbe.
       # Set to a negative value to disable the service and the probe.

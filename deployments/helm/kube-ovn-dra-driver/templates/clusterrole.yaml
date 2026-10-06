@@ -22,12 +22,7 @@ rules:
   verbs: ["get", "list", "watch"]
 # A VLAN underlay subnet references a Vlan CR (spec.vlan), which in turn names a
 # ProviderNetwork (spec.provider). The NIC profile resolves this chain at device
-# enumeration time to determine the underlay bridge (br-<providerNetwork>).
+# enumeration time to publish the VLAN id and ProviderNetwork as attributes.
 - apiGroups: ["kubeovn.io"]
   resources: ["vlans", "provider-networks"]
   verbs: ["get", "list", "watch"]
-# The NIC driver reserves a kube-ovn IP object per attached interface during
-# NodePrepareResources (IPAM), and releases it on unprepare.
-- apiGroups: ["kubeovn.io"]
-  resources: ["ips"]
-  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]

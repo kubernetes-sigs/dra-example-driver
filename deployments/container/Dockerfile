@@ -24,6 +24,12 @@ RUN make PREFIX=/artifacts cmds
 
 FROM ${BASE_IMAGE}
 
+# ovs-vsctl attaches NICs to br-int through the host ovsdb socket; iproute2
+# provides the bridge command used for the KubeVirt tap wiring.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openvswitch-switch iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
 LABEL io.k8s.display-name="kube-ovn NIC DRA Driver"
 LABEL name="kube-ovn NIC DRA Driver"
 LABEL vendor="kube-ovn.io"

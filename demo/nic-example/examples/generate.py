@@ -27,7 +27,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 NIC_DIR = os.path.dirname(HERE)
 
 MAX_PAIRS = int(os.environ.get("MAX_VLANS", "8"))  # 8 underlay + 8 overlay available
+# Peer counts for the shared-subnet fixtures (07/08) — independent of
+# MAX_PAIRS (that governs distinct subnet-pair availability for the scaling
+# examples; these fixtures use exactly ONE shared subnet regardless of count).
+OVERLAY_PEER_COUNT = int(os.environ.get("OVERLAY_PEER_COUNT", "4"))
+VLAN_PEER_COUNT = int(os.environ.get("VLAN_PEER_COUNT", "4"))
 COUNTS = [int(c) for c in os.environ.get("COUNTS", "2,4,8,16").split(",")]
+# NICs the Multus hot-plug benchmark pod starts with before hot-plugging the rest,
+# via the public k8snetworkplumbingwg/multus-dynamic-networks-controller.
+HOTPLUG_BASE = int(os.environ.get("HOTPLUG_BASE", "2"))
 
 CONFIG_API = "nic.resource.kube-ovn.io/v1alpha1"
 NETSHOOT = "nicolaka/netshoot@sha256:47b907d662d139d1e2f22bfe14f4efca1e3f1feed283572f47c970c780c03b61"
@@ -150,7 +158,7 @@ def write_example(count):
         reqs += [
             f"      - name: nic{n}",
             "        exactly:",
-            "          deviceClassName: kube-ovn-nic",
+            "          deviceClassName: nic.kubeovn.io",
             "          selectors:",
             "            - cel:",
             f"                expression: \"device.attributes['nic.kubeovn.io'].subnetName == '{subnet}'\"",
@@ -211,28 +219,54 @@ def write_example(count):
     print("wrote", path, f"({u} underlay + {o} overlay)")
 
 
-def _peer_claim_pod(name, entries, control_plane):
-    """Emit a ResourceClaim + netshoot Pod with the given (ifname, subnet) NICs."""
+def _nic_claim_template(template_name, entries):
+    """Emit a ResourceClaimTemplate with the given (ifname, subnet) NICs —
+    shared across every pod that references template_name, the same way the
+    VMI examples share one ResourceClaimTemplate (e.g.
+    00-resourceclaimtemplate.yaml's kubeovn0-claim-template) across multiple
+    VMI instances, instead of each pod getting its own dedicated
+    ResourceClaim. kubelet stamps out a fresh, pod-scoped ResourceClaim from
+    the template per consuming pod, so this is safe even when every peer
+    pod requests the identical (subnet, interfaceName) — which is exactly
+    the shared-subnet fixtures' case (07/08)."""
     reqs, cfgs = [], []
     for n, (ifname, subnet) in enumerate(entries):
         reqs += [
-            f"      - name: net{n}",
-            "        exactly:",
-            "          deviceClassName: kube-ovn-nic",
-            "          selectors:",
-            "            - cel:",
-            f"                expression: \"device.attributes['nic.kubeovn.io'].subnetName == '{subnet}'\"",
-            "          count: 1",
+            f"        - name: net{n}",
+            "          exactly:",
+            "            deviceClassName: nic.kubeovn.io",
+            "            selectors:",
+            "              - cel:",
+            f"                  expression: \"device.attributes['nic.kubeovn.io'].subnetName == '{subnet}'\"",
+            "            count: 1",
         ]
         cfgs += [
-            f"      - requests: [\"net{n}\"]",
-            "        opaque:",
-            "          driver: nic.kubeovn.io",
-            "          parameters:",
-            f"            apiVersion: {CONFIG_API}",
-            "            kind: NicConfig",
-            f"            interfaceName: {ifname}",
+            f"        - requests: [\"net{n}\"]",
+            "          opaque:",
+            "            driver: nic.kubeovn.io",
+            "            parameters:",
+            f"              apiVersion: {CONFIG_API}",
+            "              kind: NicConfig",
+            f"              interfaceName: {ifname}",
         ]
+    return [
+        "apiVersion: resource.k8s.io/v1",
+        "kind: ResourceClaimTemplate",
+        "metadata:",
+        f"  name: {template_name}",
+        "  namespace: default",
+        "spec:",
+        "  spec:",
+        "    devices:",
+        "      requests:",
+        *reqs,
+        "      config:",
+        *cfgs,
+    ]
+
+
+def _peer_pod(name, template_name, control_plane, label="vlan-peer-test"):
+    """Emit a netshoot Pod consuming the shared template_name."""
     pod = [
         "apiVersion: v1",
         "kind: Pod",
@@ -240,7 +274,7 @@ def _peer_claim_pod(name, entries, control_plane):
         f"  name: {name}",
         "  namespace: default",
         "  labels:",
-        "    app: vlan-peer-test",
+        f"    app: {label}",
         "spec:",
     ]
     if control_plane:
@@ -258,7 +292,7 @@ def _peer_claim_pod(name, entries, control_plane):
     pod += [
         "  resourceClaims:",
         "    - name: nics",
-        f"      resourceClaimName: {name}-nic",
+        f"      resourceClaimTemplateName: {template_name}",
         "  containers:",
         "    - name: peer",
         f"      image: {NETSHOOT}",
@@ -270,44 +304,87 @@ def _peer_claim_pod(name, entries, control_plane):
         "        capabilities:",
         "          add: [\"NET_ADMIN\"]",
     ]
-    return [
-        "apiVersion: resource.k8s.io/v1",
-        "kind: ResourceClaim",
-        "metadata:",
-        f"  name: {name}-nic",
-        "  namespace: default",
-        "spec:",
-        "  devices:",
-        "    requests:",
-        *reqs,
-        "    config:",
-        *cfgs,
-        "---",
-        *pod,
-    ]
+    return pod
 
 
 def write_vlan_peers():
-    """07-vlan-peer-pod.yaml: one peer per VLAN on the control-plane + one
-    worker-side pod with all VLANs, for the cross-node tagged-traffic test."""
+    """07-vlan-peer-pod.yaml: several peers all sharing ONE VLAN underlay
+    subnet (vlan100-subnet), split across control-plane and worker — mirrors
+    write_overlay_peers() for the underlay case. A VLAN-backed Subnet is ALSO
+    a shared IP pool (confirmed live: two separate VMIs on vlan100-subnet
+    each got their own address), so this proves the same
+    AllowMultipleAllocations property as the overlay fixture, just crossing
+    the physical eth1 trunk (802.1q tag 100) instead of OVN's geneve
+    encapsulation between chassis."""
+    u = underlay(1)  # vlan100-subnet
+    template = "vlan-peer-nic-template"
     out = [
-        f"# Per-VLAN connectivity test fixture ({MAX_PAIRS} VLANs).",
+        f"# Shared-subnet connectivity test fixture: {VLAN_PEER_COUNT} peers, ALL",
+        f"# allocating from the SAME VLAN underlay subnet ({u['subnet']}), not one",
+        "# subnet each. Demonstrates the same shared IP pool /",
+        "# AllowMultipleAllocations property as 08-ovn-peer-pod.yaml, but",
+        "# crossing the physical eth1 trunk (802.1q tag 100) instead of OVN's",
+        "# geneve encapsulation.",
+        "#",
+        f"# ONE ResourceClaimTemplate ({template}) shared by every peer pod —",
+        "# same pattern as the VMI examples (e.g. 00-resourceclaimtemplate.yaml),",
+        "# not a dedicated ResourceClaim per pod: every peer requests the",
+        "# identical (subnet, interfaceName), so kubelet stamping out a fresh",
+        "# claim per pod from one template is both correct and less to manage.",
         "# GENERATED by examples/generate.py.",
-        "#   vlan<N>-peer  (control-plane)  net1 on vlan<N>-subnet",
-        "#   vlan-worker   (worker)         net1..netK across all VLAN subnets",
-        "# Cross-node traffic crosses eth1 through the vlan-switch with 802.1q tags.",
+        f"#   vlan<N>-peer  net1 on {u['subnet']}, split control-plane/worker",
     ]
-    for i in range(1, MAX_PAIRS + 1):
-        vid = 100 * i
-        out += ["---"] + _peer_claim_pod(
-            f"vlan{vid}-peer", [("net1", f"vlan{vid}-subnet")], control_plane=True
+    out += ["---"] + _nic_claim_template(template, [("net1", u["subnet"])])
+    half = VLAN_PEER_COUNT // 2
+    for i in range(1, VLAN_PEER_COUNT + 1):
+        out += ["---"] + _peer_pod(
+            f"vlan{i}-peer", template, control_plane=(i <= half), label="vlan-peer-test"
         )
-    worker_entries = [(f"net{i}", underlay(i)["subnet"]) for i in range(1, MAX_PAIRS + 1)]
-    out += ["---"] + _peer_claim_pod("vlan-worker", worker_entries, control_plane=False)
     path = os.path.join(NIC_DIR, "07-vlan-peer-pod.yaml")
     with open(path, "w") as f:
         f.write("\n".join(out) + "\n")
-    print("wrote", path, f"({MAX_PAIRS} peers + 1 worker pod)")
+    print("wrote", path, f"({VLAN_PEER_COUNT} peers sharing {u['subnet']}, {half} control-plane + {VLAN_PEER_COUNT - half} worker)")
+
+
+def write_overlay_peers():
+    """08-ovn-peer-pod.yaml: several peers all sharing ONE OVN overlay subnet
+    (ovn-subnet), split across control-plane and worker. Deliberately NOT a
+    mirror of write_vlan_peers() (one subnet per peer): the point here is the
+    OVN-overlay-specific property VLAN underlay doesn't have — a Subnet is a
+    shared IP pool (AllowMultipleAllocations=true, see
+    examples/shared-subnet.yaml), so many independent claims/pods can each
+    get their own address from the SAME subnet, not just from separate ones.
+    The control-plane/worker split additionally proves that sharing works
+    across nodes too, over OVN's own geneve encapsulation between chassis —
+    contrast with VLAN's physical eth1 trunk."""
+    o = overlay(1)  # ovn-subnet
+    template = "ovn-peer-nic-template"
+    out = [
+        f"# Shared-subnet connectivity test fixture: {OVERLAY_PEER_COUNT} peers, ALL",
+        f"# allocating from the SAME overlay subnet ({o['subnet']}), not one",
+        "# subnet each (contrast with 07-vlan-peer-pod.yaml, where VLAN underlay",
+        "# needs a dedicated subnet per peer). Demonstrates a Subnet's shared IP",
+        "# pool / AllowMultipleAllocations — see examples/shared-subnet.yaml for",
+        "# the minimal 2-pod version of the same property.",
+        "#",
+        f"# ONE ResourceClaimTemplate ({template}) shared by every peer pod —",
+        "# same pattern as the VMI examples (e.g. 00-resourceclaimtemplate.yaml),",
+        "# not a dedicated ResourceClaim per pod: every peer requests the",
+        "# identical (subnet, interfaceName), so kubelet stamping out a fresh",
+        "# claim per pod from one template is both correct and less to manage.",
+        "# GENERATED by examples/generate.py.",
+        f"#   ovn<N>-peer  net1 on {o['subnet']}, split control-plane/worker",
+    ]
+    out += ["---"] + _nic_claim_template(template, [("net1", o["subnet"])])
+    half = OVERLAY_PEER_COUNT // 2
+    for i in range(1, OVERLAY_PEER_COUNT + 1):
+        out += ["---"] + _peer_pod(
+            f"ovn{i}-peer", template, control_plane=(i <= half), label="ovn-peer-test"
+        )
+    path = os.path.join(NIC_DIR, "08-ovn-peer-pod.yaml")
+    with open(path, "w") as f:
+        f.write("\n".join(out) + "\n")
+    print("wrote", path, f"({OVERLAY_PEER_COUNT} peers sharing {o['subnet']}, {half} control-plane + {OVERLAY_PEER_COUNT - half} worker)")
 
 
 def print_clab_snippets():
@@ -413,9 +490,11 @@ def write_bench(mode, count, outdir):
         for e in new:
             out += [
                 "---", "apiVersion: kubeovn.io/v1", "kind: Vlan", "metadata:",
-                f"  name: {e['vlan']}", "spec:", f"  id: {e['id']}", "  provider: external",
+                f"  name: {e['vlan']}", "  labels:", "    bench: nic-dra",
+                "spec:", f"  id: {e['id']}", "  provider: external",
                 "---", "apiVersion: kubeovn.io/v1", "kind: Subnet", "metadata:",
-                f"  name: {e['subnet']}", "spec:", "  protocol: IPv4",
+                f"  name: {e['subnet']}", "  labels:", "    bench: nic-dra",
+                "spec:", "  protocol: IPv4",
                 f"  cidrBlock: {e['cidr']}", f"  gateway: {e['gw']}",
                 f"  vlan: {e['vlan']}", f"  provider: {e['provider']}",
             ]
@@ -428,7 +507,7 @@ def write_bench(mode, count, outdir):
     for n, e in enumerate(entries):
         reqs += [
             f"      - name: nic{n}", "        exactly:",
-            "          deviceClassName: kube-ovn-nic", "          selectors:",
+            "          deviceClassName: nic.kubeovn.io", "          selectors:",
             "            - cel:",
             f"                expression: \"device.attributes['nic.kubeovn.io'].subnetName == '{e['subnet']}'\"",
             "          count: 1",
@@ -477,6 +556,46 @@ def write_bench(mode, count, outdir):
     ]
     _write(os.path.join(outdir, "multus.yaml"), mu)
 
+    # Multus hot-plug fixture: pod starts with only the first HOTPLUG_BASE
+    # attachments; the remaining N-HOTPLUG_BASE are added afterward by patching
+    # the k8s.v1.cni.cncf.io/networks annotation, which
+    # multus-dynamic-networks-controller reconciles onto the running pod with no
+    # restart. Compares against static Multus (all N upfront, serial in the
+    # sandbox path) and DRA (parallel IPAM). Skipped if count <= HOTPLUG_BASE
+    # (nothing left to hot-plug).
+    base = min(HOTPLUG_BASE, count)
+    if base < count:
+        initial = entries[:base]
+        hp = [f"# Multus hot-plug benchmark: {base}->{count} NICs ({mode}). GENERATED by generate.py bench."]
+        for e in entries:
+            cfg = ('{"cniVersion":"0.3.0","type":"kube-ovn",'
+                   '"server_socket":"/run/openvswitch/kube-ovn-daemon.sock",'
+                   f'"provider":"{e["provider"]}"}}')
+            hp += [
+                "---", "apiVersion: k8s.cni.cncf.io/v1",
+                "kind: NetworkAttachmentDefinition", "metadata:",
+                f"  name: {e['subnet']}", "  namespace: default", "spec:",
+                f"  config: '{cfg}'",
+            ]
+        initial_nets = ", ".join(f"default/{e['subnet']}@{e['ifname']}" for e in initial)
+        hp += [
+            "---", "apiVersion: v1", "kind: Pod", "metadata:",
+            "  name: bench-multus-hotplug", "  namespace: default", "  annotations:",
+            f"    k8s.v1.cni.cncf.io/networks: {initial_nets}", "spec:", "  containers:",
+            "    - name: demo", f"      image: {NETSHOOT}",
+            "      command: [\"sleep\", \"infinity\"]", "      securityContext:",
+            "        capabilities:", "          add: [\"NET_ADMIN\"]",
+        ]
+        _write(os.path.join(outdir, "multus-hotplug.yaml"), hp)
+        with open(os.path.join(outdir, "multus-hotplug-full-networks.txt"), "w") as f:
+            f.write(nets)
+        print("wrote", os.path.join(outdir, "multus-hotplug-full-networks.txt"))
+    else:
+        for name in ("multus-hotplug.yaml", "multus-hotplug-full-networks.txt"):
+            p = os.path.join(outdir, name)
+            if os.path.exists(p):
+                os.remove(p)
+
 
 def _run_bench_cli():
     import argparse
@@ -496,4 +615,5 @@ if __name__ == "__main__":
         for c in COUNTS:
             write_example(c)
         write_vlan_peers()
+        write_overlay_peers()
         print_clab_snippets()
