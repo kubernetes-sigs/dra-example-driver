@@ -4,8 +4,8 @@ Measured with `make nic-bench-sweep` (`BENCH_REPS=10` for the final numbers belo
 
 > These numbers were measured with an earlier design in which the driver
 > reserved the addresses itself by creating kube-ovn ip CRs. The current
-> design, in which kube-ovn-controller allocates from the claim, has not been
-> re-measured yet; the Multus arms are unaffected.
+> design, in which kube-ovn-controller allocates from the claim, is measured in
+> [`benchmark-results-2026-10-06.md`](benchmark-results-2026-10-06.md).
 
 Three arms:
 

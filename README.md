@@ -182,7 +182,8 @@ make nic-example-deploy COUNT=4   # 2 VLAN underlay + 2 OVN overlay NICs
   and attach flow, device attributes, shared subnets, kind/VLAN demo, testing.
 - [`docs/architecture.md`](docs/architecture.md) — code walk-through.
 - [`docs/benchmarking.md`](docs/benchmarking.md) — `make nic-bench`: DRA vs. Multus
-  secondary-NIC spin-up (the attach-timing measurement).
+  secondary-NIC spin-up (the attach-timing measurement); latest results in
+  [`docs/benchmark-results-2026-10-06.md`](docs/benchmark-results-2026-10-06.md).
 
 *Evaluate the direction (decision aids — read these if you're asking "is this the
 right approach?"):*

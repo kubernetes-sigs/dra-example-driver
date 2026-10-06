@@ -361,7 +361,7 @@ actually motivate a DRA-native path:
   notes — *not yet independently measured*; `make nic-bench` is what quantifies
   it). On the DRA path kube-ovn allocates all NICs of the pod in one pass and the
   attach runs without per-NIC CNI forks, so it *should* scale flatter — see
-  [`benchmark-results-2026-08-17.md`](benchmark-results-2026-08-17.md).
+  [`benchmark-results-2026-10-06.md`](benchmark-results-2026-10-06.md).
 - **Late, untyped validation.** Free-form annotations + NADs aren't validated at
   admission; typos/wrong-provider fail at CNI ADD time. DeviceClass + opaque
   config (+ a webhook) catch these earlier and are admin-gated.
