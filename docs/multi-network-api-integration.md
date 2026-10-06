@@ -19,11 +19,10 @@
 > ResourceSlices with standard `multinetwork.networking.k8s.io/…` device
 > attributes (`podNetwork`; `+ podNetworkNamespace`, `networkKind` in the
 > NetworkKind variant) and reports attachment via the ResourceClaim device
-> status. This document and the `PodNetwork` sketch in
-> `pkg/kubeovnip/podnetwork.go` predate both and match neither; they are kept
-> purely as an idea to revisit once upstream converges. The committed
-> Multus-free path does not depend on any of this: it is `pkg/kubeovnip`
-> (IP-CRD IPAM) + `pkg/plumbing` (attach).
+> status. This document predates both and matches neither; it is kept purely
+> as an idea to revisit once upstream converges. The driver does not depend on
+> any of this: kube-ovn-controller allocates from the claims and
+> `pkg/plumbing` attaches the NICs (see [`nic-driver.md`](nic-driver.md)).
 
 ---
 
@@ -73,7 +72,7 @@ by responsibility:
 | Layer | Owns | In this stack |
 |-------|------|---------------|
 | **Network API** (multi-network-api) | network *identity* — "this pod is on network X", typed + admission-validated; (roadmap) policy/service association | a `Network`/`PodNetwork` object replacing the free-form Multus `networks` annotation / NAD |
-| **DRA** (this driver) | the *resource + attach* — IPAM as **consumable-capacity** from the subnet pool, **underlay node placement**, the veth/OVS/LSP attach, allocate/release lifecycle | `internal/profiles/nic` + `pkg/kubeovnip` + `pkg/plumbing` |
+| **DRA** (this driver) | the *resource + attach* — IPAM as **consumable-capacity** from the subnet pool, **underlay node placement**, the veth/OVS/LSP attach, allocate/release lifecycle | `internal/profiles/nic` + `pkg/plumbing`, IPAM by kube-ovn-controller |
 
 So this driver's coherent long-term identity is **the kube-ovn DRA backend in a
 multi-network-api + DRA stack**: the network API says *which* network, the driver
@@ -93,8 +92,8 @@ The seam between the two layers is precisely the three gaps below:
 still pre-API (requirements + two competing proposals, `PodNetwork` vs
 `NetworkKind`, no merged types — see the note at the top). So today the
 network-identity layer is stood in by NAD/Multus or the driver's own claim
-selectors; the `PodNetwork` sketch here matches neither proposal and is kept only
-to revisit once one wins. The honest pitch is **"a DRA backend that complements
+selectors; the ideas here match neither proposal and are kept only to revisit
+once one wins. The honest pitch is **"a DRA backend that complements
 the network API," not "a Multus replacement that swallows it."**
 
 ---
@@ -127,7 +126,7 @@ spec:
     requests:
       - name: nic0
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: >
@@ -145,8 +144,9 @@ spec:
 
 ```
 Phase 1 — PrepareResourceClaims (slow, before pod starts):
-  Annotate pod → kube-ovn controller allocates IP/MAC/GW
-  Store NicDeviceConfig{IP, MAC, GW, SubnetType, ...} keyed by pod UID
+  Wait for kube-ovn-controller, which allocates IP/MAC/GW and the logical
+  switch port from the claim, to annotate the pod
+  Store a plumbing.Spec{IP, MAC, GW, iface-id, ...} keyed by pod UID
 
 Phase 2 — NRI RunPodSandbox (fast, ~2s window, netns exists):
   Retrieve NicDeviceConfig for pod UID
@@ -154,7 +154,7 @@ Phase 2 — NRI RunPodSandbox (fast, ~2s window, netns exists):
 ```
 
 The split is necessary because:
-- Phase 1 can be slow (IPAM round-trip to kube-ovn controller can take ~5s)
+- Phase 1 can be slow (waiting for kube-ovn-controller can take seconds)
 - Phase 2 has a strict NRI timeout (~2s)
 - The pod network namespace does not exist in Phase 1
 
@@ -184,7 +184,7 @@ gaps in the current `multi-network-api` + DRA API surface:
 
 ### 1. `Network` → `DeviceClass` binding
 
-Today a user must know to select a `DeviceClass: kube-ovn-nic` in their
+Today a user must know to select a `DeviceClass: nic.kubeovn.io` in their
 `ResourceClaim`. There is no standard way to say "I want an interface on
 Network X" and have the system derive the correct `DeviceClass` and device
 selector automatically.
@@ -239,7 +239,6 @@ git clone https://github.com/soer3n/kube-ovn-dra-driver
 cd kube-ovn-dra-driver
 make kind-demo
 kubectl exec multi-nic-demo -- ip addr   # see net1 + net2
-make kind-demo-hotplug                   # attach net3 live
 ```
 
 ---

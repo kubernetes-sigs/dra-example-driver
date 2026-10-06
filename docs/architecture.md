@@ -20,12 +20,12 @@ kube-ovn annotations) work but share a common gap:
 - **No scheduler visibility**: secondary NIC assignment happens in the CNI plugin,
   after the pod is already scheduled. The scheduler cannot consider NIC availability.
 - **No hotplug**: secondary NICs are wired at pod start, not dynamically after.
-- **No declarative resource lifecycle**: there is no Kubernetes object tracking
-  "this pod owns IP 10.0.0.5 on subnet ovn-net".
+- **No declarative request**: the network is requested through an annotation
+  and a NetworkAttachmentDefinition instead of a typed, schedulable resource.
 
-DRA solves the scheduler visibility and lifecycle problems. This driver shows how
-to back DRA ResourceSlices with real kube-ovn subnets and plumb the interfaces
-using NRI.
+DRA solves the scheduler visibility and request problems. This driver shows how
+to back DRA ResourceSlices with real kube-ovn subnets, let kube-ovn allocate
+from the claims, and plumb the interfaces using NRI.
 
 ---
 
@@ -35,60 +35,56 @@ The central constraint driving the architecture is:
 
 | Phase | Trigger | Constraints |
 |---|---|---|
-| **Phase 1** — IPAM | `PrepareResourceClaims` (kubelet→driver gRPC) | Slow OK, but pod netns does **not exist yet** |
-| **Phase 2** — Plumbing | NRI `RunPodSandbox` hook | Pod netns **exists**, but timeout is ~2s |
+| **Phase 1** — resolve the allocation | `NodePrepareResources` (kubelet → driver gRPC) | Slow OK, but the pod netns does **not exist yet** |
+| **Phase 2** — plumbing | NRI `RunPodSandbox` hook | Pod netns **exists**, but the NRI request timeout is short (2 s by default) |
 
-A naive single-phase approach fails: if you try to create the veth pair in
-`PrepareResourceClaims`, the pod network namespace doesn't exist yet. If you do
-IPAM in `RunPodSandbox`, the 2-second NRI deadline is too tight for a round-trip
-to the kube-ovn controller.
+The veth cannot be created in `NodePrepareResources`, because the pod network
+namespace does not exist yet. Waiting for kube-ovn-controller in
+`RunPodSandbox` would risk the NRI deadline. So phase 1 waits for the
+allocation and phase 2 only does local netlink and OVS work.
 
-The solution is a clean split across these two phases.
+Phase 1 does not allocate anything itself: kube-ovn-controller, started with
+`--enable-dra-nic`, allocates the address and creates the logical switch port
+as soon as the scheduler has bound the pod, the same way it does for a Multus
+attachment. The driver waits for the result.
 
 ---
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Kubernetes Control Plane                         │
-│                                                                         │
-│  kube-scheduler  ──────────────────────────────────────────────────────┐│
-│  (reads ResourceSlice,                                                  ││
-│   allocates devices to claims)                                          ││
-│                                                                         ││
-│  kube-ovn-controller ◄── Pod annotations ──── write IP/MAC/GW ────────┐││
-│  (manages OVN logical                                                   │││
-│   switches + IPAM)                                                      │││
-└─────────────────────────────────────────────────────────────────────────┘││
-                                                                           │││
-┌─────────────────────────────────────────────────────────────────────────┘││
-│                           Node (kubelet)                                  ││
-│                                                                           ││
-│  kubelet                                                                  ││
-│    │                                                                      ││
-│    ├─ PrepareResourceClaims ──► driver.go ──► state.go ──────────────────┘│
-│    │                                              │                        │
-│    │                            nicprepare.RequestIPAM()                  │
-│    │                              │ annotate pod  │                        │
-│    │                              └──────────────►│                        │
-│    │                                              │ wait for kube-ovn      │
-│    │                                              │ to write back IP/MAC   │
-│    │                                              │◄──────────────────────┘
-│    │                            store NicDeviceConfig(s) keyed by podUID
-│    │
-│    └─ (pod scheduled, containerd starts sandbox)
-│                                                │
-│  containerd ──► NRI ──► driver.RunPodSandbox ─┘
-│                              │
-│                     nicprepare.PlumbNIC()
-│                       ├─ ovn:  veth pair + OVS port + netns config
-│                       └─ vlan: veth pair + OVS VLAN bridge + netns config
-│
-│  containerd ──► NRI ──► driver.StopPodSandbox
-│                              │
-│                     nicprepare.UnplumbNIC() + ReleaseIPAM()
-└───────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                       Kubernetes control plane                         │
+│                                                                        │
+│  kube-scheduler: reads ResourceSlices, allocates devices to claims,    │
+│                  binds the pod                                         │
+│                                                                        │
+│  kube-ovn-controller (--enable-dra-nic): watches claims and slices,    │
+│    device → subnet → provider, IPAM, logical switch port, ip CR,       │
+│    pod annotations <provider key>.kubernetes.io/*                      │
+└────────────────────────────────────────────────────────────────────────┘
+                                   │ pod annotations
+┌──────────────────────────────────▼─────────────────────────────────────┐
+│                           Node                                         │
+│                                                                        │
+│  kubelet ── NodePrepareResources ──► driver.go ──► state.go            │
+│                                       nicprepare.RequestIPAM()         │
+│                                         wait for allocated=true        │
+│                                       PendingStore.Add(podUID, Spec)   │
+│                                                                        │
+│  containerd ── NRI RunPodSandbox ──► nri.go ──► SandboxHandler         │
+│                                       PendingStore.Take(podUID)        │
+│                                       Attacher.Attach() per NIC:       │
+│                                         veth + netns config +          │
+│                                         br-int port (iface-id = LSP)   │
+│                                         (+ bridge/tap/DHCP for VMs)    │
+│                                                                        │
+│  containerd ── NRI StopPodSandbox ─► SandboxHandler                    │
+│                                       Attacher.Detach() per NIC +      │
+│                                       DetachPodPorts() sweep           │
+│                                                                        │
+│  ovn-controller: binds the port on iface-id, installs the flows        │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -97,67 +93,58 @@ The solution is a clean split across these two phases.
 
 ### `cmd/kube-ovn-dra-kubeletplugin/driver.go`
 
-The main driver struct. Implements:
-
-- **`PrepareResourceClaims`** — Phase 1 entry point. Iterates claims, calls
-  `state.Prepare()` which calls `nicprepare.RequestIPAM()` per device. Stores
-  `NicDeviceConfig` in `state.podNICConfigs[podUID]`.
-- **`RunPodSandbox`** (NRI hook) — Phase 2 entry point. Retrieves stored configs
-  via `state.TakePodNICConfigs(podUID)`, calls `nicprepare.PlumbNIC()` with the
-  real netns path from the NRI `PodSandbox` struct.
-- **`StopPodSandbox`** (NRI hook) — Teardown. Calls `nicprepare.UnplumbNIC()` +
-  `nicprepare.ReleaseIPAM()`.
+Implements the kubelet plugin interface of
+`k8s.io/dynamic-resource-allocation/kubeletplugin`: publishes the
+ResourceSlices and forwards `PrepareResourceClaims` /
+`UnprepareResourceClaims` to the device state. It also starts the NRI plugin.
 
 ### `cmd/kube-ovn-dra-kubeletplugin/state.go`
 
-Manages per-node device state:
+- **`NewDeviceState`** — takes the devices the NIC profile enumerated, the CDI
+  handler and the checkpoint manager.
+- **`Prepare`** — decodes the opaque `NicConfig`s (claim configs take
+  precedence over class configs), resolves every NIC of the claim
+  concurrently with `nicprepare.RequestIPAM`, adds one `plumbing.Spec` per NIC
+  to the `PendingStore` and writes the CDI spec and checkpoint. A repeated
+  call for a checkpointed claim returns the stored devices.
+- **`Unprepare`** — removes the CDI spec and the checkpoint entry. Nothing is
+  released: kube-ovn-controller owns the address and port.
 
-- **`NewDeviceState`** — enumerates kube-ovn subnets at startup by calling the
-  kube-ovn CRD API (`subnets.kubeovn.io`). Each subnet becomes a `resourceapi.Device`
-  in the `ResourceSlice`. Attributes published per device:
+### `cmd/kube-ovn-dra-kubeletplugin/nri.go`
 
-  | Attribute | Type | Example |
-  |---|---|---|
-  | `subnetName` | string | `"ovn-subnet"` |
-  | `subnetType` | string | `"ovn"` or `"vlan"` |
-  | `vlanId` | int | `100` |
-  | `provider` | string | `"external"` |
-  | `cidr` | string | `"10.200.0.0/24"` |
+The NRI plugin (`dra-nic`, index `90`, so it runs after the primary CNI has set
+up `eth0`). It extracts the network namespace path from the sandbox and calls
+the `plumbing.SandboxHandler`. An attach failure fails the sandbox, so kubelet
+retries instead of running a pod with missing NICs.
 
-- **`podNICConfigs`** — `map[types.UID][]*NicDeviceConfig`. Written by
-  `PrepareResourceClaims`, consumed (and deleted) by `RunPodSandbox`.
-- **Checkpoint** — prepared claim state is persisted via kubelet's checkpoint
-  manager so it survives driver restarts.
+### `internal/profiles/nic/`
 
-### `pkg/nicprepare/nicprepare.go`
+Lists kube-ovn `Subnet`s (and their `Vlan`s) at startup and publishes each as
+a device; see the mapping below. `ApplyConfig` adds the CDI environment
+variables `KUBE_OVN_NIC_IFACE_<device>` and `KUBE_OVN_NIC_SUBNET_<device>`.
 
-The two-phase lifecycle implementation:
+### `pkg/nicprepare/` and `pkg/annotation/`
 
 ```
 RequestIPAM(ctx, client, claim, result, device, ifaceName) → NicDeviceConfig
-  1. Resolve pod name from claim.Status.ReservedFor
-  2. Annotate pod: ovn.kubernetes.io/logical_switch_<ifaceName> = <subnetName>
-  3. Poll pod annotations until kube-ovn writes back IP/MAC/GW (up to 30s)
-  4. Return NicDeviceConfig (stored, not used yet)
-
-PlumbNIC(cfg, netNS) → error
-  switch cfg.SubnetType:
-  "vlan" → PlumbVLAN: veth pair + OVS VLAN bridge port + ip/mac in netns
-  "ovn"  → PlumbOVN:  veth pair + OVS port on br-int + ip/mac in netns
-
-UnplumbNIC(cfg)
-  Remove OVS port + veth pair
-
-ReleaseIPAM(ctx, client, cfg)
-  Remove kube-ovn annotation → controller frees the IP
+  1. Resolve the pod from claim.Status.ReservedFor
+  2. Read subnetName and provider from the device; reject the default provider
+  3. Wait (up to 30 s) for <provider>.<ifaceName>.kubernetes.io/allocated or
+     <provider>.kubernetes.io/allocated = "true" and read ip_address,
+     mac_address, cidr, gateway and virtualmachine
+  4. Port name = <pod or VM>.<namespace>.<provider key>; addresses in CIDR
+     notation, IPv4 first
 ```
 
 ### `pkg/plumbing/`
 
-Low-level kernel + OVS plumbing:
-- Creates veth pairs
-- Attaches host-side to OVS bridge (`br-int` for OVN, `br-<provider>` for VLAN)
-- Moves pod-side veth into pod netns and configures IP/MAC/GW/routes
+- **`SandboxHandler`** — drains the `PendingStore` on `RunPodSandbox`, rolls
+  back on partial failure, records attached NICs and detaches them on
+  `StopPodSandbox`, followed by a sweep of all OVS ports owned by the pod.
+- **`ovsAttacher`** (`plumbing_linux.go`) — veth pair, move and rename into the
+  netns, MAC/MTU/addresses/routes, `ovs-vsctl add-port br-int` with
+  `external_ids`, and for KubeVirt pods the bridge, tap and DHCP server
+  (`dhcp.go`). `plumbing_nolinux.go` keeps the package cross-compilable.
 
 ---
 
@@ -176,13 +163,20 @@ spec:
   protocol: IPv4
   vpc: ovn-cluster
 
+  provider: ovn-subnet.default.ovn
+
 # Becomes this Device in ResourceSlice
 name: subnet-ovn-subnet
+allowMultipleAllocations: true
 attributes:
   nic.kubeovn.io/subnetName:  "ovn-subnet"
   nic.kubeovn.io/subnetType:  "ovn"
-  nic.kubeovn.io/cidr:        "10.200.0.0/24"
+  nic.kubeovn.io/provider:    "ovn-subnet.default.ovn"
+  nic.kubeovn.io/vpc:         "ovn-cluster"
 ```
+
+VLAN subnets also get `subnetType: "vlan"`, `vlanId` and `providerNetwork`
+from their `Vlan`. kube-ovn-controller only needs `subnetName`.
 
 Users select devices via CEL in their `ResourceClaim`:
 
@@ -190,11 +184,11 @@ Users select devices via CEL in their `ResourceClaim`:
 requests:
   - name: nic0
     exactly:
-      deviceClassName: kube-ovn-nic
+      deviceClassName: nic.kubeovn.io
       selectors:
         - cel:
             expression: >
-              device.attributes['nic.kubeovn.io'].subnetName.stringValue == 'ovn-subnet'
+              device.attributes['nic.kubeovn.io'].subnetName == 'ovn-subnet'
 ```
 
 ---
@@ -203,8 +197,8 @@ requests:
 
 The driver does **not** split subnets per node. The kube-ovn OVN logical switch
 spans all nodes — any pod on any node can receive any IP from the subnet's CIDR.
-The scheduler selects a node; the driver then requests an IP from kube-ovn's
-flat pool after scheduling.
+The scheduler selects a node; kube-ovn-controller then allocates an IP from the
+flat pool once the pod is bound.
 
 This is the **flat multi-network model**: one `/24` across all nodes, no sub-CIDR
 allocation per node. The OVN fabric handles inter-node forwarding transparently.
@@ -230,31 +224,27 @@ Sub-CIDR model (default NodeIpam):
 NRI (Node Resource Interface) is the containerd plugin API used to intercept
 container lifecycle events. The driver registers as an NRI plugin that handles:
 
-- **`Synchronize`** — called on (re)connect; returns existing containers to sync state.
-- **`RunPodSandbox`** — called by containerd just before the pod sandbox network
-  namespace is handed to the CNI. The netns path is available here. This is
-  Phase 2 plumbing.
-- **`StopPodSandbox`** — called when the sandbox stops. Triggers teardown.
+- **`RunPodSandbox`** — the sandbox network namespace exists and its path is
+  in the event. Phase 2 plumbing.
+- **`StopPodSandbox`** — the sandbox stops. Triggers the detach.
 
-NRI requires containerd ≥ v2.0 with NRI enabled. The driver registers with:
-```
-plugin name: <driverName>   (e.g. "nic.kubeovn.io")
-plugin index: "00"           (runs before other NRI plugins)
-```
-
-The NRI socket path `/var/run/nri/nri.sock` must be mounted into the driver pod.
+NRI is enabled by default in containerd 2.x. The plugin registers as
+`dra-nic` with index `90`. The NRI socket directory `/var/run/nri` and the
+host netns directory are mounted into the plugin pod; the netns mount uses
+`HostToContainer` propagation, because the runtime creates the netns files
+after the plugin has started.
 
 ---
 
 ## What This Driver Does NOT Do
 
-- **No scheduler extension**: the flat IPAM model means any node is valid. A
-  future improvement using KEP-4815 Partitionable Devices could let the scheduler
-  track IP pool exhaustion.
-- **No NetworkPolicy on secondary interfaces**: out of scope, tracked by
-  `multi-network-api`.
-- **No Service on secondary interfaces**: out of scope, tracked by `multi-network-api`.
-- **No IPv6**: only IPv4 subnets are currently handled.
+- **No IPAM of its own**: kube-ovn-controller allocates and releases.
+- **No IP pool accounting in the scheduler**: subnet devices allow multiple
+  allocations without a capacity, so the scheduler does not see pool
+  exhaustion. Consumable capacity could change that (see below).
+- **No NetworkPolicy or Services on secondary interfaces**: out of scope,
+  tracked by `multi-network-api`.
+- **No hot-plug**: NICs are attached when the sandbox starts.
 
 ---
 
@@ -275,10 +265,11 @@ integration would:
 3. Publish the subnet as a `ResourceSlice` device
 4. Accept `ResourceClaim` selectors referencing the `Network` name
 
-### KEP-4815 DRA Partitionable Devices (alpha k8s 1.35, beta 1.36)
+### Consumable capacity / partitionable devices
 
-Today the driver uses flat IPAM — any IP from the pool can go to any claim.
-With KEP-4815, the IP pool itself would become a partitionable device:
+Today any number of claims can take the same subnet device. With consumable
+capacity (or KEP-4815 partitionable devices), the IP pool itself would become a
+finite device capacity:
 
 ```
 ResourceSlice device: subnet-ovn-subnet
@@ -287,9 +278,7 @@ ResourceSlice device: subnet-ovn-subnet
 ```
 
 The scheduler would track pool exhaustion and refuse to schedule pods when the
-subnet is full — something the current driver cannot express. The driver would
-receive the pre-allocated IP in the `AllocationResult` rather than calling
-kube-ovn's annotation API.
+subnet is full — something the current driver cannot express.
 
 ---
 
@@ -299,16 +288,17 @@ The full demo uses:
 
 - **kind** (v1.35+) — local multi-node cluster, no default CNI
 - **Containerlab** — injects `eth1` into kind node containers to simulate
-  a VLAN-capable physical NIC for kube-ovn ProviderNetwork
-- **kube-ovn** (v1.14+) — installed via Helm, provides OVN overlay + VLAN subnets
-- **Multus** (v4.2+) — thick mode, provides the multi-NIC pod annotation interface
+  a VLAN-capable physical NIC for kube-ovn ProviderNetwork, plus an FRR gateway
+- **kube-ovn** with `--enable-dra-nic` — installed via Helm from the
+  `KUBE_OVN_VERSION` branch, provides OVN overlay + VLAN subnets
 - **This driver** — DRA kubelet plugin + NRI plugin
+- **Multus** (optional) — only for the DRA vs Multus benchmark
 
 ```bash
 make kind-demo          # full end-to-end setup
-make kind-demo-hotplug  # attach a third NIC to the running pod
 make kind-delete        # teardown
 ```
 
-See [`demo/kind/kind-no-cni.yaml`](../demo/kind/kind-no-cni.yaml) and
+See [`nic-driver.md`](nic-driver.md),
+[`demo/kind/kind-no-cni.yaml`](../demo/kind/kind-no-cni.yaml) and
 [`demo/containerlab/vlan-topology.yaml`](../demo/containerlab/vlan-topology.yaml).

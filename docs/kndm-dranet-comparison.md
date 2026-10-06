@@ -13,8 +13,9 @@ This repo is an **exploration**, not a product bid. It has two aims:
 1. **Investigate DRA in the SDN space**, anchored on a concrete problem: Multus
    attaches secondary NICs *serially* during pod sandbox setup, so startup latency
    grows ~linearly with NIC count. The question: does DRA do materially better for
-   kube-ovn virtual NICs? (Finding: yes, structurally — the per-NIC IPAM is run
-   in **parallel** rather than serially like Multus's delegate chain, plus
+   kube-ovn virtual NICs? (Finding: yes, structurally — kube-ovn allocates all
+   NICs of a pod in one pass and the driver waits for them **concurrently**,
+   rather than serially like Multus's delegate chain, plus
    scheduler-aware placement, IP-pool capacity, and clean lifecycle. The latency
    *magnitude* still needs measuring with `make nic-bench`.)
 2. **Map the adjacent, still-emerging upstream work** and where an SDN DRA driver
@@ -159,8 +160,9 @@ virtualization product), or was this exploratory?**
 
 - **A. Continue as the SDN KND driver (KNDM-aligned).** Justified if there is a
   real consumer (KubeVirt-on-kube-ovn wanting a clean DRA API, dropping Multus).
-  Requires: consumable-capacity remodel, watch/republish, bbolt, and landing the
-  kube-ovn-controller changes (GC/LSP) upstream. Day-0 only.
+  Requires: consumable-capacity remodel, watch/republish, bbolt, and landing
+  kube-ovn's `--enable-dra-nic` (DRA claims as a network source) upstream.
+  Day-0 only.
 - **B. Park it; ride Multus.** Multus + kube-ovn already does day-0 secondary
   NICs. The driver's only edge is "no Multus / DRA-native." If that isn't
   pressing, keep Multus and revisit when KNDM/VEP-183 matures and pulls.
@@ -171,10 +173,10 @@ virtualization product), or was this exploratory?**
 - **D. Keep it as a demonstrator.** Use it to inform the upstream hot-plug /
   SDN-KND conversation and as a learning artifact; do not productize.
 
-Note: most of the durable, hard work is **kube-ovn-side** (controller GC/LSP
-behavior, an annotation- or reserved-IP-driven DRA path). That is the higher-
-leverage place to invest if the effort continues — the node-side driver is thin
-by comparison.
+Note: most of the durable, hard work is **kube-ovn-side**: kube-ovn-controller
+treating DRA claims as a network source, with IPAM, logical switch ports,
+keep-vm-ip and GC. That is the higher-leverage place to invest if the effort
+continues — the node-side driver is thin by comparison.
 
 ## FAQ: "Can we just use DraNet instead of building a kube-ovn driver?"
 
@@ -357,8 +359,9 @@ actually motivate a DRA-native path:
 - **Serial attach latency.** Multus invokes delegate CNIs serially, so pod
   spin-up grows ~linearly with NIC count (~5s/NIC is the figure cited in the demo
   notes — *not yet independently measured*; `make nic-bench` is what quantifies
-  it). The DRA path runs the per-NIC IPAM in parallel and does the attach without
-  per-NIC CNI forks, so it *should* scale flatter — pending that measurement.
+  it). On the DRA path kube-ovn allocates all NICs of the pod in one pass and the
+  attach runs without per-NIC CNI forks, so it *should* scale flatter — see
+  [`benchmark-results-2026-08-17.md`](benchmark-results-2026-08-17.md).
 - **Late, untyped validation.** Free-form annotations + NADs aren't validated at
   admission; typos/wrong-provider fail at CNI ADD time. DeviceClass + opaque
   config (+ a webhook) catch these earlier and are admin-gated.

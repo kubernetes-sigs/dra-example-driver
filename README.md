@@ -13,59 +13,66 @@ node as a DRA device, so a workload can request a secondary network interface
 > 📖 **New here?** Jump to [Documentation](#documentation) for a map of the design
 > docs and the "is this the right approach?" decision aids before diving in.
 
-## Status & scope
+## How it works
 
-> **This is an exploration, not a product.** It started from a concrete problem —
-> Multus attaching many secondary NICs *serially* makes pod startup latency grow
-> linearly with NIC count — and investigates whether **DRA** does better for
-> kube-ovn SDN NICs (structurally yes: parallel per-NIC IPAM, scheduler-aware
-> placement, IP-pool capacity, clean lifecycle — though the latency *magnitude* is
-> still to be measured with `make nic-bench`). It also probes the adjacent,
-> still-emerging upstream
-> work — **multi-network-api** (SIG-Network), **KNDM/DraNet**, and **KubeVirt
-> VEP-183** — to see how an SDN DRA driver fits. See
-> [`docs/kndm-dranet-comparison.md`](docs/kndm-dranet-comparison.md) for the
-> findings and [`docs/multi-network-api-integration.md`](docs/multi-network-api-integration.md)
-> for the target architecture (network API + DRA).
+kube-ovn-controller, started with the experimental `--enable-dra-nic` flag,
+treats every device this driver allocates as a pod network attachment, the same
+way it treats a Multus one. The driver does not allocate anything itself:
 
-- **IPAM for secondary NICs (committed):** the driver reserves an address/MAC
-  from the chosen kube-ovn `Subnet`. Two modes:
-  - `pkg/annotation` — IPAM-on-top-of-Multus (writes kube-ovn pod annotations).
-  - `pkg/kubeovnip` — Multus-free IPAM via the `ips.kubeovn.io` CRD.
-- **Driver-owned netns attach (Multus-free):** `pkg/plumbing` + an NRI sandbox
-  hook create the veth/OVS port and move the interface into the pod netns, for
-  both VLAN underlay and OVN overlay. Enabled with `kubeletPlugin.nicAttach.enabled`.
-  **Validated end-to-end on the kind demo** (overlay + underlay), given the
-  kube-ovn controller patch — see
-  [`docs/nic-driver.md`](docs/nic-driver.md) for the full design and current state.
+1. The kubelet plugin publishes every kube-ovn `Subnet` as a device in the
+   node's ResourceSlice (attribute `subnetName`).
+2. The scheduler allocates a device to the pod's `ResourceClaim`.
+3. kube-ovn-controller resolves device → subnet → the subnet's provider,
+   allocates IP and MAC, creates the logical switch port and ip CR, and writes
+   the `<provider>.kubernetes.io/*` pod annotations.
+4. In `NodePrepareResources`, the driver waits for
+   `<provider>.kubernetes.io/allocated` and reads the result.
+5. An NRI hook (`RunPodSandbox`) creates a veth into the pod (`net1`, …),
+   configures IP, MAC and routes, and attaches the host end to `br-int` with
+   `external_ids:iface-id` set to the logical switch port. OVN binds it.
+6. For KubeVirt VMs the hook also adds a bridge, a tap device and a small
+   DHCP server in the pod; the
+   [kube-ovn network binding plugin](https://github.com/soer3n/kube-ovn-network-binding-plugin)
+   hands the tap to the VM.
 
-## Requirement: kube-ovn with secondary-NIC DRA support
+On pod deletion the NRI `StopPodSandbox` hook removes the interface, and
+kube-ovn-controller releases the address, or keeps it for a VM that still
+exists. Overlay and VLAN underlay subnets work the same way; an underlay
+subnet reaches its VLAN through kube-ovn's localnet port.
 
-This driver depends on kube-ovn changes that are **not yet in an upstream
-release**. Build/run kube-ovn from the fork branch:
+The contract between kube-ovn and the driver is described in kube-ovn's
+`docs/dra-nic.md`. See [`docs/nic-driver.md`](docs/nic-driver.md) for the full
+design.
 
-```
-https://github.com/soer3n/kube-ovn   branch: add-dra-support-for-secondary-nics
-```
+> **Status:** experimental. The kube-ovn side is proposed upstream and not in a
+> kube-ovn release yet.
 
-> The branch will be pushed once driver preparation is complete. Until then the
-> kind demo expects a kube-ovn dev image built from that branch (see
-> `KUBE_OVN_VERSION` / image-preload steps in the `Makefile`).
+## Requirements
 
-**Kubernetes:** the driver uses the stable DRA API (`resource.k8s.io/v1`),
-requiring **Kubernetes 1.34+**; it is built and tested against **1.35**
-(`k8s.io/*` pinned to `v0.35.x`).
+- **kube-ovn with `--enable-dra-nic`:** branch `dra-nic-upstream` of
+  [github.com/soer3n/kube-ovn](https://github.com/soer3n/kube-ovn), proposed
+  upstream. Install it with `ENABLE_DRA_NIC=true` (`install.sh`),
+  `func.ENABLE_DRA_NIC=true` (chart) or `features.enableDraNic=true` (v2 chart).
+  Every subnet used for DRA NICs needs a dedicated provider, e.g.
+  `<subnet>.<namespace>.ovn`; the default provider `ovn` belongs to `eth0`.
+- **Kubernetes 1.34+** for the stable DRA API (`resource.k8s.io/v1`); built and
+  tested against 1.35. Several pods sharing one subnet device need the
+  `DRAConsumableCapacity` feature gate.
+- **containerd with NRI** (enabled by default in containerd 2.x).
 
 ## Quickstart (kind)
 
-A full kube-ovn + (optional Multus) + NIC DRA stack can be brought up in a local
+A full kube-ovn + NIC DRA stack can be brought up in a local
 [kind](https://kind.sigs.k8s.io/) cluster. All targets are under the `kind-*` /
-`clab-*` prefixes in the `Makefile`.
+`clab-*` prefixes in the `Makefile`. kube-ovn is deployed from the chart of
+`KUBE_OVN_VERSION` (default `dra-nic-upstream`) in the sibling checkout
+`../kube-ovn`, with an image built from that branch (see the `KUBE_OVN_*`
+variables in the `Makefile`).
 
 ```bash
 # Create cluster, wire the VLAN uplink via containerlab + FRR, deploy kube-ovn
-# (+ multus), build & load the driver image, install the chart, apply the NIC
-# example.
+# (+ Multus for the benchmark), build & load the driver image, install the
+# chart, apply the NIC example.
 make kind-demo
 
 # Tear down
@@ -77,11 +84,12 @@ Step by step:
 ```bash
 make kind-create             # kind cluster, no CNI, DRA feature-gates on
 make clab-deploy             # OPTIONAL: containerlab VLAN uplink + FRR BGP gateway (needs sudo)
-make kind-deploy-kube-ovn    # kube-ovn CNI (dev image from the fork branch) -> nodes Ready
-make kind-deploy-multus      # OPTIONAL: Multus (only needed for the annotation IPAM mode)
+make kind-deploy-kube-ovn    # kube-ovn CNI with --enable-dra-nic -> nodes Ready
+make kind-deploy-multus      # OPTIONAL: Multus, only for the DRA vs Multus benchmark
+make kind-deploy-nic-prereqs # provider network, VLANs and subnets (before the driver)
 make kind-build-driver       # docker build -> kind load
 make kind-deploy-driver      # helm install (deviceProfile=nic)
-make kind-deploy-nic-example # subnets, DeviceClass, ResourceClaim, demo pod
+make kind-deploy-nic-example # ResourceClaim + demo pod
 make kind-test-vlan          # dual-VLAN traffic + host-routing + isolation checks (needs clab-deploy)
 ```
 
@@ -94,17 +102,18 @@ underlay vs OVN overlay device types, and the tunable `make` variables.
 helm install kube-ovn-dra-driver deployments/helm/kube-ovn-dra-driver \
   --namespace kube-system \
   --set deviceProfile=nic
-# driverName defaults to "nic.kubeovn.io"; the optional validating webhook is
-# behind --set webhook.enabled=true, and the Multus-free attach datapath behind
-# --set kubeletPlugin.nicAttach.enabled=true.
+# driverName defaults to "nic.kubeovn.io", which is also kube-ovn-controller's
+# default --dra-nic-driver-name. The optional validating webhook is behind
+# --set webhook.enabled=true.
 ```
 
 ## Requesting a NIC
 
 The driver publishes one `subnet-<name>` device per kube-ovn `Subnet`, with
 attributes under the `nic.kubeovn.io/*` domain (`subnetName`, `subnetType`,
-`vlanId`, `provider`, `vpc`). A pod selects the subnet it wants with a CEL
-selector on its `ResourceClaim`:
+`vlanId`, `providerNetwork`, `provider`, `vpc`). A pod selects the subnet it
+wants with a CEL selector on its `ResourceClaim`, and names the interface with
+the optional `NicConfig` (default `net1`, at most 15 characters):
 
 ```yaml
 apiVersion: resource.k8s.io/v1
@@ -116,7 +125,7 @@ spec:
     requests:
       - name: nic
         exactly:
-          deviceClassName: kube-ovn-nic
+          deviceClassName: nic.kubeovn.io
           selectors:
             - cel:
                 expression: "device.attributes['nic.kubeovn.io'].subnetName == 'vlan100-subnet'"
@@ -131,10 +140,17 @@ spec:
             interfaceName: net1
 ```
 
+Several NICs of one pod may use the same subnet as long as their interface
+names differ; kube-ovn then keys each NIC by `<provider>.<interfaceName>`, as
+for repeated Multus attachments. Until the CDI device naming is fixed, put such
+NICs in separate claims (see
+[`same-subnet-2nic.yaml`](demo/nic-example/examples/same-subnet-2nic.yaml)).
+
 Worked examples live in [`demo/nic-example/`](demo/nic-example/): a one-underlay
-+ one-overlay starting claim, plus scaling fixtures for 2/4/8/16 NICs under
-[`demo/nic-example/examples/`](demo/nic-example/examples/) (regenerate with
-`examples/generate.py`):
++ one-overlay starting claim, shared-subnet and same-subnet fixtures, plus
+scaling fixtures for 2/4/8/16 NICs under
+[`demo/nic-example/examples/`](demo/nic-example/examples/) (regenerate the
+generated ones with `examples/generate.py`):
 
 ```bash
 make nic-example-deploy COUNT=4   # 2 VLAN underlay + 2 OVN overlay NICs
@@ -148,10 +164,9 @@ make nic-example-deploy COUNT=4   # 2 VLAN underlay + 2 OVN overlay NICs
 | `cmd/kube-ovn-dra-webhook/` | Validating admission webhook for `NicConfig` opaque config |
 | `internal/profiles/nic/` | The `nic` device profile — enumerates kube-ovn Subnets |
 | `api/kube-ovn.io/resource/nic/v1alpha1/` | `NicConfig` opaque-config type |
-| `pkg/annotation/` | Multus-compatible IPAM (kube-ovn pod annotations) |
-| `pkg/kubeovnip/` | Multus-free IPAM via `ips.kubeovn.io` |
-| `pkg/nicprepare/` | IPAM reservation lifecycle for a claimed NIC |
-| `pkg/plumbing/` | Veth/OVS/netns attach + NRI sandbox hook (validated) |
+| `pkg/annotation/` | Reads kube-ovn-controller's allocation from the pod annotations |
+| `pkg/nicprepare/` | Resolves a claimed NIC's allocation and logical switch port |
+| `pkg/plumbing/` | Veth/OVS/netns attach, KubeVirt tap + DHCP, NRI sandbox handler |
 | `deployments/helm/kube-ovn-dra-driver/` | Helm chart |
 | `demo/` | kind + containerlab/FRR demo stack and NIC examples |
 | `docs/` | Architecture and design notes |
@@ -161,8 +176,8 @@ make nic-example-deploy COUNT=4   # 2 VLAN underlay + 2 OVN overlay NICs
 **Start here** — a map of the repo's docs, by what you're trying to do:
 
 *Understand / run the driver:*
-- [`docs/nic-driver.md`](docs/nic-driver.md) — the main design doc: IPAM flow,
-  device types, shared subnets, kind/VLAN demo, current status.
+- [`docs/nic-driver.md`](docs/nic-driver.md) — the main design doc: allocation
+  and attach flow, device attributes, shared subnets, kind/VLAN demo, testing.
 - [`docs/architecture.md`](docs/architecture.md) — code walk-through.
 - [`docs/benchmarking.md`](docs/benchmarking.md) — `make nic-bench`: DRA vs. Multus
   secondary-NIC spin-up (the attach-timing measurement).
@@ -176,9 +191,14 @@ right approach?"):*
   — the target architecture: **multi-network-api + DRA**, with this driver as the
   DRA backend (network API owns *which* network; DRA owns *allocate + attach*).
 
-*Upstreaming:*
-- [`docs/kube-ovn-issue-draft.md`](docs/kube-ovn-issue-draft.md) — the kube-ovn
-  controller changes the driver depends on (issue + PR draft).
+## Testing
+
+```bash
+make test               # unit tests (with logcheck)
+make test-privileged    # pkg/plumbing datapath tests in network namespaces (sudo)
+make setup-e2e test-e2e # kind e2e; E2E_CONTAINERLAB=1 adds the VLAN underlay specs
+make teardown-e2e
+```
 
 ## License
 
