@@ -50,12 +50,15 @@ const (
 // a fake clientset: the kubeletplugin helper listens on unix sockets under a
 // temporary directory and the healthcheck server on an ephemeral port.
 //
-// It uses os.MkdirTemp rather than t.TempDir because unix socket paths are
-// limited to ~104 bytes on macOS and t.TempDir embeds the test name.
+// It creates the directory under /tmp rather than using t.TempDir or the
+// default temporary directory because unix socket paths are limited to
+// ~104 bytes on macOS: t.TempDir embeds the test name, and the default macOS
+// temporary directory is long enough to leave little room for the socket
+// filenames.
 func newDriverTestConfig(t *testing.T, deviceHealth bool, healthcheckPort int) (*Config, *error) {
 	t.Helper()
 
-	tmp, err := os.MkdirTemp("", "dra")
+	tmp, err := os.MkdirTemp("/tmp", "dra")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 
@@ -83,6 +86,66 @@ func newDriverTestConfig(t *testing.T, deviceHealth bool, healthcheckPort int) (
 		cancelMainCtx: func(err error) { fatal = err },
 		profile:       cpu.NewProfile(testNodeName, testDriverName, flags.cpuNUMANodes, flags.cpusPerNUMANode),
 	}, &fatal
+}
+
+func TestLivenessRegistrationSocketName(t *testing.T) {
+	// Use a fixed 36-character Pod UID. Its exact value has no special meaning.
+	const podUID = "f358c92b-e974-4f29-a84f-6c64bec0949d"
+
+	for name, tc := range map[string]struct {
+		podUID string
+		// registrySubdir lengthens only the registration path, keeping the
+		// DRA socket path short enough for the driver to start.
+		registrySubdir string
+		wantHashed     bool
+	}{
+		"without pod UID": {},
+		"with pod UID": {
+			podUID: podUID,
+		},
+		"with pod UID and registration path too long for the full UID": {
+			podUID:         podUID,
+			registrySubdir: "long-registration-directory-for-liveness",
+			wantHashed:     true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			config, _ := newDriverTestConfig(t, false, 0)
+			config.flags.podUID = tc.podUID
+			registryDir := filepath.Join(config.flags.kubeletRegistrarDirectoryPath, tc.registrySubdir)
+			config.flags.kubeletRegistrarDirectoryPath = registryDir
+			require.NoError(t, os.MkdirAll(registryDir, 0750))
+
+			unhashedFilename := testDriverName + "-reg.sock"
+			if tc.podUID != "" {
+				unhashedFilename = testDriverName + "-" + tc.podUID + "-reg.sock"
+			}
+			if tc.wantHashed {
+				require.Greater(t, len(filepath.Join(registryDir, unhashedFilename)), 108,
+					"the path must exceed the helper's limit to trigger a hashed filename")
+			}
+
+			d, err := NewDriver(ctx, config)
+			require.NoError(t, err)
+			t.Cleanup(func() { assert.NoError(t, d.Shutdown(klog.FromContext(ctx))) })
+
+			entries, err := os.ReadDir(registryDir)
+			require.NoError(t, err)
+			require.Len(t, entries, 1)
+			if tc.wantHashed {
+				assert.NotEqual(t, unhashedFilename, entries[0].Name())
+			} else {
+				assert.Equal(t, unhashedFilename, entries[0].Name())
+			}
+
+			// Liveness must reach the real registration and DRA sockets.
+			resp, err := d.healthcheck.Check(ctx, &grpc_health_v1.HealthCheckRequest{Service: "liveness"})
+			require.NoError(t, err)
+			assert.Equal(t, grpc_health_v1.HealthCheckResponse_SERVING, resp.GetStatus())
+		})
+	}
 }
 
 func TestNewDriverLifecycle(t *testing.T) {
