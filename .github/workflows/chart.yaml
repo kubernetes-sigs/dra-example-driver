@@ -23,7 +23,7 @@ jobs:
     - name: Lint
       run: |
         helm lint deployments/helm/kube-ovn-dra-driver --namespace kube-system
-        helm template kube-ovn-dra-driver deployments/helm/kube-ovn-dra-driver --namespace kube-system > /dev/null
+        helm template kube-ovn-dra-driver deployments/helm/kube-ovn-dra-driver --namespace kube-system --kube-version 1.35.0 > /dev/null
     - name: Log in to Docker Hub
       if: startsWith(github.ref, 'refs/tags/chart/')
       run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | helm registry login registry-1.docker.io --username "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
