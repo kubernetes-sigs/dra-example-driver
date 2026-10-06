@@ -5,7 +5,7 @@
 # the provider, kube-ovn-controller keys each by "<provider>.<interfaceName>",
 # the same rule it uses for repeated Multus attachments of one
 # NetworkAttachmentDefinition, so each NIC gets its own address and logical
-# switch port.
+# switch port. Two requests of one claim work the same way.
 #
 #   kubectl apply -f demo/nic-example/examples/same-subnet-2nic.yaml
 #   kubectl exec same-subnet-2nic -- ip -br addr

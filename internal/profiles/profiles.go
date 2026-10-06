@@ -26,7 +26,15 @@ import (
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 )
 
+// PerDeviceCDIContainerEdits holds the container edits per allocation result,
+// keyed by ResultKey. One device can back several results of a claim, e.g. a
+// shared subnet allocated to two requests.
 type PerDeviceCDIContainerEdits map[string]*cdiapi.ContainerEdits
+
+// ResultKey identifies an allocation result within a claim.
+func ResultKey(result *resourceapi.DeviceRequestAllocationResult) string {
+	return result.Request + "/" + result.Device
+}
 
 type PreparedDevice struct {
 	drapbv1.Device

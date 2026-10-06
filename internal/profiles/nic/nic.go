@@ -24,6 +24,8 @@ package nic
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strings"
 
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -176,7 +178,9 @@ func (p Profile) Validate(config runtime.Object) error {
 
 // ApplyConfig implements profiles.ConfigHandler.
 // For NIC devices, configuration is expressed as environment variables injected
-// via CDI that tell the pod which interface name was assigned.
+// via CDI that tell the pod the subnet and device behind each interface. They
+// are keyed by the interface name, which is unique in the pod, unlike the
+// device, which several NICs on one subnet share.
 func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.DeviceRequestAllocationResult) (profiles.PerDeviceCDIContainerEdits, error) {
 	if config == nil {
 		config = configapi.DefaultNicConfig()
@@ -191,14 +195,22 @@ func (p Profile) ApplyConfig(config runtime.Object, results []*resourceapi.Devic
 
 	perDeviceEdits := make(profiles.PerDeviceCDIContainerEdits)
 	for _, result := range results {
+		key := envKey(nicConfig.InterfaceName)
 		envs := []string{
-			fmt.Sprintf("KUBE_OVN_NIC_IFACE_%s=%s", result.Device, nicConfig.InterfaceName),
-			fmt.Sprintf("KUBE_OVN_NIC_SUBNET_%s=%s", result.Device, subnetNameFromDevice(result.Device)),
+			fmt.Sprintf("KUBE_OVN_NIC_%s_SUBNET=%s", key, subnetNameFromDevice(result.Device)),
+			fmt.Sprintf("KUBE_OVN_NIC_%s_DEVICE=%s", key, result.Device),
 		}
 		edits := &cdispec.ContainerEdits{Env: envs}
-		perDeviceEdits[result.Device] = &cdiapi.ContainerEdits{ContainerEdits: edits}
+		perDeviceEdits[profiles.ResultKey(result)] = &cdiapi.ContainerEdits{ContainerEdits: edits}
 	}
 	return perDeviceEdits, nil
+}
+
+var nonEnvChars = regexp.MustCompile(`[^A-Z0-9_]`)
+
+// envKey turns an interface name into an environment variable name part.
+func envKey(ifaceName string) string {
+	return nonEnvChars.ReplaceAllString(strings.ToUpper(ifaceName), "_")
 }
 
 // subnetNameFromDevice strips the "subnet-" prefix from the device name to

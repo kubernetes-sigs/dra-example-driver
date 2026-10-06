@@ -121,7 +121,8 @@ retries instead of running a pod with missing NICs.
 
 Lists kube-ovn `Subnet`s (and their `Vlan`s) at startup and publishes each as
 a device; see the mapping below. `ApplyConfig` adds the CDI environment
-variables `KUBE_OVN_NIC_IFACE_<device>` and `KUBE_OVN_NIC_SUBNET_<device>`.
+variables `KUBE_OVN_NIC_<INTERFACE>_SUBNET` and `KUBE_OVN_NIC_<INTERFACE>_DEVICE`,
+e.g. `KUBE_OVN_NIC_NET1_SUBNET=ovn-subnet`.
 
 ### `pkg/nicprepare/` and `pkg/annotation/`
 

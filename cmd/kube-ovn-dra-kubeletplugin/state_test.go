@@ -163,6 +163,22 @@ func TestPrepareUnprepare(t *testing.T) {
 	assert.Empty(t, checkpoint.V1.PreparedClaims)
 }
 
+func TestPrepareTwoRequestsOnOneDevice(t *testing.T) {
+	state := newTestDeviceState(t, allocatedPod(testProvider+".net1", testProvider+".net2"))
+	claim := testClaim([]resourceapi.DeviceAllocationConfiguration{nicConfig("net2", "b")}, "a", "b")
+
+	devices, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err, "two requests on one shared subnet device must get distinct CDI devices")
+	require.Len(t, devices, 2)
+	assert.NotEqual(t, devices[0].CdiDeviceIds[1], devices[1].CdiDeviceIds[1])
+
+	specs := state.nriStore.Take(testPodUID)
+	require.Len(t, specs, 2)
+	ifaces := []string{specs[0].IfaceName, specs[1].IfaceName}
+	assert.ElementsMatch(t, []string{"net1", "net2"}, ifaces)
+	require.NoError(t, state.Unprepare(string(claim.UID)))
+}
+
 func TestPrepareErrors(t *testing.T) {
 	state := newTestDeviceState(t, allocatedPod(testProvider))
 

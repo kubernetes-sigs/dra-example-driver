@@ -94,7 +94,11 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 	}
 
 	for _, device := range devices {
-		deviceEnvKey := strings.ToUpper(nonWord.ReplaceAllString(device.DeviceName, "_"))
+		request := ""
+		if len(device.RequestNames) > 0 {
+			request = device.RequestNames[0]
+		}
+		deviceEnvKey := strings.ToUpper(nonWord.ReplaceAllString(request+"_"+device.DeviceName, "_"))
 		claimEdits := cdiapi.ContainerEdits{
 			ContainerEdits: &cdispec.ContainerEdits{
 				Env: []string{
@@ -109,7 +113,7 @@ func (cdi *CDIHandler) CreateClaimSpecFile(claimUID string, devices profiles.Pre
 		claimEdits.Append(device.ContainerEdits)
 
 		cdiDevice := cdispec.Device{
-			Name:           fmt.Sprintf("%s-%s", claimUID, device.DeviceName),
+			Name:           claimDeviceName(claimUID, request, device.DeviceName),
 			ContainerEdits: *claimEdits.ContainerEdits,
 		}
 
@@ -130,17 +134,21 @@ func (cdi *CDIHandler) DeleteClaimSpecFile(claimUID string) error {
 	return cdi.cache.RemoveSpec(specName)
 }
 
-func (cdi *CDIHandler) GetClaimDevices(claimUID string, devices []string) []string {
-	cdiDevices := []string{
+// GetClaimDevices returns the qualified CDI device names for one allocation
+// result of a claim, plus the common device.
+func (cdi *CDIHandler) GetClaimDevices(claimUID, request, device string) []string {
+	return []string{
 		cdiparser.QualifiedName(cdi.vendor(), cdi.class, cdiCommonDeviceName),
+		cdiparser.QualifiedName(cdi.vendor(), cdi.class, claimDeviceName(claimUID, request, device)),
 	}
+}
 
-	for _, device := range devices {
-		cdiDevice := cdiparser.QualifiedName(cdi.vendor(), cdi.class, fmt.Sprintf("%s-%s", claimUID, device))
-		cdiDevices = append(cdiDevices, cdiDevice)
-	}
-
-	return cdiDevices
+// claimDeviceName names the CDI device of one allocation result. The request
+// is part of the name because one device, e.g. a shared subnet, can be
+// allocated to several requests of a claim, and CDI device names must be
+// unique within a spec.
+func claimDeviceName(claimUID, request, device string) string {
+	return fmt.Sprintf("%s-%s-%s", claimUID, nonWord.ReplaceAllString(request, "-"), device)
 }
 
 func (cdi *CDIHandler) kind() string {

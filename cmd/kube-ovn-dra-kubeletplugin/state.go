@@ -263,7 +263,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			return nil, fmt.Errorf("error applying config: %w", err)
 		}
 
-		// Merge any new container edits with the overall per device map.
+		// Merge any new container edits with the overall per result map.
 		for k, v := range containerEdits {
 			perDeviceCDIContainerEdits[k] = v
 		}
@@ -336,9 +336,9 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 				RequestNames: []string{result.Request},
 				PoolName:     result.Pool,
 				DeviceName:   result.Device,
-				CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{result.Device}),
+				CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), result.Request, result.Device),
 			},
-			ContainerEdits: perDeviceCDIContainerEdits[result.Device],
+			ContainerEdits: perDeviceCDIContainerEdits[profiles.ResultKey(result)],
 			AdminAccess:    hasAdminAccess,
 		}
 		preparedDevices = append(preparedDevices, device)

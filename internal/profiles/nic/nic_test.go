@@ -85,16 +85,17 @@ func TestEnumerateDevicesMissingVlan(t *testing.T) {
 
 func TestApplyConfig(t *testing.T) {
 	p := newTestProfile()
-	results := []*resourceapi.DeviceRequestAllocationResult{{Device: "subnet-blue"}}
+	results := []*resourceapi.DeviceRequestAllocationResult{{Request: "a", Device: "subnet-blue"}, {Request: "b", Device: "subnet-blue"}}
 
 	edits, err := p.ApplyConfig(nil, results)
 	require.NoError(t, err)
-	assert.ElementsMatch(t, []string{"KUBE_OVN_NIC_IFACE_subnet-blue=net1", "KUBE_OVN_NIC_SUBNET_subnet-blue=blue"},
-		edits["subnet-blue"].Env)
+	require.Len(t, edits, 2, "one entry per result, even on a shared device")
+	assert.ElementsMatch(t, []string{"KUBE_OVN_NIC_NET1_SUBNET=blue", "KUBE_OVN_NIC_NET1_DEVICE=subnet-blue"},
+		edits["a/subnet-blue"].Env)
 
-	edits, err = p.ApplyConfig(&configapi.NicConfig{InterfaceName: "eth9"}, results)
+	edits, err = p.ApplyConfig(&configapi.NicConfig{InterfaceName: "eth-9"}, results[1:])
 	require.NoError(t, err)
-	assert.Contains(t, edits["subnet-blue"].Env, "KUBE_OVN_NIC_IFACE_subnet-blue=eth9")
+	assert.Contains(t, edits["b/subnet-blue"].Env, "KUBE_OVN_NIC_ETH_9_SUBNET=blue")
 
 	_, err = p.ApplyConfig(&runtime.Unknown{}, results)
 	assert.Error(t, err)

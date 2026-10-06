@@ -129,9 +129,6 @@ MAC survive VM restarts.
 - The `PendingStore` lives in memory: if the plugin restarts between
   `NodePrepareResources` and `RunPodSandbox`, that pod starts without its DRA
   NICs.
-- Two requests of **one claim** allocated to the same subnet device produce
-  duplicate CDI device names, so the claim fails to prepare. Use one claim per
-  NIC for several NICs on one subnet.
 
 ## Local dev deployment on kind
 

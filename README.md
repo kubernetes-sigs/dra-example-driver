@@ -142,8 +142,8 @@ spec:
 
 Several NICs of one pod may use the same subnet as long as their interface
 names differ; kube-ovn then keys each NIC by `<provider>.<interfaceName>`, as
-for repeated Multus attachments. Until the CDI device naming is fixed, put such
-NICs in separate claims (see
+for repeated Multus attachments. The NICs can be requests of one claim or
+separate claims (see
 [`same-subnet-2nic.yaml`](demo/nic-example/examples/same-subnet-2nic.yaml)).
 
 Worked examples live in [`demo/nic-example/`](demo/nic-example/): a one-underlay
