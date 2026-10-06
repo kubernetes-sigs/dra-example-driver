@@ -27,9 +27,8 @@ jobs:
         sudo snap install helm --classic
         sudo snap install kubectl --classic
     - name: install kind
-      # kind >= v0.31 defaults to a v1.35 node image, required for the stable
-      # resource.k8s.io/v1 DRA API the driver uses.
-      run: go install sigs.k8s.io/kind@v0.31.0
+      # The release that ships the Makefile's kindest/node v1.35 image.
+      run: go install sigs.k8s.io/kind@v0.33.0
     - name: Setup e2e
       run: make setup-e2e
     - name: Run e2e tests
