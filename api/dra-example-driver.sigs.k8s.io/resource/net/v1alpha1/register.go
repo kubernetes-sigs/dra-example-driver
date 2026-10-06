@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	GroupName = "net.resource.example.com"
+	GroupName = "net.resource.dra-example-driver.sigs.k8s.io"
 	Version   = "v1alpha1"
 )
 

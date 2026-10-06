@@ -43,7 +43,7 @@ import (
 
 const (
 	testNodeName   = "test-node"
-	testDriverName = "cpu.example.com"
+	testDriverName = "cpu.dra-example-driver.sigs.k8s.io"
 )
 
 // newDriverTestConfig builds a Config that lets NewDriver run for real against
@@ -51,11 +51,13 @@ const (
 // temporary directory and the healthcheck server on an ephemeral port.
 //
 // It uses os.MkdirTemp rather than t.TempDir because unix socket paths are
-// limited to ~104 bytes on macOS and t.TempDir embeds the test name.
+// limited to ~104 bytes on macOS and t.TempDir embeds the test name. Use /tmp
+// because macOS's default temporary directory leaves too little space for
+// the full driver name and a rolling-update socket filename.
 func newDriverTestConfig(t *testing.T, deviceHealth bool, healthcheckPort int) (*Config, *error) {
 	t.Helper()
 
-	tmp, err := os.MkdirTemp("", "dra")
+	tmp, err := os.MkdirTemp("/tmp", "dra")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
 
@@ -83,6 +85,28 @@ func newDriverTestConfig(t *testing.T, deviceHealth bool, healthcheckPort int) (
 		cancelMainCtx: func(err error) { fatal = err },
 		profile:       cpu.NewProfile(testNodeName, testDriverName, flags.cpuNUMANodes, flags.cpusPerNUMANode),
 	}, &fatal
+}
+
+func TestNewDriverWithLongNameAndRollingUpdate(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	config, _ := newDriverTestConfig(t, false, -1)
+	config.flags.podUID = "f358c92b-e974-4f29-a84f-6c64bec0949d"
+	// Match the production registrar directory's length so the old full-UID
+	// filename would exceed Linux's Unix socket path limit.
+	config.flags.kubeletRegistrarDirectoryPath = filepath.Join(config.flags.kubeletRegistrarDirectoryPath, "registry-padding")
+	require.NoError(t, os.MkdirAll(config.flags.kubeletRegistrarDirectoryPath, 0750))
+	oldSocket := filepath.Join(config.flags.kubeletRegistrarDirectoryPath, testDriverName+"-"+config.flags.podUID+"-reg.sock")
+	require.GreaterOrEqual(t, len(oldSocket), 108)
+	d, err := NewDriver(ctx, config)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, d.Shutdown(klog.FromContext(ctx))) })
+	entries, err := os.ReadDir(config.flags.kubeletRegistrarDirectoryPath)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	info, err := entries[0].Info()
+	require.NoError(t, err)
+	assert.NotZero(t, info.Mode()&os.ModeSocket)
 }
 
 func TestNewDriverLifecycle(t *testing.T) {

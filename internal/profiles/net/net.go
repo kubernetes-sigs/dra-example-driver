@@ -27,7 +27,7 @@ import (
 	cdiapi "tags.cncf.io/container-device-interface/pkg/cdi"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
-	configapi "sigs.k8s.io/dra-example-driver/api/example.com/resource/net/v1alpha1"
+	configapi "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/net/v1alpha1"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 )

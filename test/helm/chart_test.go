@@ -30,8 +30,48 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	resourcev1 "k8s.io/api/resource/v1"
 	"sigs.k8s.io/yaml"
 )
+
+func TestDriverIdentity(t *testing.T) {
+	for _, profile := range []string{"gpu", "cpu", "net"} {
+		for _, override := range []string{"", "custom.example.org"} {
+			t.Run(profile+"/"+override, func(t *testing.T) {
+				expected := profile + ".dra-example-driver.sigs.k8s.io"
+				if override != "" {
+					expected = override
+				}
+				chart, err := loader.Load("../../deployments/helm/dra-example-driver")
+				require.NoError(t, err)
+				values, err := chartutil.ToRenderValues(chart, map[string]any{
+					"deviceProfile": profile,
+					"driverName":    override,
+					"webhook":       map[string]any{"enabled": true},
+					"controller":    map[string]any{"plugins": []any{"binding-conditions"}},
+				}, common.ReleaseOptions{Name: "test", Namespace: "driver-test", IsInstall: true}, common.DefaultCapabilities)
+				require.NoError(t, err)
+				rendered, err := engine.Render(chart, values)
+				require.NoError(t, err)
+				var dc resourcev1.DeviceClass
+				require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/deviceclass.yaml"]), &dc))
+				assert.Equal(t, expected, dc.Name)
+				require.Len(t, dc.Spec.Selectors, 1)
+				require.NotNil(t, dc.Spec.Selectors[0].CEL)
+				assert.Equal(t, "device.driver == '"+expected+"'", dc.Spec.Selectors[0].CEL.Expression)
+				var ds appsv1.DaemonSet
+				require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/kubeletplugin.yaml"]), &ds))
+				assert.Equal(t, expected, pluginContainerEnv(t, ds)["DRIVER_NAME"])
+				for _, component := range []string{"controller", "webhook"} {
+					var deployment appsv1.Deployment
+					require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/"+component+"-deployment.yaml"]), &deployment))
+					require.Len(t, deployment.Spec.Template.Spec.Containers, 1)
+					assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, "--driver-name="+expected)
+				}
+			})
+		}
+	}
+}
 
 func TestDeviceHealthPodWatchRBAC(t *testing.T) {
 	for _, tc := range []struct {

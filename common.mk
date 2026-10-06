@@ -21,7 +21,7 @@ MODULE := sigs.k8s.io/$(DRIVER_NAME)
 VERSION  ?=
 vVERSION := v$(VERSION:v%=%)
 
-VENDOR := example.com
+VENDOR := dra-example-driver.sigs.k8s.io
 APIS := $(CURDIR)/api/$(VENDOR)/resource/gpu/v1alpha1 $(CURDIR)/internal/api/checkpoint $(CURDIR)/internal/api/checkpoint/v1 $(CURDIR)/api/$(VENDOR)/resource/net/v1alpha1
 
 PLURAL_EXCEPTIONS  = DeviceClassParameters:DeviceClassParameters

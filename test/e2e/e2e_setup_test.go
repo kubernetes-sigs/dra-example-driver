@@ -68,17 +68,17 @@ const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
 // and webhook testdata; deployManifest substitutes it for the per-test
 // driver name, and the webhook tests pin their installed driver to it so
 // their static testdata stays valid.
-const defaultGPUDeviceClassName = "gpu.example.com"
+const defaultGPUDeviceClassName = "gpu.dra-example-driver.sigs.k8s.io"
 
 // defaultCPUDeviceClassName is the driver name baked into demo manifests
 // using the cpu profile; deployManifest substitutes it for the per-test
 // driver name.
-const defaultCPUDeviceClassName = "cpu.example.com"
+const defaultCPUDeviceClassName = "cpu.dra-example-driver.sigs.k8s.io"
 
 // defaultNETDeviceClassName is the driver name baked into demo manifests
 // using the net profile; deployManifest substitutes it for the per-test
 // driver name.
-const defaultNETDeviceClassName = "net.example.com"
+const defaultNETDeviceClassName = "net.dra-example-driver.sigs.k8s.io"
 
 // defaultDeviceClassNames are the driver names baked into demo manifests as
 // placeholders; deployManifest substitutes each for the per-test driver name.
@@ -1183,7 +1183,7 @@ func verifyAllocatedResourcesHealth(ctx context.Context, namespace, podName, con
 	}, "120s", "5s").Should(Succeed())
 }
 
-const healthOverrideAnnotationPrefix = "health.example.com/"
+const healthOverrideAnnotationPrefix = "health.dra-example-driver.sigs.k8s.io/"
 
 // podNodeAndAllocatedDevices returns the node the pod landed on and the names of
 // the devices allocated to its pod-local claim. A health override must target
@@ -1205,7 +1205,7 @@ func podNodeAndAllocatedDevices(ctx context.Context, namespace, podName, podLoca
 
 // setDeviceHealthOverride annotates the driver's kubelet plugin pod running on
 // nodeName so it forces the given health value for each of the named devices.
-// The driver on that node watches its own pod for health.example.com/<device>
+// The driver on that node watches its own pod for health.dra-example-driver.sigs.k8s.io/<device>
 // annotations and overrides the simulated health of that device accordingly.
 func setDeviceHealthOverride(ctx context.Context, drv installedDriver, nodeName string, devices []string, value string) {
 	GinkgoHelper()

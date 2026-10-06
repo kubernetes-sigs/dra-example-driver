@@ -31,7 +31,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
-	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/example.com/resource/gpu/v1alpha1"
+	gpuv1alpha1 "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/gpu/v1alpha1"
 )
 
 var _ = Describe("Test GPU allocation", func() {
@@ -447,7 +447,7 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
 	})
 
-	// Webhook tests share one driver pinned to "gpu.example.com" so their
+	// Webhook tests share one driver pinned to "gpu.dra-example-driver.sigs.k8s.io" so their
 	// static testdata stays valid; Ordered+Serial avoids concurrent upgrades.
 	Context("Webhooks", Ordered, Serial, func() {
 		BeforeAll(func(ctx SpecContext) {

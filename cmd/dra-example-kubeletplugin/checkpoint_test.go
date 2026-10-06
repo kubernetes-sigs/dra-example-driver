@@ -17,6 +17,8 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -49,6 +51,13 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 	}
 	err = writeCheckpoint(path, encoder, updatedCheckpoint)
 	require.NoError(t, err)
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var stored struct {
+		APIVersion string `json:"apiVersion"`
+	}
+	require.NoError(t, json.Unmarshal(data, &stored))
+	assert.Equal(t, "checkpoint.internal.dra-example-driver.sigs.k8s.io/v1", stored.APIVersion)
 
 	checkpoint, err = readCheckpoint(path, decoder)
 	require.NoError(t, err)

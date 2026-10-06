@@ -23,7 +23,7 @@ spec:
     args: ["export; trap 'exit 0' TERM; sleep 9999 & wait"]
     resources:
       limits:
-        deviceclass.resource.kubernetes.io/gpu.example.com: 1
+        deviceclass.resource.kubernetes.io/gpu.dra-example-driver.sigs.k8s.io: 1
 
 ---
 # pod1: explicit extended-resource name. Requires the chart installed with
