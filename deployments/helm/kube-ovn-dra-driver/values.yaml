@@ -2,7 +2,9 @@
 # This is a YAML-formatted file.
 # Declare variables to be passed into your templates.
 
-nameOverride: ""
+# The chart is published as kube-ovn-dra-driver-chart, next to the image
+# kube-ovn-dra-driver; resources keep the name kube-ovn-dra-driver.
+nameOverride: "kube-ovn-dra-driver"
 fullnameOverride: ""
 namespaceOverride: ""
 selectorLabelsOverride: {}

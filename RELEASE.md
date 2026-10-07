@@ -4,7 +4,7 @@ The kube-ovn NIC DRA driver is released on an as-needed basis. Published
 release artifacts are:
 
 - Container images: `docker.io/soer3n/kube-ovn-dra-driver`
-- The `kube-ovn-dra-driver` Helm chart: `oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver`
+- The `kube-ovn-dra-driver-chart` Helm chart: `oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver-chart`
 
 ## Container images
 

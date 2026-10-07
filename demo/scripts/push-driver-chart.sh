@@ -24,7 +24,7 @@ source "${CURRENT_DIR}/common.sh"
 
 # Set build variables
 export REGISTRY="${DRIVER_CHART_REGISTRY}"
-export CHART_NAME="${DRIVER_NAME}"
+export CHART_NAME="${DRIVER_NAME}-chart"
 
 ${HELM} package --version "${CHART_VERSION}" deployments/helm/kube-ovn-dra-driver
 ${HELM} push "${CHART_NAME}-${CHART_VERSION}.tgz" "oci://${REGISTRY}"

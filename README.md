@@ -99,7 +99,7 @@ underlay vs OVN overlay device types, and the tunable `make` variables.
 ## Install with Helm
 
 ```bash
-helm install kube-ovn-dra-driver oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver \
+helm install kube-ovn-dra-driver oci://registry-1.docker.io/soer3n/kube-ovn-dra-driver-chart \
   --version <chart version> --namespace kube-system \
   --set deviceProfile=nic
 # or from the checkout: deployments/helm/kube-ovn-dra-driver
