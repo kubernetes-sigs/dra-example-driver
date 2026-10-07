@@ -189,7 +189,7 @@ make clab-deploy            # OPTIONAL: containerlab VLAN uplink + FRR BGP gatew
 make kind-deploy-kube-ovn   # install kube-ovn CNI via its Helm chart -> nodes become Ready
 make kind-deploy-multus     # OPTIONAL: Multus (thick mode), only for make nic-bench
 make kind-deploy-nic-prereqs # provider network, VLANs, subnets
-make kind-build-driver      # docker build -> kind load docker-image nic.kubeovn.io:dev
+make kind-build-driver      # docker build -> kind load docker-image docker.io/soer3n/kube-ovn-dra-driver:dev
 make kind-deploy-driver     # helm install kube-ovn-nic-dra (deviceProfile=nic)
 make kind-deploy-nic-example # ResourceClaim + demo pod
 ```
@@ -350,7 +350,7 @@ Tunable variables (override on the `make` command line):
 | `KUBE_OVN_REPO` | `../kube-ovn` | local kube-ovn checkout holding `KUBE_OVN_VERSION` |
 | `KUBE_OVN_IMAGE` | `docker.io/soer3n/kube-ovn:dra-driver-<version>` | kube-ovn image built from `KUBE_OVN_VERSION` |
 | `MULTUS_VERSION` | `v4.2.3` | Multus daemonset version |
-| `NIC_DRIVER_NAME` | `nic.kubeovn.io` | driver name / image repo |
+| `NIC_DRIVER_NAME` | `nic.kubeovn.io` | DRA driver name (DeviceClass, ResourceSlices) |
 
 ## Testing
 

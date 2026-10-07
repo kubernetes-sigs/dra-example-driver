@@ -426,10 +426,10 @@ kind-deploy-multus:
 kind-build-driver:
 	$(CONTAINER_TOOL) build \
 		--build-arg GOLANG_VERSION="$(GOLANG_VERSION)" \
-		-t $(NIC_DRIVER_NAME):dev \
+		-t $(IMAGE_NAME):dev \
 		-f $(CURDIR)/Dockerfile \
 		$(CURDIR)
-	kind load docker-image $(NIC_DRIVER_NAME):dev --name $(KIND_CLUSTER_NAME)
+	kind load docker-image $(IMAGE_NAME):dev --name $(KIND_CLUSTER_NAME)
 
 ## kind-deploy-driver: install the NIC DRA kubelet-plugin via Helm.
 ## Tolerates the control-plane's NoSchedule taint so the demo's 2-node kind
@@ -443,7 +443,7 @@ kind-deploy-driver:
 		--namespace kube-system \
 		--set deviceProfile=nic \
 		--set driverName=$(NIC_DRIVER_NAME) \
-		--set image.repository=$(NIC_DRIVER_NAME) \
+		--set image.repository=$(IMAGE_NAME) \
 		--set image.tag=dev \
 		--set image.pullPolicy=Never \
 		--set-json 'kubeletPlugin.tolerations=[{"key":"node-role.kubernetes.io/control-plane","operator":"Exists","effect":"NoSchedule"}]' \
