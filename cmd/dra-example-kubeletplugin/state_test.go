@@ -247,6 +247,78 @@ func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 	assert.Equal(t, "3", consumedByShare["share-1"], "share-1 should keep its own consumed CPU edit")
 }
 
+func TestPreparePerDeviceAdminAccess(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+	for _, tc := range []struct {
+		name    string
+		results []resourceapi.DeviceRequestAllocationResult
+		want    map[string]bool
+	}{
+		{
+			name: "mixed admin and ordinary allocations",
+			results: []resourceapi.DeviceRequestAllocationResult{
+				{Request: "admin", Driver: driverName, Pool: nodeName, Device: "numa-0", AdminAccess: ptr.To(true)},
+				{Request: "ordinary", Driver: driverName, Pool: nodeName, Device: "numa-1"},
+				{Request: "explicit-false", Driver: driverName, Pool: nodeName, Device: "numa-2", AdminAccess: ptr.To(false)},
+			},
+			want: map[string]bool{"numa-0": true, "numa-1": false, "numa-2": false},
+		},
+		{
+			name: "admin allocation for another driver",
+			results: []resourceapi.DeviceRequestAllocationResult{
+				{Request: "ordinary", Driver: driverName, Pool: nodeName, Device: "numa-0"},
+				{Request: "admin", Driver: "other.example.com", Pool: nodeName, Device: "other-0", AdminAccess: ptr.To(true)},
+			},
+			want: map[string]bool{"numa-0": false},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			flags := &Flags{
+				cdiRoot: root, driverName: driverName, profile: "cpu", nodeName: nodeName,
+				cpuNUMANodes: 3, cpusPerNUMANode: 4, kubeletPluginsDirectoryPath: root,
+			}
+			require.NoError(t, os.MkdirAll(filepath.Join(root, driverName), 0750))
+			state, err := NewDeviceState(&Config{
+				flags:   flags,
+				profile: cpu.NewProfile(nodeName, driverName, flags.cpuNUMANodes, flags.cpusPerNUMANode),
+			})
+			require.NoError(t, err)
+			claim := testCPUClaim(driverName, nodeName)
+			claim.Status.Allocation.Devices.Results = tc.results
+
+			for range 2 {
+				prepared, err := state.Prepare(t.Context(), claim)
+				require.NoError(t, err)
+				require.Len(t, prepared, len(tc.want))
+				for _, device := range prepared {
+					want, ok := tc.want[device.DeviceName]
+					require.True(t, ok)
+					assert.Equal(t, want, device.AdminAccess, "allocation %s", device.DeviceName)
+				}
+				specBytes, err := os.ReadFile(claimSpecPath(state, claim.UID))
+				require.NoError(t, err)
+				var spec cdispec.Spec
+				require.NoError(t, yaml.Unmarshal(specBytes, &spec))
+				require.Len(t, spec.Devices, len(tc.want))
+				for _, device := range spec.Devices {
+					deviceName := strings.TrimPrefix(device.Name, string(claim.UID)+"-")
+					want, ok := tc.want[deviceName]
+					require.True(t, ok)
+					if want {
+						assert.Contains(t, device.ContainerEdits.Env, "DRA_ADMIN_ACCESS=true")
+					} else {
+						assert.Contains(t, device.ContainerEdits.Env, "DRA_ADMIN_ACCESS=false")
+					}
+				}
+			}
+		})
+	}
+}
+
 // TestUnprepareReturnsErrorOnUnreadableCheckpoint verifies that Unprepare returns an error
 // (rather than panicking) when checkpoint.json exists but cannot be decoded.
 // The fix returns the error immediately without touching the checkpoint, letting
