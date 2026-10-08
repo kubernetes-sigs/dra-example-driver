@@ -476,6 +476,20 @@ func TestBuildDeviceStatus_UnknownDevice(t *testing.T) {
 	assert.Empty(t, data)
 }
 
+func TestBuildDeviceStatus_SharedAllocation(t *testing.T) {
+	profile := NewProfile("test-node", 1, 0, true, false, true, false, nil)
+	result := &resourceapi.DeviceRequestAllocationResult{
+		Device:  "gpu-0",
+		Driver:  "gpu.example.com",
+		Pool:    "test-node",
+		ShareID: ptr.To(types.UID("00000000-0000-0000-0000-000000000001")),
+	}
+
+	got := profile.BuildDeviceStatus(map[string]resourceapi.Device{"gpu-0": {Name: "gpu-0"}}, result)
+	require.NotNil(t, got)
+	assert.Equal(t, (*string)(result.ShareID), got.ShareID)
+}
+
 func TestApplyConfig(t *testing.T) {
 	profile := NewProfile("test-node", 2, 0, false, false, false, false, nil)
 
