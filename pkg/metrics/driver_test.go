@@ -49,7 +49,7 @@ func TestObserveUnprepareClaim(t *testing.T) {
 func TestObserveDeviceStatusUpdate(t *testing.T) {
 	t.Parallel()
 
-	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted} {
+	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted, DeviceStatusResultDropped} {
 		labels := map[string]string{"result": result}
 		before := counterValue(t, "dra_example_driver_device_status_updates_total", labels)
 		ObserveDeviceStatusUpdate(result)

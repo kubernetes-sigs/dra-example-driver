@@ -34,6 +34,9 @@ const (
 	DeviceStatusResultRetry          = "retry"
 	DeviceStatusResultPermanentError = "permanent_error"
 	DeviceStatusResultExhausted      = "exhausted"
+	// DeviceStatusResultDropped is an attempt abandoned because the claim was
+	// unprepared, a newer update replaced it, or the driver shut down.
+	DeviceStatusResultDropped = "dropped"
 )
 
 var (
@@ -84,7 +87,7 @@ var (
 		Subsystem:      Subsystem,
 		Name:           "device_status_updates_total",
 		StabilityLevel: k8smetrics.ALPHA,
-		Help:           "Total number of attempts to publish device status to a ResourceClaim, by result: success, retry, permanent_error or exhausted.",
+		Help:           "Total number of attempts to publish device status to a ResourceClaim, by result: success, retry, permanent_error, exhausted, or dropped.",
 	}, []string{"result"})
 
 	driverMetrics = []k8smetrics.Registerable{
@@ -111,7 +114,7 @@ func initDriverMetricSeries() {
 		PrepareClaimsTotal.WithLabelValues(result).Add(0)
 		UnprepareClaimsTotal.WithLabelValues(result).Add(0)
 	}
-	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted} {
+	for _, result := range []string{DeviceStatusResultSuccess, DeviceStatusResultRetry, DeviceStatusResultPermanentError, DeviceStatusResultExhausted, DeviceStatusResultDropped} {
 		DeviceStatusUpdatesTotal.WithLabelValues(result).Add(0)
 	}
 }

@@ -22,7 +22,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,7 @@ import (
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 )
 
@@ -397,6 +400,118 @@ func TestPrepareRestoredClaimFailsWhenClaimSpecCannotBeRecreated(t *testing.T) {
 	require.NoError(t, readErr)
 	require.Len(t, checkpoint.PreparedClaims, 1)
 	assert.Equal(t, claim.UID, checkpoint.PreparedClaims[0].UID)
+}
+
+func TestPrepareDoesNotPublishDeviceStatusWhenCheckpointWriteFails(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	published := installRecordingStatusPublisher(t, state)
+	state.checkpointPath = filepath.Join(root, "missing-dir", "checkpoint.json")
+
+	_, err := state.Prepare(context.Background(), claim)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to sync to checkpoint")
+	require.Never(t, func() bool { return len(published.UIDs()) > 0 }, 50*time.Millisecond, 5*time.Millisecond)
+}
+
+func TestPrepareRestoredClaimRepublishesDeviceStatus(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	first := installRecordingStatusPublisher(t, state)
+
+	prepared, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+	require.NotEmpty(t, prepared)
+	require.Eventually(t, func() bool { return len(first.UIDs()) == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, []types.UID{claim.UID}, first.UIDs())
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	second := installRecordingStatusPublisher(t, restarted)
+	restored, err := restarted.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+	require.NotEmpty(t, restored)
+	require.Eventually(t, func() bool { return len(second.UIDs()) == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, []types.UID{claim.UID}, second.UIDs())
+}
+
+func TestPrepareDoesNotPublishDeviceStatusWhenRestoredClaimSpecCannotBeRecreated(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+	require.NoError(t, os.Remove(claimSpecPath(state, claim.UID)))
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	published := installRecordingStatusPublisher(t, restarted)
+	require.NoError(t, os.Mkdir(claimSpecPath(restarted, claim.UID), 0750))
+
+	_, err = restarted.Prepare(context.Background(), claim)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "unable to recreate CDI spec file for claim from checkpoint")
+	require.Never(t, func() bool { return len(published.UIDs()) > 0 }, 50*time.Millisecond, 5*time.Millisecond)
+}
+
+// recordingStatusUpdate records the claim UIDs passed to a status update.
+type recordingStatusUpdate struct {
+	mu   sync.Mutex
+	uids []types.UID
+}
+
+func (r *recordingStatusUpdate) update(_ context.Context, _, _ string, uid types.UID, _ ...resourceapi.AllocatedDeviceStatus) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.uids = append(r.uids, uid)
+	return nil
+}
+
+func (r *recordingStatusUpdate) UIDs() []types.UID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]types.UID(nil), r.uids...)
+}
+
+// deviceStatusBuilder adds [profiles.DeviceStatusBuilder] to a profile that
+// otherwise does not publish status.
+type deviceStatusBuilder struct {
+	profiles.ConfigHandler
+}
+
+func (deviceStatusBuilder) BuildDeviceStatus(_ map[string]resourceapi.Device, result *resourceapi.DeviceRequestAllocationResult) *resourceapi.AllocatedDeviceStatus {
+	return &resourceapi.AllocatedDeviceStatus{Driver: result.Driver, Pool: result.Pool, Device: result.Device}
+}
+
+func installRecordingStatusPublisher(t *testing.T, state *DeviceState) *recordingStatusUpdate {
+	t.Helper()
+	rec := &recordingStatusUpdate{}
+	state.configHandler = deviceStatusBuilder{ConfigHandler: state.configHandler}
+	updater := newDeviceStatusUpdater(rec.update)
+	ctx, cancel := context.WithCancel(context.Background())
+	updater.Start(ctx)
+	t.Cleanup(func() {
+		cancel()
+		updater.Stop()
+	})
+	state.statusUpdater = updater
+	return rec
 }
 
 func newTestCPUDeviceState(t *testing.T, root, nodeName, driverName string) *DeviceState {

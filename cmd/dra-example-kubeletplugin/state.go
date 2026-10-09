@@ -177,10 +177,14 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		if err = s.cdi.CreateClaimSpecFile(string(claim.UID), restoredDevices); err != nil {
 			return nil, fmt.Errorf("unable to recreate CDI spec file for claim from checkpoint: %v", err)
 		}
+		// In-memory retries do not survive a restart. Status is derived from
+		// the claim, so publish it again now that the prepared claim is back.
+		// Republishing is idempotent.
+		s.prepareDevices(ctx, claim)
 		return restoredDevices, nil
 	}
 
-	preparedDevices, err := s.prepareDevices(ctx, claim)
+	preparedDevices, err := s.computeDeviceConfig(claim)
 	if err != nil {
 		return nil, fmt.Errorf("prepare failed: %v", err)
 	}
@@ -194,6 +198,9 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		return nil, fmt.Errorf("unable to sync to checkpoint: %v", err)
 	}
 
+	// Publish only after the CDI file and checkpoint are durable. A failed
+	// write must not report devices as prepared.
+	s.prepareDevices(ctx, claim)
 	return preparedDevices, nil
 }
 
@@ -237,22 +244,21 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 	return nil
 }
 
-// prepareDevices performs one-time setup for the devices allocated to a
-// ResourceClaim before being consumed by a Pod.
-func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) (PreparedDevices, error) {
-	preparedDevices, err := s.computeDeviceConfig(claim)
-	if err != nil {
-		return nil, err
-	}
-
-	// Publish per-device status (e.g. uuid, model, driverVersion) into
-	// ResourceClaim.status.devices[].data when the profile implements
-	// [profiles.DeviceStatusBuilder]. This is a side-effect on the API server
-	// and therefore lives in prepareDevices (rather than computeDeviceConfig,
-	// which must be deterministic and side-effect free).
+// prepareDevices publishes per-device status (e.g. uuid, model, driverVersion)
+// into ResourceClaim.status.devices[].data when the profile implements
+// [profiles.DeviceStatusBuilder]. This is a side-effect on the API server and
+// therefore lives here rather than in computeDeviceConfig, which must be
+// deterministic and side-effect free.
+//
+// Callers invoke it only after the CDI spec and checkpoint write have
+// succeeded, and again when a prepared claim is restored after a restart.
+// Publishing is non-fatal and must not block NodePrepareResources: the device
+// is prepared either way. The update is retried in the background; see
+// [deviceStatusUpdater].
+func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) {
 	builder, ok := s.configHandler.(profiles.DeviceStatusBuilder)
-	if !ok {
-		return preparedDevices, nil
+	if !ok || claim.Status.Allocation == nil {
+		return
 	}
 
 	var deviceStatuses []resourceapi.AllocatedDeviceStatus
@@ -264,16 +270,12 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 			deviceStatuses = append(deviceStatuses, *status)
 		}
 	}
-	if len(deviceStatuses) > 0 {
-		// Publishing status is non-fatal and must not block
-		// NodePrepareResources: the device is prepared either way. The update
-		// is retried in the background; see [deviceStatusUpdater].
-		klog.FromContext(ctx).V(2).Info("Queueing device status for ResourceClaim",
-			"namespace", claim.Namespace, "name", claim.Name, "uid", claim.UID, "devices", len(deviceStatuses))
-		s.statusUpdater.Enqueue(claim, deviceStatuses)
+	if len(deviceStatuses) == 0 {
+		return
 	}
-
-	return preparedDevices, nil
+	klog.FromContext(ctx).V(2).Info("Queueing device status for ResourceClaim",
+		"namespace", claim.Namespace, "name", claim.Name, "uid", claim.UID, "devices", len(deviceStatuses))
+	s.statusUpdater.Enqueue(claim, deviceStatuses)
 }
 
 // unprepareDevices undoes any side-effects produced by

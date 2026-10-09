@@ -100,7 +100,7 @@ type driver struct {
 	healthWatchBackoff time.Duration
 }
 
-func NewDriver(ctx context.Context, config *Config) (*driver, error) {
+func NewDriver(ctx context.Context, config *Config) (_ *driver, err error) {
 	driver := &driver{
 		client:          config.coreclient,
 		cancelCtx:       config.cancelMainCtx,
@@ -121,6 +121,14 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 	}
 	driver.state = state
 	state.statusUpdater.Start(ctx)
+	// NewDriver returns no driver when a later step fails, so Shutdown is
+	// never called. Stop the updater on those paths or its goroutines leak
+	// for the life of ctx.
+	defer func() {
+		if err != nil {
+			state.statusUpdater.Stop()
+		}
+	}()
 
 	// Device health reporting (KEP-4680) is opt-out: on by default, disabled with
 	// --device-health=false (DEVICE_HEALTH). When disabled we build no simulator

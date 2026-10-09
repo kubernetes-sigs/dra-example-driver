@@ -26,7 +26,7 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/util/workqueue"
+	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
 
 	"sigs.k8s.io/dra-example-driver/pkg/metrics"
@@ -42,7 +42,7 @@ const (
 	// five minutes of retrying.
 	deviceStatusMaxRetries = 15
 	// deviceStatusAttemptTimeout bounds a single attempt so that a hung API
-	// server cannot stall the worker indefinitely.
+	// server cannot stall the attempt indefinitely.
 	deviceStatusAttemptTimeout = 30 * time.Second
 )
 
@@ -56,198 +56,172 @@ var errClaimReplaced = errors.New("ResourceClaim was replaced")
 // given UID.
 type deviceStatusUpdateFunc func(ctx context.Context, ns, name string, uid types.UID, devices ...resourceapi.AllocatedDeviceStatus) error
 
-// pendingDeviceStatus is the latest status waiting to be published for a claim.
-type pendingDeviceStatus struct {
-	namespace string
-	name      string
-	devices   []resourceapi.AllocatedDeviceStatus
-	// generation distinguishes successive Enqueue calls for the same claim.
-	generation uint64
+// statusAttempt is one in-flight publish for a claim. Cancelling it aborts
+// the API call and the backoff wait.
+type statusAttempt struct {
+	cancel context.CancelFunc
 }
 
 // deviceStatusUpdater publishes ResourceClaim.status.devices asynchronously so
 // that API server latency or failures never block NodePrepareResources.
 //
-// Transient failures are retried with exponential backoff up to
-// deviceStatusMaxRetries. Permanent failures (the claim was deleted or
-// replaced, the update is invalid, or the driver lacks permission) are not
-// retried. Every attempt is counted in the device_status_updates_total metric.
-// Retries are logged at V(1), as they are expected while the API server is
-// briefly unavailable; giving up is logged as an error with the claim's
-// namespace, name and UID.
+// Each claim has its own goroutine. Transient failures are retried with
+// exponential backoff up to deviceStatusMaxRetries. The delay is capped, but
+// the attempt limit is not: wait.ExponentialBackoffWithContext stops as soon
+// as Backoff.Cap is reached, which would end the retries early, so the
+// goroutine steps a wait.Backoff itself. Permanent failures (the claim was
+// deleted or replaced, the update is invalid, or the driver lacks permission)
+// are not retried. Cancel and a newer Enqueue for the same claim abort the
+// in-flight call so a released claim cannot publish afterwards. Every attempt
+// is counted in the device_status_updates_total metric. Retries are logged at
+// V(1), as they are expected while the API server is briefly unavailable;
+// giving up is logged as an error with the claim's namespace, name and UID.
 type deviceStatusUpdater struct {
 	update deviceStatusUpdateFunc
-	queue  workqueue.TypedRateLimitingInterface[types.UID]
 
-	maxRetries     int
+	maxAttempts    int
 	attemptTimeout time.Duration
+	backoff        wait.Backoff
 
-	mu         sync.Mutex
-	pending    map[types.UID]pendingDeviceStatus
-	generation uint64
-	// cancel is the updater's own context, a child of the context passed to
-	// Start. Stop uses it to abort in-flight API calls when that parent is
-	// still active. It is nil until Start.
-	cancel context.CancelFunc
+	mu       sync.Mutex
+	ctx      context.Context
+	stop     context.CancelFunc
+	attempts map[types.UID]*statusAttempt
 
 	wg sync.WaitGroup
 }
 
 func newDeviceStatusUpdater(update deviceStatusUpdateFunc) *deviceStatusUpdater {
-	return newDeviceStatusUpdaterWithRateLimiter(update,
-		workqueue.NewTypedItemExponentialFailureRateLimiter[types.UID](deviceStatusBaseDelay, deviceStatusMaxDelay))
-}
-
-func newDeviceStatusUpdaterWithRateLimiter(update deviceStatusUpdateFunc, rateLimiter workqueue.TypedRateLimiter[types.UID]) *deviceStatusUpdater {
 	return &deviceStatusUpdater{
-		update: update,
-		queue: workqueue.NewTypedRateLimitingQueueWithConfig(rateLimiter,
-			workqueue.TypedRateLimitingQueueConfig[types.UID]{Name: "device-status"}),
-		maxRetries:     deviceStatusMaxRetries,
+		update:         update,
+		maxAttempts:    deviceStatusMaxRetries + 1,
 		attemptTimeout: deviceStatusAttemptTimeout,
-		pending:        make(map[types.UID]pendingDeviceStatus),
+		backoff: wait.Backoff{
+			Duration: deviceStatusBaseDelay,
+			Factor:   2,
+			Cap:      deviceStatusMaxDelay,
+		},
+		attempts: make(map[types.UID]*statusAttempt),
 	}
 }
 
-// Start runs the worker until ctx is cancelled or Stop is called.
-// The worker uses a child of ctx, so cancelling the parent aborts in-flight
-// attempts and Stop can do the same while the parent is still active.
+// Start retains a child of ctx. Cancelling the parent, or Stop, aborts every
+// in-flight attempt. Start must be called before Enqueue.
 func (u *deviceStatusUpdater) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	u.mu.Lock()
-	u.cancel = cancel
-	u.mu.Unlock()
-
-	// Unblock queue.Get when the worker context goes away.
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
-		<-ctx.Done()
-		u.queue.ShutDown()
-	}()
-
-	u.wg.Add(1)
-	go func() {
-		defer u.wg.Done()
-		for u.processNextItem(ctx) {
-		}
-	}()
+	defer u.mu.Unlock()
+	u.ctx = ctx
+	u.stop = cancel
 }
 
-// Stop cancels in-flight attempts, shuts down the queue, and waits for the
-// worker to exit. Updates that have not been published yet are dropped.
+// Stop cancels in-flight attempts and waits for them to exit. Updates that
+// have not been published yet are dropped. Enqueue after Stop drops the update.
 func (u *deviceStatusUpdater) Stop() {
 	u.mu.Lock()
-	cancel := u.cancel
+	stop := u.stop
+	// Clear ctx before waiting so an Enqueue that has not yet called wg.Add
+	// cannot start a goroutine this Wait would miss.
+	u.ctx = nil
+	u.stop = nil
 	u.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if stop != nil {
+		stop()
 	}
-	u.queue.ShutDown()
 	u.wg.Wait()
 }
 
-// Enqueue schedules devices to be published to the claim's status, replacing
-// any update for the same claim that has not been published yet.
+// Enqueue publishes devices to the claim's status in the background, replacing
+// any in-flight update for the same claim. The replacement starts a fresh
+// backoff. The call does not wait for the API server.
 func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices []resourceapi.AllocatedDeviceStatus) {
 	u.mu.Lock()
-	defer u.mu.Unlock()
-	u.generation++
-	u.pending[claim.UID] = pendingDeviceStatus{
-		namespace:  claim.Namespace,
-		name:       claim.Name,
-		devices:    devices,
-		generation: u.generation,
+	if u.ctx == nil {
+		u.mu.Unlock()
+		klog.Error(nil, "device status updater is not started; dropping device status update", "uid", claim.UID)
+		return
 	}
-	// A fresh update starts with a fresh backoff. Forget and Add stay under
-	// mu, together with requeue, so a stale in-flight failure cannot call
-	// AddRateLimited after this reset and spend one of the new update's retries.
-	u.queue.Forget(claim.UID)
-	u.queue.Add(claim.UID)
+	if prev := u.attempts[claim.UID]; prev != nil {
+		prev.cancel()
+	}
+	ctx, cancel := context.WithCancel(u.ctx)
+	attempt := &statusAttempt{cancel: cancel}
+	u.attempts[claim.UID] = attempt
+	u.wg.Add(1)
+	u.mu.Unlock()
+
+	devices = append([]resourceapi.AllocatedDeviceStatus(nil), devices...)
+	ns, name, uid := claim.Namespace, claim.Name, claim.UID
+	go func() {
+		defer u.wg.Done()
+		defer u.finishAttempt(uid, attempt)
+		u.publish(ctx, ns, name, uid, devices)
+	}()
 }
 
-// Cancel drops any unpublished update for the claim, e.g. because it was
-// unprepared.
+// Cancel aborts any in-flight or pending update for the claim, so an update
+// that Unprepare interrupted cannot publish afterwards.
 func (u *deviceStatusUpdater) Cancel(claimUID types.UID) {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	delete(u.pending, claimUID)
-	// Under mu so it cannot interleave with requeue's AddRateLimited.
-	u.queue.Forget(claimUID)
+	if prev := u.attempts[claimUID]; prev != nil {
+		prev.cancel()
+		delete(u.attempts, claimUID)
+	}
 }
 
-func (u *deviceStatusUpdater) processNextItem(ctx context.Context) bool {
-	uid, shutdown := u.queue.Get()
-	if shutdown {
-		return false
-	}
-	defer u.queue.Done(uid)
-
+func (u *deviceStatusUpdater) finishAttempt(uid types.UID, attempt *statusAttempt) {
 	u.mu.Lock()
-	p, ok := u.pending[uid]
-	u.mu.Unlock()
-	if !ok {
-		// Cancelled, or already published by an earlier attempt.
-		u.queue.Forget(uid)
-		return true
+	defer u.mu.Unlock()
+	if cur, ok := u.attempts[uid]; ok && cur == attempt {
+		delete(u.attempts, uid)
 	}
+}
 
-	logger := klog.FromContext(ctx).WithValues("namespace", p.namespace, "name", p.name, "uid", uid)
-	attempt := u.queue.NumRequeues(uid) + 1
+func (u *deviceStatusUpdater) publish(ctx context.Context, ns, name string, uid types.UID, devices []resourceapi.AllocatedDeviceStatus) {
+	logger := klog.FromContext(ctx).WithValues("namespace", ns, "name", name, "uid", uid)
+	backoff := u.backoff
+	backoff.Steps = u.maxAttempts
+	for attempt := 1; attempt <= u.maxAttempts; attempt++ {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
 
-	attemptCtx, cancel := context.WithTimeout(ctx, u.attemptTimeout)
-	err := u.update(attemptCtx, p.namespace, p.name, uid, p.devices...)
-	cancel()
+		attemptCtx, cancel := context.WithTimeout(ctx, u.attemptTimeout)
+		err := u.update(attemptCtx, ns, name, uid, devices...)
+		cancel()
 
-	switch {
-	case err == nil:
-		metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultSuccess)
-		logger.V(2).Info("Published device status to ResourceClaim", "devices", len(p.devices), "attempt", attempt)
-		u.finish(uid, p)
-	case ctx.Err() != nil:
-		// Shutting down; the attempt was aborted rather than failed.
-	case isPermanentDeviceStatusError(err):
-		metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultPermanentError)
-		logger.Error(err, "Giving up on publishing device status to ResourceClaim: permanent error", "attempt", attempt)
-		u.finish(uid, p)
-	case attempt > u.maxRetries:
-		metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultExhausted)
-		logger.Error(err, "Giving up on publishing device status to ResourceClaim: retries exhausted", "attempt", attempt)
-		u.finish(uid, p)
-	default:
-		if u.requeue(uid, p) {
+		switch {
+		case err == nil:
+			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultSuccess)
+			logger.V(2).Info("Published device status to ResourceClaim", "devices", len(devices), "attempt", attempt)
+			return
+		case ctx.Err() != nil:
+			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultDropped)
+			logger.V(2).Info("Dropped device status update", "err", err, "attempt", attempt)
+			return
+		case isPermanentDeviceStatusError(err):
+			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultPermanentError)
+			logger.Error(err, "Giving up on publishing device status to ResourceClaim: permanent error", "attempt", attempt)
+			return
+		case attempt == u.maxAttempts:
+			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultExhausted)
+			logger.Error(err, "Giving up on publishing device status to ResourceClaim: retries exhausted", "attempt", attempt)
+			return
+		default:
 			metrics.ObserveDeviceStatusUpdate(metrics.DeviceStatusResultRetry)
 			logger.V(1).Info("Failed to publish device status to ResourceClaim, will retry", "err", err, "attempt", attempt)
-		} else {
-			logger.V(2).Info("Not retrying device status update; it was superseded or cancelled", "err", err, "attempt", attempt)
 		}
-	}
-	return true
-}
 
-// requeue schedules another attempt for uid unless Enqueue replaced it or
-// Cancel dropped it while this attempt was in flight. The check and
-// AddRateLimited share mu with Enqueue and Cancel so a stale failure cannot
-// increment the retry count after a fresh update has reset it.
-func (u *deviceStatusUpdater) requeue(uid types.UID, attempted pendingDeviceStatus) bool {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	cur, ok := u.pending[uid]
-	if !ok || cur.generation != attempted.generation {
-		return false
-	}
-	u.queue.AddRateLimited(uid)
-	return true
-}
-
-// finish forgets uid and removes its pending entry, unless Enqueue replaced it
-// with a newer update while this attempt was in flight.
-func (u *deviceStatusUpdater) finish(uid types.UID, attempted pendingDeviceStatus) {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if cur, ok := u.pending[uid]; ok && cur.generation == attempted.generation {
-		delete(u.pending, uid)
-		u.queue.Forget(uid)
+		timer := time.NewTimer(backoff.Step())
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
 }
 

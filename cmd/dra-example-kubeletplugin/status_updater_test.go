@@ -33,7 +33,6 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	fakeclient "k8s.io/client-go/kubernetes/fake"
-	"k8s.io/client-go/util/workqueue"
 	"k8s.io/component-base/metrics/legacyregistry"
 
 	"sigs.k8s.io/dra-example-driver/pkg/metrics"
@@ -75,9 +74,10 @@ func (f *fakeStatusUpdate) Calls() int {
 
 func newTestStatusUpdater(t *testing.T, update deviceStatusUpdateFunc) *deviceStatusUpdater {
 	t.Helper()
-	u := newDeviceStatusUpdaterWithRateLimiter(update,
-		workqueue.NewTypedItemExponentialFailureRateLimiter[types.UID](time.Millisecond, 5*time.Millisecond))
-	u.maxRetries = 3
+	u := newDeviceStatusUpdater(update)
+	u.maxAttempts = 4
+	u.backoff.Duration = time.Millisecond
+	u.backoff.Cap = 5 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	u.Start(ctx)
 	t.Cleanup(func() {
@@ -94,7 +94,7 @@ func testStatusClaim(uid string) *resourceapi.ResourceClaim {
 func (u *deviceStatusUpdater) hasPending(uid types.UID) bool {
 	u.mu.Lock()
 	defer u.mu.Unlock()
-	_, ok := u.pending[uid]
+	_, ok := u.attempts[uid]
 	return ok
 }
 
@@ -130,7 +130,6 @@ func TestDeviceStatusUpdater(t *testing.T) {
 			// Give any erroneous extra retry a chance to happen.
 			time.Sleep(20 * time.Millisecond)
 			assert.Equal(t, tc.wantCalls, f.Calls())
-			assert.Equal(t, 0, u.queue.NumRequeues(claim.UID), "backoff must be reset")
 			assert.Equal(t, float64(tc.wantCalls-1), deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)-retriesBefore, "retry count")
 			assert.Equal(t, float64(1), deviceStatusUpdates(t, tc.wantOutcome)-outcomeBefore, "final outcome count")
 		})
@@ -175,21 +174,49 @@ func TestDeviceStatusUpdaterEnqueueDoesNotBlock(t *testing.T) {
 	}
 }
 
-func TestDeviceStatusUpdaterCancel(t *testing.T) {
-	f := &fakeStatusUpdate{errs: []error{apierrors.NewServiceUnavailable("unavailable")}}
-	u := newDeviceStatusUpdaterWithRateLimiter(f.update,
-		workqueue.NewTypedItemExponentialFailureRateLimiter[types.UID](time.Hour, time.Hour))
+func TestDeviceStatusUpdaterCancelAbortsInFlightUpdate(t *testing.T) {
+	started := make(chan struct{})
+	returned := make(chan struct{})
+	var calls sync.Mutex
+	n := 0
+	u := newDeviceStatusUpdater(func(ctx context.Context, _, _ string, _ types.UID, _ ...resourceapi.AllocatedDeviceStatus) error {
+		calls.Lock()
+		n++
+		call := n
+		calls.Unlock()
+		if call == 1 {
+			close(started)
+			<-ctx.Done()
+			close(returned)
+			return ctx.Err()
+		}
+		return nil
+	})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer func() { cancel(); u.Stop() }()
 	u.Start(ctx)
 	claim := testStatusClaim("uid-1")
 
+	droppedBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)
 	u.Enqueue(claim, testDeviceStatuses)
-	require.Eventually(t, func() bool { return f.Calls() == 1 }, 5*time.Second, time.Millisecond)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
 	u.Cancel(claim.UID)
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("Cancel did not abort the in-flight update")
+	}
+	time.Sleep(20 * time.Millisecond)
 
 	assert.False(t, u.hasPending(claim.UID))
-	assert.Equal(t, 0, u.queue.NumRequeues(claim.UID))
+	calls.Lock()
+	defer calls.Unlock()
+	assert.Equal(t, 1, n, "a cancelled update must not be retried or published later")
+	assert.Equal(t, float64(1), deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)-droppedBefore)
 }
 
 func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
@@ -222,44 +249,32 @@ func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
 	}
 }
 
-func TestDeviceStatusUpdaterSupersededFailureDoesNotConsumeRetryBudget(t *testing.T) {
+func TestDeviceStatusUpdaterSupersededAttemptIsDropped(t *testing.T) {
 	claim := testStatusClaim("uid-1")
 	replaced := []resourceapi.AllocatedDeviceStatus{{Driver: "gpu.example.com", Pool: "node", Device: "gpu-1"}}
 	started := make(chan struct{})
-	release := make(chan struct{})
 
 	var mu sync.Mutex
-	var requeuesAtStart []int
 	var published []resourceapi.AllocatedDeviceStatus
+	calls := 0
 
-	var u *deviceStatusUpdater
-	u = newDeviceStatusUpdaterWithRateLimiter(func(ctx context.Context, _, _ string, uid types.UID, devices ...resourceapi.AllocatedDeviceStatus) error {
+	u := newTestStatusUpdater(t, func(ctx context.Context, _, _ string, _ types.UID, devices ...resourceapi.AllocatedDeviceStatus) error {
 		mu.Lock()
-		requeuesAtStart = append(requeuesAtStart, u.queue.NumRequeues(uid))
-		call := len(requeuesAtStart)
-		if call > 1 {
-			published = append([]resourceapi.AllocatedDeviceStatus(nil), devices...)
-		}
+		calls++
+		call := calls
 		mu.Unlock()
 		if call == 1 {
 			close(started)
-			select {
-			case <-release:
-				return apierrors.NewServiceUnavailable("unavailable")
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+			<-ctx.Done()
+			return ctx.Err()
 		}
+		mu.Lock()
+		published = append([]resourceapi.AllocatedDeviceStatus(nil), devices...)
+		mu.Unlock()
 		return nil
-	}, workqueue.NewTypedItemExponentialFailureRateLimiter[types.UID](time.Millisecond, 5*time.Millisecond))
-	u.maxRetries = 3
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(func() {
-		cancel()
-		u.Stop()
 	})
-	u.Start(ctx)
 
+	droppedBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)
 	retriesBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)
 	u.Enqueue(claim, testDeviceStatuses)
 	select {
@@ -267,19 +282,17 @@ func TestDeviceStatusUpdaterSupersededFailureDoesNotConsumeRetryBudget(t *testin
 	case <-time.After(5 * time.Second):
 		t.Fatal("first update did not start")
 	}
-	// Replace the payload while the first attempt is still in flight, so its
-	// failure is handled only after Forget has reset the retry budget.
+	// Replace the payload while the first attempt is still in flight. The
+	// old attempt must be cancelled instead of publishing or consuming the
+	// new attempt's retry budget.
 	u.Enqueue(claim, replaced)
-	close(release)
 
 	require.Eventually(t, func() bool { return !u.hasPending(claim.UID) }, 5*time.Second, time.Millisecond)
-	time.Sleep(20 * time.Millisecond)
 
 	mu.Lock()
 	defer mu.Unlock()
-	require.Len(t, requeuesAtStart, 2)
-	assert.Equal(t, 0, requeuesAtStart[1], "a stale failure must not consume the replacement update's retry budget")
 	assert.Equal(t, replaced, published)
+	assert.Equal(t, float64(1), deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)-droppedBefore)
 	assert.Equal(t, float64(0), deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)-retriesBefore)
 }
 
