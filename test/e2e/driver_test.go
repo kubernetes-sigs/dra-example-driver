@@ -53,6 +53,10 @@ const (
 	// driverUninstallTimeout bounds the per-test Helm uninstall + namespace delete.
 	driverUninstallTimeout = 60 * time.Second
 
+	// driverLivenessObservationDuration spans more than three liveness probes.
+	// The chart probes every 10 seconds and restarts after three failures.
+	driverLivenessObservationDuration = 35 * time.Second
+
 	// defaultDriverNumDevices is the smallest count that satisfies every demo
 	// manifest. Tests that need more can override via DriverConfig.NumDevices.
 	defaultDriverNumDevices = 2
@@ -68,7 +72,9 @@ const (
 type DriverConfig struct {
 	// DriverName overrides the auto-generated DRA driver name. Tests that
 	// share static testdata (e.g. the webhook tests) pin this. Defaults to
-	// the auto-generated release name + ".test".
+	// the auto-generated release name + ".test". Keep these arbitrary
+	// test identities short: the DRA socket path also contains the full pod
+	// UID.
 	DriverName string
 
 	// ExtendedResourceName advertises the DeviceClass under a KEP-5004 extended resource name. Defaults to "" (disabled).
@@ -326,6 +332,24 @@ func waitForDriverReady(ctx context.Context, namespace, driverName string, webho
 	if webhookEnabled {
 		verifyWebhook(ctx, driverName)
 	}
+}
+
+// verifyDriverRemainsHealthy observes readiness and restarts across liveness probes.
+func verifyDriverRemainsHealthy(ctx context.Context, drv installedDriver) {
+	GinkgoHelper()
+
+	Consistently(func(g Gomega) {
+		pods, err := clientset.CoreV1().Pods(drv.Namespace).List(ctx, metav1.ListOptions{LabelSelector: driverPodSelector})
+		g.Expect(err).NotTo(HaveOccurred())
+		g.Expect(pods.Items).NotTo(BeEmpty())
+		for _, p := range pods.Items {
+			g.Expect(p.Status.ContainerStatuses).NotTo(BeEmpty())
+			for _, container := range p.Status.ContainerStatuses {
+				g.Expect(container.Ready).To(BeTrue())
+				g.Expect(container.RestartCount).To(BeZero())
+			}
+		}
+	}).WithContext(ctx).WithTimeout(driverLivenessObservationDuration).WithPolling(time.Second).Should(Succeed())
 }
 
 // newHelmActionConfig initializes a Helm action.Configuration scoped to the

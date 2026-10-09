@@ -39,12 +39,49 @@ import (
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
+	gpuconfig "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/gpu/v1alpha1"
+	netconfig "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/net/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	netprofile "sigs.k8s.io/dra-example-driver/internal/profiles/net"
 )
 
 var (
 	testShareId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 )
+
+func TestDecodeProfileConfiguration(t *testing.T) {
+	tests := map[string]struct {
+		profile  profiles.Profile
+		config   string
+		expected runtime.Object
+	}{
+		"gpu": {
+			profile:  gpu.NewProfile(testNodeName, 1, 0, false, false, false, false, nil),
+			config:   `{"apiVersion":"gpu.resource.dra-example-driver.sigs.k8s.io/v1alpha1","kind":"GpuConfig"}`,
+			expected: &gpuconfig.GpuConfig{},
+		},
+		"net": {
+			profile:  netprofile.NewProfile(testNodeName, 1, false, nil),
+			config:   `{"apiVersion":"net.resource.dra-example-driver.sigs.k8s.io/v1alpha1","kind":"NetConfig"}`,
+			expected: &netconfig.NetConfig{},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			config, _ := newDriverTestConfig(t, false, 0)
+			config.flags.profile = name
+			config.flags.driverName = name + ".dra-example-driver.sigs.k8s.io"
+			config.profile = test.profile
+			state, err := NewDeviceState(config)
+			require.NoError(t, err)
+			decoded, _, err := state.configDecoder.Decode([]byte(test.config), nil, nil)
+			require.NoError(t, err)
+			assert.IsType(t, test.expected, decoded)
+		})
+	}
+}
 
 func TestPreparedDevicesGetDevices(t *testing.T) {
 	tests := map[string]struct {

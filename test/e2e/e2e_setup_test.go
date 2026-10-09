@@ -348,6 +348,70 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 	}
 }
 
+// createDeviceClaim requests one device and registers cleanup for the claim.
+func createDeviceClaim(ctx context.Context, drv installedDriver, name string) *resourceapi.ResourceClaim {
+	GinkgoHelper()
+
+	claim, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Create(ctx, &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{{
+					Name: "device",
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: drv.DriverName,
+					},
+				}},
+			},
+		},
+	}, metav1.CreateOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.ResourceV1().ResourceClaims(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
+	return claim
+}
+
+// startPodWithClaim waits for a Pod to run and checks its CDI driver name.
+func startPodWithClaim(ctx context.Context, drv installedDriver, name, claimName string) {
+	GinkgoHelper()
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{
+				Name:    "workload",
+				Image:   "ubuntu:22.04",
+				Command: []string{"bash", "-c", "export; trap 'exit 0' TERM; sleep 9999 & wait"},
+				Resources: v1.ResourceRequirements{
+					Claims: []v1.ResourceClaim{{Name: "device"}},
+				},
+			}},
+			ResourceClaims: []v1.PodResourceClaim{{
+				Name:              "device",
+				ResourceClaimName: ptr.To(claimName),
+			}},
+		},
+	}
+	_, err := clientset.CoreV1().Pods(drv.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.CoreV1().Pods(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.CoreV1().Pods(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
+	checkPodsReadyAndRunning(ctx, drv.Namespace, []string{name})
+	logs, err := clientset.CoreV1().Pods(drv.Namespace).GetLogs(name, &v1.PodLogOptions{Container: "workload"}).DoRaw(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(string(logs)).To(ContainSubstring("DRA_RESOURCE_DRIVER_NAME=\"" + drv.DriverName + "\""))
+}
+
 func checkPodsReadyAndRunning(ctx context.Context, namespace string, pods []string) {
 	GinkgoHelper()
 	// check if the pods are Ready and Running
