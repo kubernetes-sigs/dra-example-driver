@@ -31,8 +31,8 @@ import (
 )
 
 func TestBindingConditionsReconcileAllocationIdentity(t *testing.T) {
-	const driverName = "gpu.example.com"
-	const readyCondition = "gpu.example.com/ready"
+	const driverName = "gpu.dra-example-driver.sigs.k8s.io"
+	const readyCondition = "gpu.dra-example-driver.sigs.k8s.io/ready"
 	shareA := ptr.To(types.UID("00000000-0000-0000-0000-000000000001"))
 	shareB := ptr.To(types.UID("00000000-0000-0000-0000-000000000002"))
 	ready := metav1.Condition{Type: readyCondition, Status: metav1.ConditionTrue, Reason: "Ready"}

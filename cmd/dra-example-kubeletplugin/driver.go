@@ -75,7 +75,7 @@ type driver struct {
 	// lastHealth is the most recently logged health per device, used only to
 	// detect transitions in pollDeviceHealth.
 	lastHealth map[string]deviceHealthSnapshot
-	// healthOverrides tracks the last applied health.example.com/<device>
+	// healthOverrides tracks the last applied health.dra-example-driver.sigs.k8s.io/<device>
 	// annotation value per device, so value changes re-apply the override.
 	healthOverrides map[string]string
 
@@ -302,7 +302,7 @@ func (d *driver) deviceHealthLoop(ctx context.Context) {
 	}
 }
 
-const healthAnnotationPrefix = "health.example.com/"
+const healthAnnotationPrefix = "health.dra-example-driver.sigs.k8s.io/"
 
 const (
 	// deviceHealthPollInterval is how often the driver re-polls the simulator

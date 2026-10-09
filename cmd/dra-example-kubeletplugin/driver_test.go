@@ -43,7 +43,7 @@ import (
 
 const (
 	testNodeName   = "test-node"
-	testDriverName = "cpu.example.com"
+	testDriverName = "cpu.dra-example-driver.sigs.k8s.io"
 )
 
 // newDriverTestConfig builds a Config that lets NewDriver run for real against

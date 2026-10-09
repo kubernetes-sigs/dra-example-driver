@@ -65,7 +65,7 @@ func (m *MockPlugin) Reconcile(ctx context.Context, c client.Client, claim *reso
 
 // TestReconcile tests Reconcile with various scenarios.
 func TestReconcile(t *testing.T) {
-	driverName := "example.com/driver"
+	driverName := "dra-example-driver.sigs.k8s.io/driver"
 	req := ctrl.Request{
 		NamespacedName: types.NamespacedName{Name: "test-claim", Namespace: "default"},
 	}

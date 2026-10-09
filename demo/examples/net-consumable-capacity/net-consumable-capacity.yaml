@@ -38,7 +38,7 @@ spec:
       requests:
       - name: nic
         exactly:
-          deviceClassName: net.example.com
+          deviceClassName: net.dra-example-driver.sigs.k8s.io
           capacity:
             requests:
               ingressBandwidth: "10G"
@@ -57,7 +57,7 @@ spec:
       requests:
       - name: nic
         exactly:
-          deviceClassName: net.example.com
+          deviceClassName: net.dra-example-driver.sigs.k8s.io
           capacity:
             requests:
               ingressBandwidth: "5G"

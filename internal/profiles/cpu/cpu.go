@@ -35,8 +35,8 @@ import (
 
 const ProfileName = "cpu"
 
-// CPUCapacitySuffix is appended to the driver name (e.g. "cpu.example.com")
-// to form the per-device capacity key (e.g. "cpu.example.com/cpu"). Keeping
+// CPUCapacitySuffix is appended to the driver name (e.g. "cpu.dra-example-driver.sigs.k8s.io")
+// to form the per-device capacity key (e.g. "cpu.dra-example-driver.sigs.k8s.io/cpu"). Keeping
 // the key derived from the driver name lets multiple driver installs (with
 // distinct names) coexist without their capacity keys colliding.
 const CPUCapacitySuffix = "cpu"
