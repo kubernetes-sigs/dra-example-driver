@@ -275,7 +275,7 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	}
 	klog.FromContext(ctx).V(2).Info("Queueing device status for ResourceClaim",
 		"namespace", claim.Namespace, "name", claim.Name, "uid", claim.UID, "devices", len(deviceStatuses))
-	s.statusUpdater.Enqueue(claim, deviceStatuses)
+	s.statusUpdater.Enqueue(ctx, claim, deviceStatuses)
 }
 
 // unprepareDevices undoes any side-effects produced by

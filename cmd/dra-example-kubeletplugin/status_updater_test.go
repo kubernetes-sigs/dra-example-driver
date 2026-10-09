@@ -124,7 +124,7 @@ func TestDeviceStatusUpdater(t *testing.T) {
 			u := newTestStatusUpdater(t, f.update)
 			claim := testStatusClaim("uid-1")
 
-			u.Enqueue(claim, testDeviceStatuses)
+			u.Enqueue(context.Background(), claim, testDeviceStatuses)
 
 			require.Eventually(t, func() bool { return !u.hasPending(claim.UID) }, 5*time.Second, time.Millisecond)
 			// Give any erroneous extra retry a chance to happen.
@@ -163,8 +163,8 @@ func TestDeviceStatusUpdaterEnqueueDoesNotBlock(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		u.Enqueue(testStatusClaim("uid-1"), testDeviceStatuses)
-		u.Enqueue(testStatusClaim("uid-2"), testDeviceStatuses)
+		u.Enqueue(context.Background(), testStatusClaim("uid-1"), testDeviceStatuses)
+		u.Enqueue(context.Background(), testStatusClaim("uid-2"), testDeviceStatuses)
 		close(done)
 	}()
 	select {
@@ -198,7 +198,7 @@ func TestDeviceStatusUpdaterCancelAbortsInFlightUpdate(t *testing.T) {
 	claim := testStatusClaim("uid-1")
 
 	droppedBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)
-	u.Enqueue(claim, testDeviceStatuses)
+	u.Enqueue(ctx, claim, testDeviceStatuses)
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -229,7 +229,7 @@ func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
 	// The parent context stays active. Stop must cancel the updater's own
 	// context, otherwise this call blocks until the attempt timeout (30s).
 	u.Start(context.Background())
-	u.Enqueue(testStatusClaim("uid-1"), testDeviceStatuses)
+	u.Enqueue(context.Background(), testStatusClaim("uid-1"), testDeviceStatuses)
 
 	select {
 	case <-started:
@@ -276,7 +276,7 @@ func TestDeviceStatusUpdaterSupersededAttemptIsDropped(t *testing.T) {
 
 	droppedBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)
 	retriesBefore := deviceStatusUpdates(t, metrics.DeviceStatusResultRetry)
-	u.Enqueue(claim, testDeviceStatuses)
+	u.Enqueue(context.Background(), claim, testDeviceStatuses)
 	select {
 	case <-started:
 	case <-time.After(5 * time.Second):
@@ -285,7 +285,7 @@ func TestDeviceStatusUpdaterSupersededAttemptIsDropped(t *testing.T) {
 	// Replace the payload while the first attempt is still in flight. The
 	// old attempt must be cancelled instead of publishing or consuming the
 	// new attempt's retry budget.
-	u.Enqueue(claim, replaced)
+	u.Enqueue(context.Background(), claim, replaced)
 
 	require.Eventually(t, func() bool { return !u.hasPending(claim.UID) }, 5*time.Second, time.Millisecond)
 

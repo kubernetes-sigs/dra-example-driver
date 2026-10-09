@@ -84,8 +84,8 @@ type deviceStatusUpdater struct {
 	backoff        wait.Backoff
 
 	mu       sync.Mutex
-	ctx      context.Context
-	stop     context.CancelFunc
+	cancel   context.CancelFunc
+	done     <-chan struct{}
 	attempts map[types.UID]*statusAttempt
 
 	wg sync.WaitGroup
@@ -110,23 +110,33 @@ func newDeviceStatusUpdater(update deviceStatusUpdateFunc) *deviceStatusUpdater 
 func (u *deviceStatusUpdater) Start(ctx context.Context) {
 	ctx, cancel := context.WithCancel(ctx)
 	u.mu.Lock()
-	defer u.mu.Unlock()
-	u.ctx = ctx
-	u.stop = cancel
+	u.cancel = cancel
+	u.done = ctx.Done()
+	u.mu.Unlock()
+
+	u.wg.Add(1)
+	go func() {
+		defer u.wg.Done()
+		<-ctx.Done()
+		u.mu.Lock()
+		defer u.mu.Unlock()
+		for _, attempt := range u.attempts {
+			attempt.cancel()
+		}
+	}()
 }
 
 // Stop cancels in-flight attempts and waits for them to exit. Updates that
 // have not been published yet are dropped. Enqueue after Stop drops the update.
 func (u *deviceStatusUpdater) Stop() {
 	u.mu.Lock()
-	stop := u.stop
-	// Clear ctx before waiting so an Enqueue that has not yet called wg.Add
+	cancel := u.cancel
+	// Clear cancel before waiting so an Enqueue that has not yet called wg.Add
 	// cannot start a goroutine this Wait would miss.
-	u.ctx = nil
-	u.stop = nil
+	u.cancel = nil
 	u.mu.Unlock()
-	if stop != nil {
-		stop()
+	if cancel != nil {
+		cancel()
 	}
 	u.wg.Wait()
 }
@@ -134,17 +144,24 @@ func (u *deviceStatusUpdater) Stop() {
 // Enqueue publishes devices to the claim's status in the background, replacing
 // any in-flight update for the same claim. The replacement starts a fresh
 // backoff. The call does not wait for the API server.
-func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices []resourceapi.AllocatedDeviceStatus) {
+//
+// ctx carries the caller's logging values. Cancellation of ctx does not stop
+// the update: WithoutCancel detaches it from the gRPC context, which ends
+// when NodePrepareResources returns. Stop and a cancelled Start context still
+// abort the attempt.
+func (u *deviceStatusUpdater) Enqueue(ctx context.Context, claim *resourceapi.ResourceClaim, devices []resourceapi.AllocatedDeviceStatus) {
 	u.mu.Lock()
-	if u.ctx == nil {
+	if u.cancel == nil {
 		u.mu.Unlock()
-		klog.Error(nil, "device status updater is not started; dropping device status update", "uid", claim.UID)
+		klog.FromContext(ctx).Error(nil, "device status updater is not started; dropping device status update", "uid", claim.UID)
 		return
 	}
 	if prev := u.attempts[claim.UID]; prev != nil {
 		prev.cancel()
 	}
-	ctx, cancel := context.WithCancel(u.ctx)
+	// Detach from the request context, then keep a cancel func so Unprepare,
+	// a newer Enqueue, and shutdown can abort the API call.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	attempt := &statusAttempt{cancel: cancel}
 	u.attempts[claim.UID] = attempt
 	u.wg.Add(1)
@@ -155,7 +172,7 @@ func (u *deviceStatusUpdater) Enqueue(claim *resourceapi.ResourceClaim, devices 
 	go func() {
 		defer u.wg.Done()
 		defer u.finishAttempt(uid, attempt)
-		u.publish(ctx, ns, name, uid, devices)
+		u.publish(runCtx, ns, name, uid, devices)
 	}()
 }
 
