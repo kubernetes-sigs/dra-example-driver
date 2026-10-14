@@ -289,9 +289,6 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 	if claim.Status.Allocation == nil {
 		return nil, fmt.Errorf("claim not yet allocated")
 	}
-	// Check if any device request has admin access
-	hasAdminAccess := s.checkAdminAccess(claim)
-
 	// Retrieve the full set of device configs for the driver.
 	configs, err := GetOpaqueDeviceConfigs(
 		s.configDecoder,
@@ -358,7 +355,7 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 					CdiDeviceIds: s.cdi.GetClaimDevices(string(claim.UID), []string{deviceID}),
 				},
 				ContainerEdits: perDeviceCDIContainerEdits[deviceID],
-				AdminAccess:    hasAdminAccess,
+				AdminAccess:    ptr.Deref(result.AdminAccess, false),
 				ShareID:        result.ShareID,
 			}
 			preparedDevices = append(preparedDevices, device)
@@ -392,18 +389,6 @@ func (s *DeviceState) restoreClaimFromCheckpoint(checkpoint *checkpointapi.Check
 		return s.computeDeviceConfig(claim)
 	}
 	return nil, nil
-}
-
-// checkAdminAccess determines if a resource claim requires admin access.
-func (s *DeviceState) checkAdminAccess(claim *resourceapi.ResourceClaim) bool {
-	if claim != nil && claim.Status.Allocation != nil {
-		for _, result := range claim.Status.Allocation.Devices.Results {
-			if result.AdminAccess != nil && *result.AdminAccess {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func checkpointSerializer() (runtime.Decoder, runtime.Encoder, error) {
