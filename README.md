@@ -166,6 +166,8 @@ go tool -modfile hack/tools/go.mod helm install \
 More options for installing cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
 
 And then install the example resource driver via Helm.
+If an earlier version of the driver is installed, read the release notes
+before you run this command. Some releases do not support upgrades.
 ```bash
 go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
