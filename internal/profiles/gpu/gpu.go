@@ -422,9 +422,10 @@ func (p Profile) BuildDeviceStatus(allocatable map[string]resourceapi.Device, re
 	//     example, because it becomes unhealthy), so past allocations can
 	//     still be correlated with later health or scheduling issues.
 	return &resourceapi.AllocatedDeviceStatus{
-		Device: result.Device,
-		Driver: result.Driver,
-		Pool:   result.Pool,
-		Data:   &runtime.RawExtension{Raw: jsonBytes},
+		Device:  result.Device,
+		Driver:  result.Driver,
+		Pool:    result.Pool,
+		ShareID: (*string)(result.ShareID),
+		Data:    &runtime.RawExtension{Raw: jsonBytes},
 	}
 }

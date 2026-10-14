@@ -21,6 +21,7 @@ import (
 
 	resourceapi "k8s.io/api/resource/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
@@ -81,7 +82,7 @@ func isConditionTrue(
 	condType string,
 ) bool {
 	for _, d := range claim.Status.Devices {
-		if d.Driver == result.Driver && d.Pool == result.Pool && d.Device == result.Device {
+		if d.Driver == result.Driver && d.Pool == result.Pool && d.Device == result.Device && ptr.Equal(d.ShareID, (*string)(result.ShareID)) {
 			for _, c := range d.Conditions {
 				if c.Type == condType && c.Status == metav1.ConditionTrue {
 					return true
@@ -102,7 +103,7 @@ func setDeviceCondition(
 	// Find existing device status entry.
 	for i := range claim.Status.Devices {
 		d := &claim.Status.Devices[i]
-		if d.Driver == result.Driver && d.Pool == result.Pool && d.Device == result.Device {
+		if d.Driver == result.Driver && d.Pool == result.Pool && d.Device == result.Device && ptr.Equal(d.ShareID, (*string)(result.ShareID)) {
 			// Update or append the condition within this entry.
 			for j := range d.Conditions {
 				if d.Conditions[j].Type == condType {
@@ -126,9 +127,10 @@ func setDeviceCondition(
 
 	// No existing entry; create a new one.
 	claim.Status.Devices = append(claim.Status.Devices, resourceapi.AllocatedDeviceStatus{
-		Driver: result.Driver,
-		Pool:   result.Pool,
-		Device: result.Device,
+		Driver:  result.Driver,
+		Pool:    result.Pool,
+		Device:  result.Device,
+		ShareID: (*string)(result.ShareID),
 		Conditions: []metav1.Condition{{
 			Type:               condType,
 			Status:             metav1.ConditionTrue,
