@@ -30,6 +30,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 	drapb "k8s.io/kubelet/pkg/apis/dra/v1"
 	registerapi "k8s.io/kubelet/pkg/apis/pluginregistration/v1"
@@ -63,7 +65,9 @@ func startHealthcheck(ctx context.Context, config *Config) (*healthcheck, error)
 		Scheme: "unix",
 		Path: func() string {
 			if config.flags.podUID != "" {
-				return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-"+config.flags.podUID+"-reg.sock")
+				// Use the same length-aware filename as the registration server.
+				name := kubeletplugin.RollingUpdateRegistrarSocketFile(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName, types.UID(config.flags.podUID))
+				return path.Join(config.flags.kubeletRegistrarDirectoryPath, name)
 			}
 			return path.Join(config.flags.kubeletRegistrarDirectoryPath, config.flags.driverName+"-reg.sock")
 		}(),
