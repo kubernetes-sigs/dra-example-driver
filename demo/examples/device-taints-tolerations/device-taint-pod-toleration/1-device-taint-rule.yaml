@@ -4,9 +4,9 @@ metadata:
   name: example
 spec:
   deviceSelector:
-    driver: gpu.example.com
+    driver: gpu.dra-example-driver.sigs.k8s.io
   taint:
-    key: gpu.example.com/unhealthy
+    key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
     value: "true"
     # Evict any already-running pods that do not tolerate the device taint.
     effect: NoExecute

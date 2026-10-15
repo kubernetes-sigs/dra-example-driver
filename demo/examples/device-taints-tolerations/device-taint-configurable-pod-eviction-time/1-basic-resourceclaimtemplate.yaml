@@ -16,7 +16,7 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
 ---
 # ResourceClaimTemplate with toleration
 apiVersion: resource.k8s.io/v1
@@ -30,9 +30,9 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           tolerations:
-          - key: gpu.example.com/unhealthy
+          - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
             operator: Equal
             value: "true"
             effect: NoExecute
@@ -50,9 +50,9 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           tolerations:
-          - key: gpu.example.com/unhealthy
+          - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
             operator: Equal
             value: "true"
             effect: NoExecute
