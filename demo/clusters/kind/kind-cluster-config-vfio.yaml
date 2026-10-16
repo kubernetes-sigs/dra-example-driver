@@ -1,0 +1,50 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+featureGates:
+  DynamicResourceAllocation: true
+containerdConfigPatches:
+- |
+  [plugins."io.containerd.snapshotter.v1.overlayfs"]
+    mount_options = ["volatile"]
+- |
+  [plugins."io.containerd.grpc.v1.cri".registry]
+    config_path = "/etc/containerd/certs.d"
+- |-
+  [plugins."io.containerd.grpc.v1.cri"]
+    enable_cdi = true
+networking:
+  serviceSubnet: "10.76.0.0/12"
+nodes:
+- role: control-plane
+  kubeadmConfigPatches:
+  - |-
+    kind: JoinConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        "feature-gates": "CPUManager=true,DynamicResourceAllocation=true"
+        "cpu-manager-policy": "static"
+        "kube-reserved": "cpu=500m"
+        "system-reserved": "cpu=500m"
+  - |-
+    kind: ClusterConfiguration
+    apiServer:
+        extraArgs:
+          runtime-config: "resource.k8s.io/v1=true"
+    scheduler:
+        extraArgs:
+          v: "1"
+    controllerManager:
+        extraArgs:
+          v: "1"
+  - |-
+    kind: InitConfiguration
+    nodeRegistration:
+      kubeletExtraArgs:
+        v: "1"
+  extraMounts:
+  - hostPath: /sys/bus/pci
+    containerPath: /sys/bus/pci
+  - hostPath: /sys/kernel/iommu_groups
+    containerPath: /sys/kernel/iommu_groups
+  - hostPath: /dev/vfio
+    containerPath: /dev/vfio

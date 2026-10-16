@@ -29,10 +29,12 @@ import (
 	resourceapi "k8s.io/api/resource/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	coreclientset "k8s.io/client-go/kubernetes"
+	"k8s.io/dynamic-resource-allocation/api/metadata/v1beta1"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
 
@@ -153,6 +155,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		// out: pass HealthService(false) and return ErrHealthNotSupported from
 		// WatchHealthStatus (see below).
 		kubeletplugin.HealthService(config.flags.deviceHealth),
+		kubeletplugin.EnableDeviceMetadata(config.flags.enableDeviceMetadata, []schema.GroupVersion{v1beta1.SchemeGroupVersion}),
 	)
 	if err != nil {
 		return nil, err
@@ -230,13 +233,22 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 	}
 	var prepared []kubeletplugin.Device
 	for _, preparedDevice := range preparedDevices {
-		prepared = append(prepared, kubeletplugin.Device{
+		dev := kubeletplugin.Device{
 			Requests:     preparedDevice.GetRequestNames(),
 			PoolName:     preparedDevice.GetPoolName(),
 			DeviceName:   preparedDevice.GetDeviceName(),
 			CDIDeviceIDs: preparedDevice.GetCdiDeviceIds(),
 			ShareID:      preparedDevice.ShareID,
-		})
+		}
+
+		if allocDev, ok := d.state.allocatable[preparedDevice.GetDeviceName()]; ok && len(allocDev.Attributes) > 0 {
+			attrs := make(map[string]resourceapi.DeviceAttribute, len(allocDev.Attributes))
+			for k, v := range allocDev.Attributes {
+				attrs[string(k)] = v
+			}
+			dev.Metadata = &kubeletplugin.DeviceMetadata{Attributes: attrs}
+		}
+		prepared = append(prepared, dev)
 	}
 
 	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)

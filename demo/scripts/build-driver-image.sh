@@ -45,6 +45,12 @@ export VERSION="${DRIVER_IMAGE_TAG}"
 export CONTAINER_TOOL="${CONTAINER_TOOL}"
 
 # Regenerate the CRDs and build the container image locally (demo / kind workflow).
-make generate
+# The generated files are committed, and the image build runs in a golang container,
+# so skip regeneration where the host has no Go toolchain (e.g. KubeVirt CI cluster-up).
+if command -v go >/dev/null 2>&1; then
+    make generate
+else
+    echo "WARNING: no go on PATH, keeping the committed generated files" >&2
+fi
 
 make -f deployments/container/Makefile "${DRIVER_IMAGE_OS}"
