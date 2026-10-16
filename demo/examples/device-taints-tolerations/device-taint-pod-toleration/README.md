@@ -36,20 +36,15 @@ graph TD
 
 - **Profile**: gpu
 - **GPUs**: 2+
-- **Feature**: Device Taint Manager enabled
 
 ### Cluster Requirements
 
-- **Kubernetes Version**: 1.35+
-- **API Version**: `resource.k8s.io/v1beta2` must be enabled
-- **Feature Gates** (must be enabled):
-  - [`DRADeviceTaints`](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#DRADeviceTaints): Enables device taints and tolerations for DRA
-  - [`DRADeviceTaintRules`](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#DRADeviceTaintRules): Enables DeviceTaintRule API for managing device taints
-- **kube-apiserver Configuration**:
-  - Add `--runtime-config=resource.k8s.io/v1beta2=true` to enable the v1beta2 API version
-  - Reference: [kube-apiserver runtime-config](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+- **Kubernetes Version**: 1.37+
+- **API Version**: `resource.k8s.io/v1`
 
-For more information about device taints and tolerations, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#device-taints-and-tolerations).
+Pod eviction is handled by the device taint eviction controller in `kube-controller-manager`.
+
+For more information about device taints and tolerations, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/resource-management/dynamic-resource-allocation/device-taints/).
 
 ## How to Run
 
