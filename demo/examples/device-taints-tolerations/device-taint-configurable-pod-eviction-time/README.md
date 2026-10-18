@@ -23,8 +23,8 @@ graph TD
         P3 -.->|Using| G1
     end
     
-    subgraph AfterTaint["After Device Taint Applied (T+0s)"]
-        P1E[pod-no-toleration<br/>❌ Evicted Immediately]
+    subgraph AfterTaint["After Device Taint Applied"]
+        P1E[pod-no-toleration<br/>❌ Evicted]
         P2R[pod-with-toleration<br/>✓ Still Running]
         P3R[pod-with-300s-toleration<br/>✓ Still Running]
         G1T[GPU Devices<br/>Tainted: NoExecute]
@@ -33,7 +33,7 @@ graph TD
         P3R -.->|Tolerating 300s| G1T
     end
     
-    subgraph After300s["After 300 Seconds (T+300s)"]
+    subgraph After300s["After the 300s toleration expires"]
         P2S[pod-with-toleration<br/>✓ Still Running]
         P3E[pod-with-300s-toleration<br/>❌ Evicted]
         G1T2[GPU Devices<br/>Tainted: NoExecute]
@@ -69,8 +69,6 @@ graph TD
 - **Kubernetes Version**: 1.37+
 - **API Version**: `resource.k8s.io/v1`
 
-Pod eviction is handled by the device taint eviction controller in `kube-controller-manager`.
-
 For more information about device taints and tolerations, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/resource-management/dynamic-resource-allocation/device-taints/).
 
 ## How to Run
@@ -94,7 +92,13 @@ pod/pod-with-300s-toleration created
 
 ### Step 2: Verify All Pods Are Running
 
+Wait for all three pods to run before applying the taint; otherwise, the pod
+without a toleration may remain Pending instead of being evicted.
+
 ```bash
+kubectl wait -n basic-resourceclaimtemplate --for=condition=Ready \
+  pod/pod-no-toleration pod/pod-with-toleration \
+  pod/pod-with-300s-toleration --timeout=120s
 kubectl get pods -n basic-resourceclaimtemplate
 ```
 
@@ -176,7 +180,7 @@ status:
 
 ### Step 6: Wait for 300 Seconds
 
-After 300 seconds (5 minutes), the pod with time-limited toleration is evicted:
+After the 300-second toleration expires, the pod with time-limited toleration is evicted:
 
 ```bash
 kubectl get pods -n basic-resourceclaimtemplate
@@ -218,7 +222,7 @@ status:
 ### Pod 1: pod-no-toleration
 - **Toleration**: None
 - **Behavior**: Evicted immediately when taint is applied
-- **Eviction Time**: ~10 seconds after taint application
+- **Eviction Time**: After taint application
 - **Final State**: Terminated
 
 ### Pod 2: pod-with-toleration
@@ -244,7 +248,7 @@ status:
     tolerationSeconds: 300
   ```
 - **Behavior**: Tolerates the taint for 300 seconds, then evicted
-- **Eviction Time**: Exactly 300 seconds after taint application
+- **Eviction Time**: After the 300-second toleration expires
 - **Final State**: Terminated
 
 ## Event Timeline
@@ -265,5 +269,5 @@ pod-with-toleration: Still running
 
 ```bash
 kubectl delete -f 2-device-taint-rule.yaml
-kubectl delete -f 1-basic-resourceclaimtemplate.yaml
+kubectl delete --ignore-not-found -f 1-basic-resourceclaimtemplate.yaml
 ```

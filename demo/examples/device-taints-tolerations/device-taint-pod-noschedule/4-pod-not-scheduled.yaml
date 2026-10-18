@@ -1,4 +1,5 @@
 # Provided the DeviceTaintRule is created, this pod won't be scheduled.
+apiVersion: v1
 kind: Pod
 metadata:
   namespace: basic-resourceclaimtemplate
