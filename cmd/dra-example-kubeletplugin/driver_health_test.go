@@ -210,7 +210,7 @@ func TestConcurrentHealthAccess(t *testing.T) {
 			for {
 				select {
 				case <-reports:
-				case <-sub:
+				case <-sub: //nolint:errcheck
 					return
 				}
 			}
