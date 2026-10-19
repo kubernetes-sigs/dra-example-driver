@@ -83,7 +83,7 @@ func (e *enablePlugins) Set(v string) error {
 func main() {
 	var driverName string
 	var enabled enablePlugins
-	flag.StringVar(&driverName, "driver-name", "gpu.example.com", "The driver name to filter ResourceClaims by.")
+	flag.StringVar(&driverName, "driver-name", "gpu.dra-example-driver.sigs.k8s.io", "The driver name to filter ResourceClaims by.")
 	flag.Var(&enabled, "enable-plugin",
 		fmt.Sprintf("Enable a plugin (can be specified multiple times). Available: %s", strings.Join(pluginNames(), ", ")))
 	opts := zap.Options{Development: true}

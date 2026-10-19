@@ -166,6 +166,8 @@ go tool -modfile hack/tools/go.mod helm install \
 More options for installing cert-manager can be found in [their docs](https://cert-manager.io/docs/installation/)
 
 And then install the example resource driver via Helm.
+If an earlier version of the driver is installed, read the release notes
+before you run this command. Some releases do not support upgrades.
 ```bash
 go tool -modfile hack/tools/go.mod helm upgrade -i \
   --create-namespace \
@@ -191,9 +193,9 @@ items:
   kind: ResourceSlice
   metadata:
     creationTimestamp: "2024-12-09T16:17:09Z"
-    generateName: dra-example-driver-cluster-worker-gpu.example.com-
+    generateName: dra-example-driver-cluster-worker-gpu.dra-example-driver.sigs.k8s.io-
     generation: 1
-    name: dra-example-driver-cluster-worker-gpu.example.com-rf2f7
+    name: dra-example-driver-cluster-worker-gpu.dra-example-driver.sigs.k8s.io-rf2f7
     ownerReferences:
     - apiVersion: v1
       controller: true
@@ -203,7 +205,7 @@ items:
     resourceVersion: "530"
     uid: d13fd8bd-0a71-43e1-ba79-ebd2fae4847a
   spec:
-    driver: gpu.example.com
+    driver: gpu.dra-example-driver.sigs.k8s.io
     nodeName: dra-example-driver-cluster-worker
     pool:
       generation: 0

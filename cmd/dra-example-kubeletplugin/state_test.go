@@ -39,12 +39,49 @@ import (
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
+	gpuconfig "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/gpu/v1alpha1"
+	netconfig "sigs.k8s.io/dra-example-driver/api/dra-example-driver.sigs.k8s.io/resource/net/v1alpha1"
+	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
+	netprofile "sigs.k8s.io/dra-example-driver/internal/profiles/net"
 )
 
 var (
 	testShareId = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
 )
+
+func TestDecodeProfileConfiguration(t *testing.T) {
+	tests := map[string]struct {
+		profile  profiles.Profile
+		config   string
+		expected runtime.Object
+	}{
+		"gpu": {
+			profile:  gpu.NewProfile(testNodeName, 1, 0, false, false, false, false, nil),
+			config:   `{"apiVersion":"gpu.resource.dra-example-driver.sigs.k8s.io/v1alpha1","kind":"GpuConfig"}`,
+			expected: &gpuconfig.GpuConfig{},
+		},
+		"net": {
+			profile:  netprofile.NewProfile(testNodeName, 1, false, nil),
+			config:   `{"apiVersion":"net.resource.dra-example-driver.sigs.k8s.io/v1alpha1","kind":"NetConfig"}`,
+			expected: &netconfig.NetConfig{},
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			config, _ := newDriverTestConfig(t, false, 0)
+			config.flags.profile = name
+			config.flags.driverName = name + ".dra-example-driver.sigs.k8s.io"
+			config.profile = test.profile
+			state, err := NewDeviceState(config)
+			require.NoError(t, err)
+			decoded, _, err := state.configDecoder.Decode([]byte(test.config), nil, nil)
+			require.NoError(t, err)
+			assert.IsType(t, test.expected, decoded)
+		})
+	}
+}
 
 func TestPreparedDevicesGetDevices(t *testing.T) {
 	tests := map[string]struct {
@@ -95,7 +132,7 @@ func TestPreparedDevicesGetDevices(t *testing.T) {
 func TestComputeDeviceConfigShareID(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 
 	flags := &Flags{
@@ -185,7 +222,7 @@ func TestComputeDeviceConfigShareID(t *testing.T) {
 func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 
 	flags := &Flags{
@@ -250,7 +287,7 @@ func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 func TestPreparePerDeviceAdminAccess(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 	for _, tc := range []struct {
 		name    string
@@ -270,7 +307,7 @@ func TestPreparePerDeviceAdminAccess(t *testing.T) {
 			name: "admin allocation for another driver",
 			results: []resourceapi.DeviceRequestAllocationResult{
 				{Request: "ordinary", Driver: driverName, Pool: nodeName, Device: "numa-0"},
-				{Request: "admin", Driver: "other.example.com", Pool: nodeName, Device: "other-0", AdminAccess: ptr.To(true)},
+				{Request: "admin", Driver: "other.dra-example-driver.sigs.k8s.io", Pool: nodeName, Device: "other-0", AdminAccess: ptr.To(true)},
 			},
 			want: map[string]bool{"numa-0": false},
 		},
@@ -326,7 +363,7 @@ func TestPreparePerDeviceAdminAccess(t *testing.T) {
 func TestUnprepareReturnsErrorOnUnreadableCheckpoint(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 		claimUID   = "some-claim-uid"
 	)
 
@@ -358,7 +395,7 @@ func TestUnprepareReturnsErrorOnUnreadableCheckpoint(t *testing.T) {
 	// create a CDI spec file for the claim, simulating a claim that was fully
 	// prepared before the checkpoint was corrupted. After Unprepare returns an
 	// error the file must still be present — nothing should have been released.
-	cdiSpecPath := filepath.Join(tmpDir, "k8s.cpu.example.com-cpu-"+claimUID+"-0.yaml")
+	cdiSpecPath := filepath.Join(tmpDir, "k8s.cpu.dra-example-driver.sigs.k8s.io-cpu-"+claimUID+"-0.yaml")
 	require.NoError(t, os.WriteFile(cdiSpecPath, []byte("placeholder"), 0600))
 
 	// Write garbage bytes to the checkpoint file so that readCheckpoint returns
@@ -390,7 +427,7 @@ func TestUnprepareReturnsErrorOnUnreadableCheckpoint(t *testing.T) {
 func TestPrepareRestoredClaimRecreatesMissingClaimSpec(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 
 	root := t.TempDir()
@@ -421,7 +458,7 @@ func TestPrepareRestoredClaimRecreatesMissingClaimSpec(t *testing.T) {
 func TestPrepareRestoredClaimIsIdempotentWhenClaimSpecExists(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 
 	root := t.TempDir()
@@ -445,7 +482,7 @@ func TestPrepareRestoredClaimIsIdempotentWhenClaimSpecExists(t *testing.T) {
 func TestPrepareRestoredClaimFailsWhenClaimSpecCannotBeRecreated(t *testing.T) {
 	const (
 		nodeName   = "test-node"
-		driverName = "cpu.example.com"
+		driverName = "cpu.dra-example-driver.sigs.k8s.io"
 	)
 
 	root := t.TempDir()
@@ -555,11 +592,11 @@ func assertClaimSpecResolvesPreparedDevices(t *testing.T, state *DeviceState, cl
 func TestMergeDeviceStatusPreservesConditions(t *testing.T) {
 	cond := metav1.Condition{Type: "BindingConditions", Status: metav1.ConditionTrue, Reason: "Ready"}
 	existing := []resourceapi.AllocatedDeviceStatus{
-		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Conditions: []metav1.Condition{cond}},
+		{Driver: "gpu.dra-example-driver.sigs.k8s.io", Pool: "node-a", Device: "gpu-0", Conditions: []metav1.Condition{cond}},
 	}
 	updates := []resourceapi.AllocatedDeviceStatus{
-		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"x"}`)}},
-		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-1", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"y"}`)}},
+		{Driver: "gpu.dra-example-driver.sigs.k8s.io", Pool: "node-a", Device: "gpu-0", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"x"}`)}},
+		{Driver: "gpu.dra-example-driver.sigs.k8s.io", Pool: "node-a", Device: "gpu-1", Data: &runtime.RawExtension{Raw: []byte(`{"uuid":"y"}`)}},
 	}
 
 	merged := mergeDeviceStatus(existing, updates)
@@ -575,10 +612,10 @@ func TestMergeDeviceStatusPreservesConditions(t *testing.T) {
 func TestMergeDeviceStatusDistinguishesShareID(t *testing.T) {
 	shareA, shareB := "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 	existing := []resourceapi.AllocatedDeviceStatus{
-		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", ShareID: &shareA, Conditions: []metav1.Condition{{Type: "BindingConditions", Status: metav1.ConditionTrue}}},
+		{Driver: "gpu.dra-example-driver.sigs.k8s.io", Pool: "node-a", Device: "gpu-0", ShareID: &shareA, Conditions: []metav1.Condition{{Type: "BindingConditions", Status: metav1.ConditionTrue}}},
 	}
 	updates := []resourceapi.AllocatedDeviceStatus{
-		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", ShareID: &shareB, Data: &runtime.RawExtension{Raw: []byte(`{}`)}},
+		{Driver: "gpu.dra-example-driver.sigs.k8s.io", Pool: "node-a", Device: "gpu-0", ShareID: &shareB, Data: &runtime.RawExtension{Raw: []byte(`{}`)}},
 	}
 
 	merged := mergeDeviceStatus(existing, updates)

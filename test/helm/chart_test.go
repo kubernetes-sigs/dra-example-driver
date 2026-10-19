@@ -27,11 +27,106 @@ import (
 	chartutil "helm.sh/helm/v4/pkg/chart/common/util"
 	"helm.sh/helm/v4/pkg/chart/loader"
 	"helm.sh/helm/v4/pkg/engine"
+	admissionv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	resourcev1 "k8s.io/api/resource/v1"
 	"sigs.k8s.io/yaml"
 )
+
+func TestDriverIdentity(t *testing.T) {
+	for _, profile := range []string{"gpu", "cpu", "net"} {
+		for name, override := range map[string]string{
+			"default":                 "",
+			"custom name":             "custom.test",
+			"custom name for profile": profile + ".test",
+		} {
+			t.Run(profile+"/"+name, func(t *testing.T) {
+				expected := profile + ".dra-example-driver.sigs.k8s.io"
+				if override != "" {
+					expected = override
+				}
+				rendered, err := renderChart(t, map[string]any{
+					"deviceProfile": profile,
+					"driverName":    override,
+					"webhook":       map[string]any{"enabled": true},
+					"controller":    map[string]any{"plugins": []any{"binding-conditions"}},
+				})
+				require.NoError(t, err)
+				var dc resourcev1.DeviceClass
+				require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/deviceclass.yaml"]), &dc))
+				assert.Equal(t, expected, dc.Name)
+				require.Len(t, dc.Spec.Selectors, 1)
+				require.NotNil(t, dc.Spec.Selectors[0].CEL)
+				assert.Equal(t, "device.driver == '"+expected+"'", dc.Spec.Selectors[0].CEL.Expression)
+				var webhook admissionv1.ValidatingWebhookConfiguration
+				require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/validatingwebhookconfiguration.yaml"]), &webhook))
+				require.Len(t, webhook.Webhooks, 1)
+				assert.Equal(t, "dra.dra-example-driver.sigs.k8s.io", webhook.Webhooks[0].Name)
+				var ds appsv1.DaemonSet
+				require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/kubeletplugin.yaml"]), &ds))
+				assert.Equal(t, expected, pluginContainerEnv(t, ds)["DRIVER_NAME"])
+				for _, component := range []string{"controller", "webhook"} {
+					var deployment appsv1.Deployment
+					require.NoError(t, yaml.Unmarshal([]byte(rendered["dra-example-driver/templates/"+component+"-deployment.yaml"]), &deployment))
+					require.Len(t, deployment.Spec.Template.Spec.Containers, 1)
+					assert.Contains(t, deployment.Spec.Template.Spec.Containers[0].Args, "--driver-name="+expected)
+				}
+			})
+		}
+	}
+}
+
+func TestDRASocketPathLength(t *testing.T) {
+	// With the default plugin directory and a 36-character Pod UID, a
+	// 36-character driver name produces a 107-byte DRA socket path.
+	for _, tc := range []struct {
+		name             string
+		driverName       string
+		pluginsDirectory string
+		wantError        string
+	}{
+		{name: "default"},
+		{name: "107 bytes", driverName: strings.Repeat("a", 31) + ".test"},
+		{
+			name:       "108 bytes",
+			driverName: strings.Repeat("a", 32) + ".test",
+			wantError:  "DRA socket path is 108 bytes",
+		},
+		{
+			name:             "longer name with shorter directory",
+			driverName:       strings.Repeat("a", 32) + ".test",
+			pluginsDirectory: "/plugins",
+		},
+		{
+			name:             "default name with longer directory",
+			pluginsDirectory: "/var/lib/kubelet/plugins/extra",
+			wantError:        "DRA socket path is 111 bytes",
+		},
+		{
+			name:             "clean directory before measuring",
+			driverName:       strings.Repeat("a", 31) + ".test",
+			pluginsDirectory: "/var/lib/kubelet/plugins/./",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			values := map[string]any{"driverName": tc.driverName}
+			if tc.pluginsDirectory != "" {
+				values["kubeletPlugin"] = map[string]any{
+					"kubeletPluginsDirectoryPath": tc.pluginsDirectory,
+				}
+			}
+			_, err := renderChart(t, values)
+			if tc.wantError != "" {
+				require.ErrorContains(t, err, tc.wantError)
+				assert.ErrorContains(t, err, "Shorten driverName or kubeletPlugin.kubeletPluginsDirectoryPath.")
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
 
 func TestDeviceHealthPodWatchRBAC(t *testing.T) {
 	for _, tc := range []struct {
@@ -101,6 +196,19 @@ func TestDeviceHealthPodWatchRBAC(t *testing.T) {
 			}}, binding.Subjects)
 		})
 	}
+}
+
+func renderChart(t *testing.T, overrides map[string]any) (map[string]string, error) {
+	t.Helper()
+	chart, err := loader.Load("../../deployments/helm/dra-example-driver")
+	require.NoError(t, err)
+	values, err := chartutil.ToRenderValues(chart, overrides, common.ReleaseOptions{
+		Name: "test", Namespace: "driver-test", IsInstall: true,
+	}, common.DefaultCapabilities)
+	if err != nil {
+		return nil, err
+	}
+	return engine.Render(chart, values)
 }
 
 // pluginContainerEnv returns the literal env vars of the "plugin" container in

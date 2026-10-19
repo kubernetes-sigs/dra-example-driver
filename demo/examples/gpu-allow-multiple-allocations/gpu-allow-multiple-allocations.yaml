@@ -19,7 +19,7 @@ spec:
     requests:
     - name: gpu
       exactly:
-        deviceClassName: gpu.example.com
+        deviceClassName: gpu.dra-example-driver.sigs.k8s.io
         capacity:
           requests:
             memory: 16Gi
@@ -36,7 +36,7 @@ spec:
     requests:
     - name: gpu
       exactly:
-        deviceClassName: gpu.example.com
+        deviceClassName: gpu.dra-example-driver.sigs.k8s.io
         capacity:
           requests:
             memory: 16Gi

@@ -24,7 +24,7 @@ driverName: ""
 deviceClass:
   # extendedResourceName maps this DeviceClass to a classic extended resource
   # name (KEP-5004), so pods can request a device via `resources.limits` (e.g.
-  # `example.com/gpu: 1`) instead of via a ResourceClaim. Defaults to "" so a
+  # `dra-example-driver.sigs.k8s.io/gpu: 1`) instead of via a ResourceClaim. Defaults to "" so a
   # fresh install does not silently claim ownership of a name that may collide
   # with a real driver. The implicit form
   # `deviceclass.resource.kubernetes.io/<deviceClassName>` is always available.
@@ -109,7 +109,7 @@ kubeletPlugin:
   deviceHealth: true
   # simulateHealthChanges makes the device-health simulator (KEP-4680) randomly
   # walk devices through simulated faults on their own. When false (default),
-  # devices report healthy until pinned via a health.example.com/<device>
+  # devices report healthy until pinned via a health.dra-example-driver.sigs.k8s.io/<device>
   # annotation on the driver pod, which keeps the demo deterministic.
   simulateHealthChanges: false
   containers:
