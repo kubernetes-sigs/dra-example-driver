@@ -67,8 +67,21 @@ func (s *GpuSharing) Validate() error {
 
 // Validate ensures that GpuConfig has a valid set of values.
 func (c *GpuConfig) Validate() error {
+	if c == nil {
+		return fmt.Errorf("GPU config is nil")
+	}
+	if c.Mode != "" {
+		return c.ValidateVfioMode()
+	}
 	if c.Sharing == nil {
 		return fmt.Errorf("no sharing strategy set")
 	}
 	return c.Sharing.Validate()
+}
+
+func (c *GpuConfig) ValidateVfioMode() error {
+	if c.Mode == VfioModePassthrough {
+		return nil
+	}
+	return fmt.Errorf("unknown GPU mode: %v", c.Mode)
 }

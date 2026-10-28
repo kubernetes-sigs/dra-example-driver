@@ -16,6 +16,9 @@
 
 # Deletes the kind cluster used by the demo. See demo/scripts/common.sh for
 # configuration (cluster name, etc.).
+#
+# When the cluster was created with VFIO_GPU=true VFIO_SETUP_HOST=true, pass
+# the same variables here to also unload the synthetic PCI devices.
 
 CURRENT_DIR="$(cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd)"
 
@@ -23,9 +26,12 @@ set -ex
 set -o pipefail
 
 source "${CURRENT_DIR}/../../scripts/common.sh"
+source "${CURRENT_DIR}/../../scripts/vfio-kind.sh"
 
 ${KIND} delete cluster \
 	--name "${KIND_CLUSTER_NAME}"
+
+vfio_cleanup_host
 
 set +x
 printf '\033[0;32m'

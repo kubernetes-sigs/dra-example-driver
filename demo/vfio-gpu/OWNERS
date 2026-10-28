@@ -1,0 +1,8 @@
+# See the OWNERS docs at https://go.k8s.io/owners
+#
+# Out-of-tree kernel modules (GPL-2.0) and the scripts that build, load, and
+# bind them. These track kernel internals rather than the DRA API, so changes
+# here need a reviewer who follows that churn. Parent approvers still apply.
+
+approvers:
+  - alaypatel07

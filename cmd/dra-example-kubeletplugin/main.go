@@ -37,6 +37,7 @@ import (
 	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/helpers"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/net"
+	vfiogpu "sigs.k8s.io/dra-example-driver/internal/profiles/vfio-gpu"
 	"sigs.k8s.io/dra-example-driver/pkg/flags"
 	"sigs.k8s.io/dra-example-driver/pkg/metrics"
 )
@@ -72,6 +73,7 @@ type Flags struct {
 	pcieRoots                     string
 	cpuNUMANodes                  int
 	cpusPerNUMANode               int
+	enableDeviceMetadata          bool
 }
 
 type Config struct {
@@ -91,6 +93,9 @@ var validProfiles = map[string]func(flags Flags) profiles.Profile{
 	},
 	net.ProfileName: func(flags Flags) profiles.Profile {
 		return net.NewProfile(flags.nodeName, flags.numDevices, flags.netPublishPCIeRoot, helpers.ParsePCIeRoots(flags.pcieRoots))
+	},
+	vfiogpu.ProfileName: func(flags Flags) profiles.Profile {
+		return vfiogpu.NewProfile(flags.nodeName, flags.driverName)
 	},
 }
 
@@ -268,6 +273,13 @@ func newApp() *cli.App {
 			Value:       4,
 			Destination: &flags.cpusPerNUMANode,
 			EnvVars:     []string{"CPUS_PER_NUMA_NODE"},
+		},
+		&cli.BoolFlag{
+			Name:        "enable-device-metadata",
+			Usage:       "Enable DRA in-container device metadata files for prepared devices.",
+			Value:       false,
+			Destination: &flags.enableDeviceMetadata,
+			EnvVars:     []string{"ENABLE_DEVICE_METADATA"},
 		},
 	}
 	cliFlags = append(cliFlags, flags.kubeClientConfig.Flags()...)

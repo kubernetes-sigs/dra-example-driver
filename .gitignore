@@ -1,4 +1,5 @@
 .cache/
+.config/
 vendor/
 [._]*.sw[a-p]
 
