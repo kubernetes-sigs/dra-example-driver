@@ -147,13 +147,13 @@ The PodResources API returns a JSON response containing all pods on the node. Th
             {
               "cdiDevices": [
                 {
-                  "name": "k8s.gpu.example.com/gpu=common"
+                  "name": "k8s.gpu.dra-example-driver.sigs.k8s.io/gpu=common"
                 },
                 {
-                  "name": "k8s.gpu.example.com/gpu=<uuid>-gpu-0"
+                  "name": "k8s.gpu.dra-example-driver.sigs.k8s.io/gpu=<uuid>-gpu-0"
                 }
               ],
-              "driverName": "gpu.example.com",
+              "driverName": "gpu.dra-example-driver.sigs.k8s.io",
               "poolName": "<node-name>",
               "deviceName": "gpu-0"
             }
@@ -172,7 +172,7 @@ The PodResources API returns a JSON response containing all pods on the node. Th
 | `dynamicResources`            | Array of DRA-allocated resources — new in KEP-3695; absent on pre-1.34 clusters                      |
 | `claimName`                   | Name of the `ResourceClaim` bound to the pod (includes a random suffix when created from a template) |
 | `claimNamespace`              | Namespace of the `ResourceClaim`                                                                     |
-| `claimResources[].driverName` | The DRA driver that allocated the device (e.g. `gpu.example.com`)                                    |
+| `claimResources[].driverName` | The DRA driver that allocated the device (e.g. `gpu.dra-example-driver.sigs.k8s.io`)                                    |
 | `claimResources[].poolName`   | The node the device lives on                                                                         |
 | `claimResources[].deviceName` | The allocated device ID (e.g. `gpu-0`)                                                               |
 | `claimResources[].cdiDevices` | CDI identifiers injected into the container environment                                              |

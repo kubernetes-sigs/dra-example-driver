@@ -188,7 +188,7 @@ func newApp() *cli.App {
 		},
 		&cli.StringFlag{
 			Name:        "pod-name",
-			Usage:       "Name of this driver pod. Used to watch this pod for health.example.com/<device> override annotations (device-health demo).",
+			Usage:       "Name of this driver pod. Used to watch this pod for health.dra-example-driver.sigs.k8s.io/<device> override annotations (device-health demo).",
 			Destination: &flags.podName,
 			EnvVars:     []string{"POD_NAME"},
 		},
@@ -207,7 +207,7 @@ func newApp() *cli.App {
 		},
 		&cli.BoolFlag{
 			Name:        "simulate-health-changes",
-			Usage:       "When true, devices randomly walk through simulated health faults on their own. When false (default) they report healthy until pinned via a health.example.com/<device> annotation. Only relevant when --device-health is enabled.",
+			Usage:       "When true, devices randomly walk through simulated health faults on their own. When false (default) they report healthy until pinned via a health.dra-example-driver.sigs.k8s.io/<device> annotation. Only relevant when --device-health is enabled.",
 			Destination: &flags.simulateHealthChanges,
 			EnvVars:     []string{"SIMULATE_HEALTH_CHANGES"},
 		},
@@ -293,7 +293,7 @@ func newApp() *cli.App {
 			}
 
 			if flags.driverName == "" {
-				flags.driverName = flags.profile + ".example.com"
+				flags.driverName = flags.profile + ".dra-example-driver.sigs.k8s.io"
 			}
 
 			newProfile, ok := validProfiles[flags.profile]

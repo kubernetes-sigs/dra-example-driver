@@ -230,7 +230,7 @@ status:
 - **Toleration**: Unlimited (no `tolerationSeconds`)
   ```yaml
   tolerations:
-  - key: gpu.example.com/unhealthy
+  - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
     operator: Equal
     value: "true"
     effect: NoExecute
@@ -242,7 +242,7 @@ status:
 - **Toleration**: 300 seconds
   ```yaml
   tolerations:
-  - key: gpu.example.com/unhealthy
+  - key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
     operator: Equal
     value: "true"
     effect: NoExecute

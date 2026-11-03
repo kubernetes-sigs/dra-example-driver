@@ -17,11 +17,14 @@
 package main
 
 import (
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
@@ -50,6 +53,13 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 	err = writeCheckpoint(path, encoder, updatedCheckpoint)
 	require.NoError(t, err)
 
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	var metadata metav1.TypeMeta
+	require.NoError(t, json.Unmarshal(data, &metadata))
+	assert.Equal(t, "checkpoint.internal.dra-example-driver.sigs.k8s.io/v1", metadata.APIVersion)
+	assert.Equal(t, "Checkpoint", metadata.Kind)
+
 	checkpoint, err = readCheckpoint(path, decoder)
 	require.NoError(t, err)
 	assert.Equal(t, updatedCheckpoint, checkpoint)
@@ -64,4 +74,19 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 	checkpoint, err = readCheckpoint(path, decoder)
 	require.NoError(t, err)
 	assert.Equal(t, updatedCheckpoint, checkpoint)
+}
+
+func TestReadCheckpointPreviousAPIGroup(t *testing.T) {
+	path := filepath.Join(t.TempDir(), DriverPluginCheckpointFile)
+	data := []byte(`{"apiVersion":"checkpoint.internal.example.com/v1","kind":"Checkpoint","preparedClaims":[{"uid":"123"}]}`)
+	require.NoError(t, os.WriteFile(path, data, 0600))
+	decoder, _, err := checkpointSerializer()
+	require.NoError(t, err)
+
+	// The previous API group must fail without discarding stored claims.
+	_, err = readCheckpoint(path, decoder)
+	require.Error(t, err)
+	after, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, data, after)
 }

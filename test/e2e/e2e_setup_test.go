@@ -68,17 +68,17 @@ const driverPodSelector = "app.kubernetes.io/component=kubeletplugin"
 // and webhook testdata; deployManifest substitutes it for the per-test
 // driver name, and the webhook tests pin their installed driver to it so
 // their static testdata stays valid.
-const defaultGPUDeviceClassName = "gpu.example.com"
+const defaultGPUDeviceClassName = "gpu.dra-example-driver.sigs.k8s.io"
 
 // defaultCPUDeviceClassName is the driver name baked into demo manifests
 // using the cpu profile; deployManifest substitutes it for the per-test
 // driver name.
-const defaultCPUDeviceClassName = "cpu.example.com"
+const defaultCPUDeviceClassName = "cpu.dra-example-driver.sigs.k8s.io"
 
 // defaultNETDeviceClassName is the driver name baked into demo manifests
 // using the net profile; deployManifest substitutes it for the per-test
 // driver name.
-const defaultNETDeviceClassName = "net.example.com"
+const defaultNETDeviceClassName = "net.dra-example-driver.sigs.k8s.io"
 
 // defaultDeviceClassNames are the driver names baked into demo manifests as
 // placeholders; deployManifest substitutes each for the per-test driver name.
@@ -86,7 +86,7 @@ var defaultDeviceClassNames = []string{defaultGPUDeviceClassName, defaultCPUDevi
 
 // defaultExtendedResourceName is the extended resource name baked into demo
 // manifests; deployManifest substitutes it when ExtendedResourceName is set.
-const defaultExtendedResourceName = "example.com/gpu"
+const defaultExtendedResourceName = "dra-example-driver.sigs.k8s.io/gpu"
 
 func init() {
 	cwd, _ := os.Getwd()
@@ -139,7 +139,7 @@ var _ = BeforeSuite(func(ctx SpecContext) {
 // identifiers, creates the resulting objects, and registers cleanup and
 // failure diagnostics via DeferCleanup. Substitution rules:
 //   - any name in defaultDeviceClassNames -> drv.DriverName (always applied)
-//   - "example.com/gpu" -> drv.ExtendedResourceName (only when set)
+//   - "dra-example-driver.sigs.k8s.io/gpu" -> drv.ExtendedResourceName (only when set)
 func deployManifest(ctx context.Context, namespace, manifestFile string, drv installedDriver) {
 	GinkgoHelper()
 	absPath := filepath.Join(demoManifestsDir, namespace, manifestFile)
@@ -346,6 +346,70 @@ func deleteObjects(ctx context.Context, dynamicClient dynamic.Interface, objects
 		}).WithContext(ctx).WithTimeout(30*time.Second).WithPolling(1*time.Second).Should(BeTrue(),
 			"Timed out waiting for %s/%s to be deleted", obj.GroupVersionKind().Kind, name)
 	}
+}
+
+// createDeviceClaim requests one device and registers cleanup for the claim.
+func createDeviceClaim(ctx context.Context, drv installedDriver, name string) *resourceapi.ResourceClaim {
+	GinkgoHelper()
+
+	claim, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Create(ctx, &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: resourceapi.ResourceClaimSpec{
+			Devices: resourceapi.DeviceClaim{
+				Requests: []resourceapi.DeviceRequest{{
+					Name: "device",
+					Exactly: &resourceapi.ExactDeviceRequest{
+						DeviceClassName: drv.DriverName,
+					},
+				}},
+			},
+		},
+	}, metav1.CreateOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.ResourceV1().ResourceClaims(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.ResourceV1().ResourceClaims(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
+	return claim
+}
+
+// startPodWithClaim waits for a Pod to run and checks its CDI driver name.
+func startPodWithClaim(ctx context.Context, drv installedDriver, name, claimName string) {
+	GinkgoHelper()
+
+	pod := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec: v1.PodSpec{
+			Containers: []v1.Container{{
+				Name:    "workload",
+				Image:   "ubuntu:22.04",
+				Command: []string{"bash", "-c", "export; trap 'exit 0' TERM; sleep 9999 & wait"},
+				Resources: v1.ResourceRequirements{
+					Claims: []v1.ResourceClaim{{Name: "device"}},
+				},
+			}},
+			ResourceClaims: []v1.PodResourceClaim{{
+				Name:              "device",
+				ResourceClaimName: ptr.To(claimName),
+			}},
+		},
+	}
+	_, err := clientset.CoreV1().Pods(drv.Namespace).Create(ctx, pod, metav1.CreateOptions{})
+	Expect(err).NotTo(HaveOccurred())
+	DeferCleanup(func(ctx context.Context) {
+		Expect(clientset.CoreV1().Pods(drv.Namespace).Delete(ctx, name, metav1.DeleteOptions{})).To(Succeed())
+		Eventually(func() bool {
+			_, err := clientset.CoreV1().Pods(drv.Namespace).Get(ctx, name, metav1.GetOptions{})
+			return apierrors.IsNotFound(err)
+		}).WithContext(ctx).WithTimeout(time.Minute).WithPolling(time.Second).Should(BeTrue())
+	}, NodeTimeout(75*time.Second))
+	checkPodsReadyAndRunning(ctx, drv.Namespace, []string{name})
+	logs, err := clientset.CoreV1().Pods(drv.Namespace).GetLogs(name, &v1.PodLogOptions{Container: "workload"}).DoRaw(ctx)
+	Expect(err).NotTo(HaveOccurred())
+	Expect(string(logs)).To(ContainSubstring("DRA_RESOURCE_DRIVER_NAME=\"" + drv.DriverName + "\""))
 }
 
 func checkPodsReadyAndRunning(ctx context.Context, namespace string, pods []string) {
@@ -1183,7 +1247,7 @@ func verifyAllocatedResourcesHealth(ctx context.Context, namespace, podName, con
 	}, "120s", "5s").Should(Succeed())
 }
 
-const healthOverrideAnnotationPrefix = "health.example.com/"
+const healthOverrideAnnotationPrefix = "health.dra-example-driver.sigs.k8s.io/"
 
 // podNodeAndAllocatedDevices returns the node the pod landed on and the names of
 // the devices allocated to its pod-local claim. A health override must target
@@ -1205,7 +1269,7 @@ func podNodeAndAllocatedDevices(ctx context.Context, namespace, podName, podLoca
 
 // setDeviceHealthOverride annotates the driver's kubelet plugin pod running on
 // nodeName so it forces the given health value for each of the named devices.
-// The driver on that node watches its own pod for health.example.com/<device>
+// The driver on that node watches its own pod for health.dra-example-driver.sigs.k8s.io/<device>
 // annotations and overrides the simulated health of that device accordingly.
 func setDeviceHealthOverride(ctx context.Context, drv installedDriver, nodeName string, devices []string, value string) {
 	GinkgoHelper()

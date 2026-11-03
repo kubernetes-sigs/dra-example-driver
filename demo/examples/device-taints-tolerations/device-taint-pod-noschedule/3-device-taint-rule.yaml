@@ -7,8 +7,8 @@ spec:
   # particular driver is broken.
   # Evict all pods and don't schedule new ones.
   deviceSelector:
-    driver: gpu.example.com
+    driver: gpu.dra-example-driver.sigs.k8s.io
   taint:
-    key: gpu.example.com/unhealthy
+    key: gpu.dra-example-driver.sigs.k8s.io/unhealthy
     value: "true"
     effect: NoSchedule

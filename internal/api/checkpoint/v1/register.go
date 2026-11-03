@@ -23,7 +23,7 @@ import (
 )
 
 // GroupName is the group name for checkpoints.
-const GroupName = "checkpoint.internal.example.com"
+const GroupName = "checkpoint.internal.dra-example-driver.sigs.k8s.io"
 
 // SchemeGroupVersion is the group version for v1 types.
 var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}

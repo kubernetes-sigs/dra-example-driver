@@ -23,7 +23,7 @@ import (
 )
 
 const (
-	GroupName = "gpu.resource.example.com"
+	GroupName = "gpu.resource.dra-example-driver.sigs.k8s.io"
 	Version   = "v1alpha1"
 )
 

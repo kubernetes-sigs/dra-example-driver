@@ -33,12 +33,12 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
           selectors:
           - cel:
-              expression: "device.attributes['gpu.example.com'].model == 'LATEST-GPU-MODEL'"
+              expression: "device.attributes['gpu.dra-example-driver.sigs.k8s.io'].model == 'LATEST-GPU-MODEL'"
           - cel:
-              expression: "device.capacity['gpu.example.com'].memory.compareTo(quantity('4Gi')) >= 0"
+              expression: "device.capacity['gpu.dra-example-driver.sigs.k8s.io'].memory.compareTo(quantity('4Gi')) >= 0"
 
 ---
 apiVersion: v1

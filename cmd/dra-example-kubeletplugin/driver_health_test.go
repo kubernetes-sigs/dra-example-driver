@@ -90,20 +90,20 @@ func TestApplyHealthOverridesLifecycle(t *testing.T) {
 	logger := klog.Background()
 
 	// Apply "unhealthy" to gpu-0 only.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"})
 	assert.Equal(t, kubeletplugin.HealthStatusUnhealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-1"))
 	assert.Equal(t, "unhealthy", d.healthOverrides["gpu-0"])
 
 	// Change gpu-0 to "unknown".
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unknown"})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unknown"})
 	assert.Equal(t, kubeletplugin.HealthStatusUnknown, healthOf(d.buildHealthReport(), "gpu-0"))
 
 	// Unknown/unrelated annotation keys are ignored; gpu-0 keeps its override.
 	d.applyHealthOverrides(logger, map[string]string{
-		"health.example.com/gpu-0":          "unknown",
-		"health.example.com/does-not-exist": "unhealthy",
-		"unrelated/annotation":              "x",
+		"health.dra-example-driver.sigs.k8s.io/gpu-0":          "unknown",
+		"health.dra-example-driver.sigs.k8s.io/does-not-exist": "unhealthy",
+		"unrelated/annotation":                                 "x",
 	})
 	assert.Equal(t, kubeletplugin.HealthStatusUnknown, healthOf(d.buildHealthReport(), "gpu-0"))
 
@@ -119,18 +119,18 @@ func TestApplyHealthOverridesIgnoresInvalidValues(t *testing.T) {
 	logger := klog.Background()
 
 	// A typo must NOT silently force the device healthy or create an override.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "degraded"})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "degraded"})
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	_, ok := d.healthOverrides["gpu-0"]
 	assert.False(t, ok, "invalid value must not create an override")
 
 	// Case and surrounding whitespace are normalized for mapping and storage.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "  UNHEALTHY "})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "  UNHEALTHY "})
 	assert.Equal(t, kubeletplugin.HealthStatusUnhealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	assert.Equal(t, "unhealthy", d.healthOverrides["gpu-0"])
 
 	// Replacing a valid override with garbage returns the device to simulation.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "nonsense"})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "nonsense"})
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	_, ok = d.healthOverrides["gpu-0"]
 	assert.False(t, ok, "override must be cleared when replaced by an invalid value")
@@ -174,7 +174,7 @@ func TestWatchHealthStatusStreamsUpdates(t *testing.T) {
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(initial, "gpu-0"))
 
 	// Flip gpu-0 unhealthy; the subscriber must wake and resend.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	d.applyHealthOverrides(logger, map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"})
 	eventuallyHealth(t, reports, "gpu-0", kubeletplugin.HealthStatusUnhealthy)
 
 	// Cancelling the context ends the stream and deregisters the subscriber.
@@ -225,7 +225,7 @@ func TestConcurrentHealthAccess(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
 				d.applyHealthOverrides(logger, map[string]string{
-					fmt.Sprintf("health.example.com/gpu-%d", i%3): values[j%len(values)],
+					fmt.Sprintf("health.dra-example-driver.sigs.k8s.io/gpu-%d", i%3): values[j%len(values)],
 				})
 			}
 		}(i)
@@ -493,7 +493,7 @@ func TestWatchHealthOverridesAppliesPodAnnotationEvents(t *testing.T) {
 	// The watch must be scoped to this driver pod only.
 	assert.Equal(t, "metadata.name="+testPodName, <-selectors)
 
-	unhealthy := map[string]string{"health.example.com/gpu-0": "unhealthy"}
+	unhealthy := map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"}
 
 	// Added carries the current annotation set and is applied.
 	fw.Add(driverPod(unhealthy))
@@ -541,7 +541,7 @@ func TestWatchHealthOverridesStopsOnEventAfterContextCancel(t *testing.T) {
 	// Cancel while the loop is parked on the result channel, then deliver one
 	// more event: the loop must notice the cancellation and stop the watcher.
 	cancel()
-	fw.Modify(driverPod(map[string]string{"health.example.com/gpu-0": "unhealthy"}))
+	fw.Modify(driverPod(map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"}))
 	waitForHealthGoroutines(t, d)
 
 	assert.True(t, fw.IsStopped(), "watcher must be stopped on exit")
@@ -558,7 +558,7 @@ func TestWatchHealthOverridesStopsOnEventAfterShutdown(t *testing.T) {
 	fw := <-watchers
 
 	close(d.stopHealthCh)
-	fw.Modify(driverPod(map[string]string{"health.example.com/gpu-0": "unhealthy"}))
+	fw.Modify(driverPod(map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"}))
 	waitForHealthGoroutines(t, d)
 
 	assert.True(t, fw.IsStopped(), "watcher must be stopped on exit")
@@ -603,7 +603,7 @@ func TestWatchHealthOverridesReconnectsAfterWatchCloses(t *testing.T) {
 	second := <-watchers
 	assert.Equal(t, int32(2), attempts.Load())
 
-	second.Add(driverPod(map[string]string{"health.example.com/gpu-0": "unhealthy"}))
+	second.Add(driverPod(map[string]string{"health.dra-example-driver.sigs.k8s.io/gpu-0": "unhealthy"}))
 	assert.Eventually(t, func() bool {
 		return healthOf(d.buildHealthReport(), "gpu-0") == kubeletplugin.HealthStatusUnhealthy
 	}, 5*time.Second, 10*time.Millisecond, "override must be applied on the reconnected watch")

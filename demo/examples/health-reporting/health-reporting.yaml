@@ -20,7 +20,7 @@
 # This shows driver authors how to ship a driver that does not report device
 # health.
 #
-# DEMO ONLY: the health.example.com/<device> annotation override exists solely to
+# DEMO ONLY: the health.dra-example-driver.sigs.k8s.io/<device> annotation override exists solely to
 # make this example driver's health reporting easy to exercise by hand. It lets
 # anyone who can annotate the driver pod declare any device healthy/unhealthy/
 # unknown, which is a health-control capability. A real driver MUST derive health
@@ -45,15 +45,15 @@
 #
 #   # Force the allocated device unhealthy.
 #   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
-#     "health.example.com/$DEVICE=unhealthy" --overwrite
+#     "health.dra-example-driver.sigs.k8s.io/$DEVICE=unhealthy" --overwrite
 #
 #   # Return to healthy.
 #   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
-#     "health.example.com/$DEVICE=healthy" --overwrite
+#     "health.dra-example-driver.sigs.k8s.io/$DEVICE=healthy" --overwrite
 #
 #   # Remove override (return to simulation).
 #   kubectl annotate -n dra-example-driver "$DRIVER_POD" \
-#     "health.example.com/$DEVICE-"
+#     "health.dra-example-driver.sigs.k8s.io/$DEVICE-"
 #
 # Supported values: healthy, unhealthy, unknown
 #
@@ -82,7 +82,7 @@ spec:
       requests:
       - name: gpu
         exactly:
-          deviceClassName: gpu.example.com
+          deviceClassName: gpu.dra-example-driver.sigs.k8s.io
 ---
 apiVersion: v1
 kind: Pod

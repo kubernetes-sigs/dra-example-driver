@@ -6,7 +6,7 @@ This example demonstrates the Extended Resource Request feature (KEP-5004), whic
 
 **Setup**: Two pods, each with one container requesting GPUs using the classic resources.limits API:
 - **Pod 0**: Uses implicit name `deviceclass.resource.kubernetes.io/<className>` (works with default chart install)
-- **Pod 1**: Uses explicit name `example.com/gpu` (requires chart install with `--set deviceClass.extendedResourceName=example.com/gpu`)
+- **Pod 1**: Uses explicit name `dra-example-driver.sigs.k8s.io/gpu` (requires chart install with `--set deviceClass.extendedResourceName=dra-example-driver.sigs.k8s.io/gpu`)
 
 ## GPU Allocation
 
@@ -68,7 +68,7 @@ graph TD
 
 ### Pod 1 (Explicit Name - Requires Chart Configuration)
 
-Pod1 requires the Helm chart to be installed with: **--set deviceClass.extendedResourceName=example.com/gpu**
+Pod1 requires the Helm chart to be installed with: **--set deviceClass.extendedResourceName=dra-example-driver.sigs.k8s.io/gpu**
 
 
 Without this configuration, pod1 will remain in Pending state while pod0 runs normally.
@@ -86,8 +86,8 @@ GPU_DEVICE_0=gpu-0
 {
   "extendedResourceClaimStatus": [
     {
-      "name": "deviceclass.resource.kubernetes.io/gpu.example.com",
-      "resourceClaimName": "pod0-deviceclass.resource.kubernetes.io-gpu.example.com-0"
+      "name": "deviceclass.resource.kubernetes.io/gpu.dra-example-driver.sigs.k8s.io",
+      "resourceClaimName": "pod0-deviceclass.resource.kubernetes.io-gpu.dra-example-driver.sigs.k8s.io-0"
     }
   ]
 }

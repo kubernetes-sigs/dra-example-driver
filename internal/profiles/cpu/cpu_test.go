@@ -28,17 +28,17 @@ import (
 )
 
 func TestNewProfile(t *testing.T) {
-	profile := NewProfile("test-node", "cpu.example.com", 2, 4)
+	profile := NewProfile("test-node", "cpu.dra-example-driver.sigs.k8s.io", 2, 4)
 
 	assert.Equal(t, "test-node", profile.nodeName)
-	assert.Equal(t, "cpu.example.com", profile.driverName)
+	assert.Equal(t, "cpu.dra-example-driver.sigs.k8s.io", profile.driverName)
 	assert.Equal(t, 2, profile.numNUMANodes)
 	assert.Equal(t, 4, profile.cpusPerNUMANode)
 }
 
 func TestEnumerateDevices(t *testing.T) {
 	const cpusPerNUMA = 4
-	profile := NewProfile("test-node", "cpu.example.com", 3, cpusPerNUMA)
+	profile := NewProfile("test-node", "cpu.dra-example-driver.sigs.k8s.io", 3, cpusPerNUMA)
 	wantKey := profile.CapacityKey()
 
 	resources, err := profile.EnumerateDevices()
@@ -76,7 +76,7 @@ func TestEnumerateDevices(t *testing.T) {
 }
 
 func TestApplyConfig(t *testing.T) {
-	profile := NewProfile("test-node", "cpu.example.com", 2, 4)
+	profile := NewProfile("test-node", "cpu.dra-example-driver.sigs.k8s.io", 2, 4)
 	results := []*resourceapi.DeviceRequestAllocationResult{{
 		Device: "numa-0",
 		ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{

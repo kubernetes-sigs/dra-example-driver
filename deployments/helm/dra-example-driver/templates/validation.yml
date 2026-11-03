@@ -1,3 +1,10 @@
+{{/* POD_UID comes from the Pod metadata. Reserve 36 bytes for its UUID. */}}
+{{- $driverName := include "dra-example-driver.driverName" . }}
+{{- $socketPath := printf "%s/%s/dra-00000000-0000-0000-0000-000000000000.sock" .Values.kubeletPlugin.kubeletPluginsDirectoryPath $driverName | clean }}
+{{- if gt (len $socketPath) 107 }}
+{{- fail (printf "DRA socket path is %d bytes; Linux permits at most 107 bytes. Shorten driverName or kubeletPlugin.kubeletPluginsDirectoryPath." (len $socketPath)) }}
+{{- end }}
+
 {{- if .Values.namespace }}
 {{- $error := "" }}
 {{- $error = printf "%s\nValue 'namespace' set to %s" $error .Values.namespace }}
