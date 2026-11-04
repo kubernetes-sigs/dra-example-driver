@@ -200,7 +200,7 @@ func newApp() *cli.App {
 		},
 		&cli.BoolFlag{
 			Name:        "device-health",
-			Usage:       "Enable device health reporting (KEP-4680). When false, the driver advertises no health service to the kubelet and WatchHealthStatus returns ErrHealthNotSupported - the way a driver with no health source opts out.",
+			Usage:       "Enable device health reporting (KEP-4680). When false, the driver advertises no health service to the kubelet and WatchHealthStatus returns ErrHealthNotSupported - the way a driver with no health source opts out. When enabled, the driver also publishes a Healthy condition in status.devices[].conditions of each ResourceClaim it has prepared, and keeps it current. Claims prepared before a driver restart are not updated until the kubelet prepares them again.",
 			Value:       true,
 			Destination: &flags.deviceHealth,
 			EnvVars:     []string{"DEVICE_HEALTH"},

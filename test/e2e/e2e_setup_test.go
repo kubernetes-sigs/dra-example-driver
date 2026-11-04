@@ -1183,6 +1183,46 @@ func verifyAllocatedResourcesHealth(ctx context.Context, namespace, podName, con
 	}, "120s", "5s").Should(Succeed())
 }
 
+// verifyClaimHealthCondition verifies that the driver published the Healthy
+// condition with the expected status and reason in status.devices[] of the
+// (template-generated) ResourceClaim referenced by podLocalClaimName, for every
+// one of the given devices.
+func verifyClaimHealthCondition(ctx context.Context, namespace, podName, podLocalClaimName string, devices []string, expectedStatus metav1.ConditionStatus, expectedReason string) {
+	GinkgoHelper()
+	Eventually(func(g Gomega) {
+		pod, err := clientset.CoreV1().Pods(namespace).Get(ctx, podName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get pod %s/%s", namespace, podName)
+
+		rcsIdx := slices.IndexFunc(pod.Status.ResourceClaimStatuses, func(s v1.PodResourceClaimStatus) bool {
+			return s.Name == podLocalClaimName && s.ResourceClaimName != nil
+		})
+		g.Expect(rcsIdx).NotTo(Equal(-1),
+			"Pod %s/%s has no resourceClaimStatuses entry for pod-local claim %q", namespace, podName, podLocalClaimName)
+		claimName := *pod.Status.ResourceClaimStatuses[rcsIdx].ResourceClaimName
+
+		claim, err := clientset.ResourceV1().ResourceClaims(namespace).Get(ctx, claimName, metav1.GetOptions{})
+		g.Expect(err).NotTo(HaveOccurred(), "Failed to get ResourceClaim %s/%s", namespace, claimName)
+
+		for _, device := range devices {
+			statusIdx := slices.IndexFunc(claim.Status.Devices, func(s resourceapi.AllocatedDeviceStatus) bool {
+				return s.Device == device
+			})
+			g.Expect(statusIdx).NotTo(Equal(-1),
+				"ResourceClaim %s/%s has no status.devices entry for %s", namespace, claimName, device)
+			cond := meta.FindStatusCondition(claim.Status.Devices[statusIdx].Conditions, "Healthy")
+			g.Expect(cond).NotTo(BeNil(),
+				"ResourceClaim %s/%s device %s has no Healthy condition", namespace, claimName, device)
+			g.Expect(cond.Status).To(Equal(expectedStatus),
+				"ResourceClaim %s/%s device %s Healthy condition: %+v", namespace, claimName, device, *cond)
+			g.Expect(cond.Reason).To(Equal(expectedReason))
+			g.Expect(cond.Message).NotTo(BeEmpty())
+
+			fmt.Fprintf(GinkgoWriter, "ResourceClaim %s/%s device %s: Healthy=%s reason=%s message=%q\n",
+				namespace, claimName, device, cond.Status, cond.Reason, cond.Message)
+		}
+	}, "120s", "5s").Should(Succeed())
+}
+
 const healthOverrideAnnotationPrefix = "health.example.com/"
 
 // podNodeAndAllocatedDevices returns the node the pod landed on and the names of

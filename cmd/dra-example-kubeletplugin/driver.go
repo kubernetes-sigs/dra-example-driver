@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"sort"
 	"strings"
 	"sync"
@@ -35,16 +36,40 @@ import (
 	coreclientset "k8s.io/client-go/kubernetes"
 	"k8s.io/dynamic-resource-allocation/kubeletplugin"
 	"k8s.io/klog/v2"
+	"k8s.io/utils/ptr"
 
 	"sigs.k8s.io/dra-example-driver/pkg/metrics"
 )
 
 // deviceHealthSnapshot is the last health we logged for a device. It exists only
-// so pollDeviceHealth can detect and log transitions; the authoritative health
-// always comes from the simulator (buildHealthReport reads it on demand).
+// so pollDeviceHealth can detect and log transitions, and what is published to
+// claim conditions; the authoritative health always comes from the simulator
+// (buildHealthReport reads it on demand).
 type deviceHealthSnapshot struct {
 	health  kubeletplugin.HealthStatus
 	message string
+}
+
+// deviceHealthyConditionType is the type of the condition published in
+// ResourceClaim.status.devices[].conditions to reflect device health.
+const deviceHealthyConditionType = "Healthy"
+
+// conditionPublishTimeout bounds one pass of publishing conditions to claims, so
+// a slow API server cannot hold up the health resends for long.
+const conditionPublishTimeout = 10 * time.Second
+
+// preparedClaim is what is needed to publish health conditions for a claim that
+// is currently prepared: where to write, and which of its devices are ours.
+type preparedClaim struct {
+	namespace, name string
+	devices         []preparedClaimDevice
+}
+
+type preparedClaimDevice struct {
+	pool, device string
+	shareID      *string
+	// published is the health last written to the claim, nil if none yet.
+	published *deviceHealthSnapshot
 }
 
 type driver struct {
@@ -79,6 +104,17 @@ type driver struct {
 	// annotation value per device, so value changes re-apply the override.
 	healthOverrides map[string]string
 
+	// preparedMu guards preparedClaims, which maps the UID of each claim that is
+	// prepared (while device health is enabled) to the devices it holds. It is
+	// kept in memory only and not rebuilt from the checkpoint, so a claim
+	// prepared before a restart is tracked again only when the kubelet prepares
+	// it again.
+	preparedMu     sync.Mutex
+	preparedClaims map[types.UID]preparedClaim
+	// conditionMu serializes publishing health conditions, so that a slow write
+	// for an older transition cannot land after, and overwrite, a newer one.
+	conditionMu sync.Mutex
+
 	// clientsMu guards subscribers.
 	clientsMu sync.RWMutex
 	// subscribers are per-WatchHealthStatus wake channels. A send is a
@@ -108,6 +144,7 @@ func NewDriver(ctx context.Context, config *Config) (*driver, error) {
 		poolName:        config.flags.nodeName,
 		lastHealth:      make(map[string]deviceHealthSnapshot),
 		healthOverrides: make(map[string]string),
+		preparedClaims:  make(map[types.UID]preparedClaim),
 		subscribers:     make(map[chan struct{}]struct{}),
 		stopHealthCh:    make(chan struct{}),
 
@@ -239,6 +276,8 @@ func (d *driver) prepareResourceClaim(ctx context.Context, claim *resourceapi.Re
 		})
 	}
 
+	d.trackClaim(claim)
+
 	logger.Info("Returning newly prepared devices for claim", "uid", claim.UID, "devices", prepared)
 	result = kubeletplugin.PrepareResult{Devices: prepared}
 	return result
@@ -265,6 +304,7 @@ func (d *driver) unprepareResourceClaim(_ context.Context, claim kubeletplugin.N
 	if err = d.state.Unprepare(claim.UID); err != nil {
 		return fmt.Errorf("error unpreparing devices for claim %v: %w", claim.UID, err)
 	}
+	d.untrackClaim(claim.UID)
 
 	return nil
 }
@@ -287,7 +327,7 @@ func (d *driver) deviceHealthLoop(ctx context.Context) {
 	defer ticker.Stop()
 
 	logger.Info("Starting device health monitoring loop")
-	d.pollDeviceHealth(logger)
+	d.pollDeviceHealth(ctx, logger)
 
 	for {
 		select {
@@ -297,7 +337,7 @@ func (d *driver) deviceHealthLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			d.pollDeviceHealth(logger)
+			d.pollDeviceHealth(ctx, logger)
 		}
 	}
 }
@@ -384,7 +424,7 @@ func (d *driver) watchHealthOverrides(ctx context.Context) {
 				if !ok {
 					continue
 				}
-				d.applyHealthOverrides(logger, pod.Annotations)
+				d.applyHealthOverrides(ctx, logger, pod.Annotations)
 			}
 		}
 
@@ -402,7 +442,7 @@ func (d *driver) watchHealthOverrides(ctx context.Context) {
 	}
 }
 
-func (d *driver) applyHealthOverrides(logger klog.Logger, annotations map[string]string) {
+func (d *driver) applyHealthOverrides(ctx context.Context, logger klog.Logger, annotations map[string]string) {
 	d.healthMu.Lock()
 
 	activeOverrides := make(map[string]bool)
@@ -455,13 +495,14 @@ func (d *driver) applyHealthOverrides(logger klog.Logger, annotations map[string
 
 	d.healthMu.Unlock()
 
-	d.pollDeviceHealth(logger)
+	d.pollDeviceHealth(ctx, logger)
 }
 
 // pollDeviceHealth advances the simulation one step per device, logs any health
-// transitions, and wakes subscribers to resend. It may run from both the
-// periodic loop and the override watcher, so it takes healthMu.
-func (d *driver) pollDeviceHealth(logger klog.Logger) {
+// transitions, wakes subscribers to resend, and brings the Healthy condition of
+// prepared claims up to date. It may run from both the periodic loop and the
+// override watcher, so it takes healthMu.
+func (d *driver) pollDeviceHealth(ctx context.Context, logger klog.Logger) {
 	d.healthMu.Lock()
 	for _, deviceName := range d.devices {
 		health, message := d.simulator.GetDeviceHealth(deviceName)
@@ -483,6 +524,149 @@ func (d *driver) pollDeviceHealth(logger klog.Logger) {
 	// from an actual device probe (see the reference GPU/TPU drivers); here the
 	// "probe" is the simulator, which cannot fail.
 	d.notifySubscribers()
+
+	d.publishHealthConditions(ctx, logger)
+}
+
+// trackClaim records the devices of a prepared claim so that health changes can
+// be published to it. It does nothing when device health is disabled.
+func (d *driver) trackClaim(claim *resourceapi.ResourceClaim) {
+	if !d.deviceHealth || claim.Status.Allocation == nil {
+		return
+	}
+	pc := preparedClaim{namespace: claim.Namespace, name: claim.Name}
+	for _, result := range claim.Status.Allocation.Devices.Results {
+		if result.Driver != d.state.driverName {
+			continue
+		}
+		pd := preparedClaimDevice{pool: result.Pool, device: result.Device}
+		if result.ShareID != nil {
+			pd.shareID = ptr.To(string(*result.ShareID))
+		}
+		pc.devices = append(pc.devices, pd)
+	}
+
+	d.preparedMu.Lock()
+	defer d.preparedMu.Unlock()
+	d.preparedClaims[claim.UID] = pc
+}
+
+func (d *driver) untrackClaim(uid types.UID) {
+	d.preparedMu.Lock()
+	defer d.preparedMu.Unlock()
+	delete(d.preparedClaims, uid)
+}
+
+// publishHealthConditions reconciles the Healthy condition of every prepared
+// claim device with the latest health recorded by pollDeviceHealth. Each pass
+// writes only the devices whose last published health differs, so a claim
+// prepared after a transition gets its condition on the next poll, a failed
+// write is retried on the next poll, and an unchanged device costs no API call.
+// A message-only change counts as a difference, so with --simulate-health-changes
+// the drifting temperature in the message is written through.
+func (d *driver) publishHealthConditions(ctx context.Context, logger klog.Logger) {
+	d.conditionMu.Lock()
+	defer d.conditionMu.Unlock()
+
+	d.healthMu.Lock()
+	current := maps.Clone(d.lastHealth)
+	d.healthMu.Unlock()
+
+	type claimUpdate struct {
+		uid             types.UID
+		namespace, name string
+		statuses        []resourceapi.AllocatedDeviceStatus
+		// sent are the devices in statuses, with published set to what is sent.
+		sent []preparedClaimDevice
+	}
+	var updates []claimUpdate
+	d.preparedMu.Lock()
+	for uid, pc := range d.preparedClaims {
+		update := claimUpdate{uid: uid, namespace: pc.namespace, name: pc.name}
+		for _, pd := range pc.devices {
+			snapshot, ok := current[pd.device]
+			if !ok || (pd.published != nil && *pd.published == snapshot) {
+				continue
+			}
+			condition := deviceHealthCondition(snapshot.health, snapshot.message)
+			update.statuses = append(update.statuses, resourceapi.AllocatedDeviceStatus{
+				Driver:     d.state.driverName,
+				Pool:       pd.pool,
+				Device:     pd.device,
+				ShareID:    pd.shareID,
+				Conditions: []metav1.Condition{condition},
+			})
+			pd.published = &snapshot
+			update.sent = append(update.sent, pd)
+		}
+		if len(update.statuses) > 0 {
+			updates = append(updates, update)
+		}
+	}
+	d.preparedMu.Unlock()
+	if len(updates) == 0 {
+		return
+	}
+
+	// One deadline for the whole pass, so a hung API server delays the next
+	// resend by this much at most however many claims there are. Shutdown cuts
+	// it short too, as it waits for the health goroutines.
+	ctx, cancel := context.WithTimeout(ctx, conditionPublishTimeout)
+	defer cancel()
+	go func() {
+		select {
+		case <-d.stopHealthCh:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	for _, update := range updates {
+		if ctx.Err() != nil {
+			// Shutting down or out of time: nothing is marked published, so the
+			// remaining claims are retried on the next pass.
+			return
+		}
+		if err := d.state.updateDeviceStatus(ctx, update.namespace, update.name, update.statuses...); err != nil {
+			logger.Error(err, "Failed to update device health condition on ResourceClaim",
+				"namespace", update.namespace, "name", update.name)
+			continue
+		}
+		d.markPublished(update.uid, update.sent)
+	}
+}
+
+// markPublished records what was written for a claim, unless it was unprepared
+// in the meantime.
+func (d *driver) markPublished(uid types.UID, sent []preparedClaimDevice) {
+	d.preparedMu.Lock()
+	defer d.preparedMu.Unlock()
+	pc, ok := d.preparedClaims[uid]
+	if !ok {
+		return
+	}
+	for _, s := range sent {
+		for i := range pc.devices {
+			if pd := &pc.devices[i]; pd.pool == s.pool && pd.device == s.device && ptr.Equal(pd.shareID, s.shareID) {
+				pd.published = s.published
+			}
+		}
+	}
+}
+
+// deviceHealthCondition maps a device health state to the claim condition that
+// reports it.
+func deviceHealthCondition(health kubeletplugin.HealthStatus, message string) metav1.Condition {
+	condition := metav1.Condition{Type: deviceHealthyConditionType, Message: message}
+	switch health {
+	case kubeletplugin.HealthStatusHealthy:
+		condition.Status, condition.Reason = metav1.ConditionTrue, "Healthy"
+	case kubeletplugin.HealthStatusUnhealthy:
+		condition.Status, condition.Reason = metav1.ConditionFalse, "Unhealthy"
+	default:
+		condition.Status, condition.Reason = metav1.ConditionUnknown, "HealthUnknown"
+	}
+	return condition
 }
 
 // buildHealthReport snapshots the current health of all devices straight from

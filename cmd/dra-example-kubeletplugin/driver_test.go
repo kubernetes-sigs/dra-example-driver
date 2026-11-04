@@ -289,7 +289,7 @@ func TestPrepareAndUnprepareResourceClaims(t *testing.T) {
 	config, _ := newDriverTestConfig(t, true, -1)
 	state, err := NewDeviceState(config)
 	require.NoError(t, err)
-	d := &driver{state: state, poolName: testNodeName}
+	d := &driver{state: state, poolName: testNodeName, deviceHealth: true, preparedClaims: make(map[types.UID]preparedClaim)}
 
 	claim := func(uid types.UID, device string) *resourceapi.ResourceClaim {
 		return &resourceapi.ResourceClaim{
@@ -326,6 +326,13 @@ func TestPrepareAndUnprepareResourceClaims(t *testing.T) {
 	require.Error(t, results[bad.UID].Err)
 	assert.Empty(t, results[bad.UID].Devices)
 
+	// Only the claim that was prepared is tracked for health conditions.
+	assert.Equal(t, map[types.UID]preparedClaim{good.UID: {
+		namespace: good.Namespace,
+		name:      good.Name,
+		devices:   []preparedClaimDevice{{pool: testNodeName, device: "numa-0"}},
+	}}, d.preparedClaims)
+
 	unprepare := func() map[types.UID]error {
 		errs, err := d.UnprepareResourceClaims(ctx, []kubeletplugin.NamespacedObject{
 			{UID: good.UID, NamespacedName: types.NamespacedName{Namespace: good.Namespace, Name: good.Name}},
@@ -340,10 +347,12 @@ func TestPrepareAndUnprepareResourceClaims(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(state.checkpointPath, []byte("{not json"), 0600))
 	require.Error(t, unprepare()[good.UID])
+	assert.Contains(t, d.preparedClaims, good.UID, "a failed unprepare keeps the claim tracked")
 
 	// With the checkpoint restored, unprepare succeeds.
 	require.NoError(t, os.WriteFile(state.checkpointPath, checkpoint, 0600))
 	assert.NoError(t, unprepare()[good.UID])
+	assert.Empty(t, d.preparedClaims, "unprepare stops tracking the claim")
 }
 
 func TestHandleError(t *testing.T) {

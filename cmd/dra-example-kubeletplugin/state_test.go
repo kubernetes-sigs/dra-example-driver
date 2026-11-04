@@ -23,11 +23,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -587,4 +589,76 @@ func TestMergeDeviceStatusDistinguishesShareID(t *testing.T) {
 	assert.Equal(t, &shareA, merged[0].ShareID)
 	assert.Len(t, merged[0].Conditions, 1)
 	assert.Equal(t, &shareB, merged[1].ShareID)
+}
+
+func TestMergeDeviceStatusMergesConditionsByType(t *testing.T) {
+	older := metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC))
+	binding := metav1.Condition{Type: "BindingConditions", Status: metav1.ConditionTrue, Reason: "Ready", LastTransitionTime: older}
+	healthy := metav1.Condition{Type: "Healthy", Status: metav1.ConditionTrue, Reason: "Healthy", Message: "ok", LastTransitionTime: older}
+	data := &runtime.RawExtension{Raw: []byte(`{"uuid":"x"}`)}
+	existing := []resourceapi.AllocatedDeviceStatus{
+		{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Data: data, Conditions: []metav1.Condition{binding, healthy}},
+	}
+	// A conditions-only update carries no Data and must not clear it.
+	update := func(c metav1.Condition) []resourceapi.AllocatedDeviceStatus {
+		return []resourceapi.AllocatedDeviceStatus{
+			{Driver: "gpu.example.com", Pool: "node-a", Device: "gpu-0", Conditions: []metav1.Condition{c}},
+		}
+	}
+	condition := func(t *testing.T, conds []metav1.Condition, condType string) metav1.Condition {
+		t.Helper()
+		c := meta.FindStatusCondition(conds, condType)
+		require.NotNil(t, c, "condition %s missing from %v", condType, conds)
+		return *c
+	}
+
+	t.Run("status change replaces the entry of the same type", func(t *testing.T) {
+		merged := mergeDeviceStatus(existing, update(metav1.Condition{
+			Type: "Healthy", Status: metav1.ConditionFalse, Reason: "Unhealthy", Message: "too hot",
+		}))
+
+		require.Len(t, merged, 1)
+		require.Len(t, merged[0].Conditions, 2)
+		assert.Equal(t, binding, condition(t, merged[0].Conditions, "BindingConditions"), "other condition types must be untouched")
+		got := condition(t, merged[0].Conditions, "Healthy")
+		assert.Equal(t, metav1.ConditionFalse, got.Status)
+		assert.Equal(t, "Unhealthy", got.Reason)
+		assert.Equal(t, "too hot", got.Message)
+		assert.True(t, got.LastTransitionTime.After(older.Time), "transition time must move when the status changes")
+		assert.Same(t, data, merged[0].Data, "Data must be left alone")
+	})
+
+	t.Run("same status keeps the transition time", func(t *testing.T) {
+		merged := mergeDeviceStatus(existing, update(metav1.Condition{
+			Type: "Healthy", Status: metav1.ConditionTrue, Reason: "Healthy", Message: "still ok, new wording",
+		}))
+
+		got := condition(t, merged[0].Conditions, "Healthy")
+		assert.Equal(t, "still ok, new wording", got.Message)
+		assert.True(t, got.LastTransitionTime.Equal(&older), "transition time must only move on a status change")
+	})
+
+	t.Run("unknown type is appended with a transition time", func(t *testing.T) {
+		merged := mergeDeviceStatus(existing, update(metav1.Condition{
+			Type: "Other", Status: metav1.ConditionTrue, Reason: "Because",
+		}))
+
+		require.Len(t, merged[0].Conditions, 3)
+		assert.Equal(t, binding, merged[0].Conditions[0])
+		assert.Equal(t, healthy, merged[0].Conditions[1])
+		other := condition(t, merged[0].Conditions, "Other")
+		assert.False(t, other.LastTransitionTime.IsZero())
+	})
+
+	t.Run("conditions on a new entry get a transition time", func(t *testing.T) {
+		merged := mergeDeviceStatus(nil, update(metav1.Condition{
+			Type: "Healthy", Status: metav1.ConditionTrue, Reason: "Healthy",
+		}))
+
+		require.Len(t, merged, 1)
+		got := condition(t, merged[0].Conditions, "Healthy")
+		assert.False(t, got.LastTransitionTime.IsZero())
+	})
+
+	assert.Equal(t, []metav1.Condition{binding, healthy}, existing[0].Conditions, "input must not be mutated")
 }

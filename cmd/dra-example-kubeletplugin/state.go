@@ -24,6 +24,7 @@ import (
 	"sync"
 
 	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
@@ -500,10 +501,16 @@ func (s *DeviceState) updateDeviceStatus(ctx context.Context, ns, name string, d
 }
 
 // mergeDeviceStatus merges updates into existing per-device status entries,
-// matched on driver, pool, device and shareID. Only the Data field of a
-// matching entry is replaced, so fields written by other actors (for example
-// Conditions set by the binding conditions controller) are preserved. Entries
-// with no existing match are appended.
+// matched on driver, pool, device and shareID. In a matching entry Data is
+// replaced only when the update carries some, and each update condition
+// replaces the existing condition of the same Type (or is appended), so fields
+// written by other actors (for example the BindingConditions condition set by
+// the binding conditions controller) are preserved. Conditions follow
+// [meta.SetStatusCondition], so LastTransitionTime only moves when Status
+// changes. Entries with no existing match are appended.
+//
+// The API accepts at most 8 conditions per device, so a merge that would exceed
+// that is rejected by the server on update.
 func mergeDeviceStatus(existing, updates []resourceapi.AllocatedDeviceStatus) []resourceapi.AllocatedDeviceStatus {
 	merged := slices.Clone(existing)
 	for _, u := range updates {
@@ -511,10 +518,22 @@ func mergeDeviceStatus(existing, updates []resourceapi.AllocatedDeviceStatus) []
 			return d.Driver == u.Driver && d.Pool == u.Pool && d.Device == u.Device && ptr.Equal(d.ShareID, u.ShareID)
 		})
 		if idx < 0 {
+			// Conditions are merged below so a new entry gets the same
+			// LastTransitionTime handling as an existing one.
 			merged = append(merged, u)
-			continue
+			idx = len(merged) - 1
+			merged[idx].Conditions = nil
+		} else if u.Data != nil {
+			merged[idx].Data = u.Data
 		}
-		merged[idx].Data = u.Data
+		if len(u.Conditions) > 0 {
+			// Cloning keeps SetStatusCondition from writing through to the
+			// slice shared with existing.
+			merged[idx].Conditions = slices.Clone(merged[idx].Conditions)
+			for _, c := range u.Conditions {
+				meta.SetStatusCondition(&merged[idx].Conditions, c)
+			}
+		}
 	}
 	return merged
 }

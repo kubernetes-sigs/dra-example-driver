@@ -417,7 +417,7 @@ var _ = Describe("Test GPU allocation", func() {
 		verifyPodResourcesAPI(ctx, namespace, pods[0], containerName, drv.DriverName)
 	})
 
-	It("should report device health status in pod allocatedResourcesStatus", func(ctx SpecContext) {
+	It("should report device health in pod allocatedResourcesStatus and ResourceClaim conditions", func(ctx SpecContext) {
 		drv := installDriver(ctx, DriverConfig{})
 		namespace := "health-reporting"
 		pods := []string{"pod0"}
@@ -432,19 +432,25 @@ var _ = Describe("Test GPU allocation", func() {
 		Expect(devices).NotTo(BeEmpty(), "pod0 has no allocated devices")
 
 		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+		// A claim prepared after the last health change still gets its condition,
+		// at the driver's next poll.
+		verifyClaimHealthCondition(ctx, namespace, "pod0", "gpu", devices, metav1.ConditionTrue, "Healthy")
 
 		// Force the allocated device(s) unhealthy through the driver's annotation
 		// override and verify the transition surfaces in the pod status.
 		setDeviceHealthOverride(ctx, drv, nodeName, devices, "unhealthy")
 		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnhealthy)
+		verifyClaimHealthCondition(ctx, namespace, "pod0", "gpu", devices, metav1.ConditionFalse, "Unhealthy")
 
 		// Force the Unknown state (the third KEP-4680 health state).
 		setDeviceHealthOverride(ctx, drv, nodeName, devices, "unknown")
 		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusUnknown)
+		verifyClaimHealthCondition(ctx, namespace, "pod0", "gpu", devices, metav1.ConditionUnknown, "HealthUnknown")
 
 		// Return to healthy without a driver restart.
 		setDeviceHealthOverride(ctx, drv, nodeName, devices, "healthy")
 		verifyAllocatedResourcesHealth(ctx, namespace, "pod0", "ctr0", corev1.ResourceHealthStatusHealthy)
+		verifyClaimHealthCondition(ctx, namespace, "pod0", "gpu", devices, metav1.ConditionTrue, "Healthy")
 	})
 
 	// Webhook tests share one driver pinned to "gpu.example.com" so their

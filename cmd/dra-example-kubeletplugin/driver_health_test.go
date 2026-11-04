@@ -29,7 +29,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
+	resourceapi "k8s.io/api/resource/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/watch"
 	coreclientset "k8s.io/client-go/kubernetes"
 	fakeclient "k8s.io/client-go/kubernetes/fake"
@@ -48,6 +52,7 @@ func newTestDriver(deviceNames []string) *driver {
 		healthOverrides: make(map[string]string),
 		subscribers:     make(map[chan struct{}]struct{}),
 		stopHealthCh:    make(chan struct{}),
+		preparedClaims:  make(map[types.UID]preparedClaim),
 
 		// Short enough that the periodic and reconnect paths run within a
 		// test, long enough not to spin.
@@ -90,17 +95,17 @@ func TestApplyHealthOverridesLifecycle(t *testing.T) {
 	logger := klog.Background()
 
 	// Apply "unhealthy" to gpu-0 only.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
 	assert.Equal(t, kubeletplugin.HealthStatusUnhealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-1"))
 	assert.Equal(t, "unhealthy", d.healthOverrides["gpu-0"])
 
 	// Change gpu-0 to "unknown".
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unknown"})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "unknown"})
 	assert.Equal(t, kubeletplugin.HealthStatusUnknown, healthOf(d.buildHealthReport(), "gpu-0"))
 
 	// Unknown/unrelated annotation keys are ignored; gpu-0 keeps its override.
-	d.applyHealthOverrides(logger, map[string]string{
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{
 		"health.example.com/gpu-0":          "unknown",
 		"health.example.com/does-not-exist": "unhealthy",
 		"unrelated/annotation":              "x",
@@ -108,7 +113,7 @@ func TestApplyHealthOverridesLifecycle(t *testing.T) {
 	assert.Equal(t, kubeletplugin.HealthStatusUnknown, healthOf(d.buildHealthReport(), "gpu-0"))
 
 	// Removing all overrides returns the device to healthy simulation.
-	d.applyHealthOverrides(logger, map[string]string{})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{})
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	_, ok := d.healthOverrides["gpu-0"]
 	assert.False(t, ok, "override bookkeeping should be cleared")
@@ -119,18 +124,18 @@ func TestApplyHealthOverridesIgnoresInvalidValues(t *testing.T) {
 	logger := klog.Background()
 
 	// A typo must NOT silently force the device healthy or create an override.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "degraded"})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "degraded"})
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	_, ok := d.healthOverrides["gpu-0"]
 	assert.False(t, ok, "invalid value must not create an override")
 
 	// Case and surrounding whitespace are normalized for mapping and storage.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "  UNHEALTHY "})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "  UNHEALTHY "})
 	assert.Equal(t, kubeletplugin.HealthStatusUnhealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	assert.Equal(t, "unhealthy", d.healthOverrides["gpu-0"])
 
 	// Replacing a valid override with garbage returns the device to simulation.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "nonsense"})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "nonsense"})
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(d.buildHealthReport(), "gpu-0"))
 	_, ok = d.healthOverrides["gpu-0"]
 	assert.False(t, ok, "override must be cleared when replaced by an invalid value")
@@ -174,7 +179,7 @@ func TestWatchHealthStatusStreamsUpdates(t *testing.T) {
 	assert.Equal(t, kubeletplugin.HealthStatusHealthy, healthOf(initial, "gpu-0"))
 
 	// Flip gpu-0 unhealthy; the subscriber must wake and resend.
-	d.applyHealthOverrides(logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	d.applyHealthOverrides(context.Background(), logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
 	eventuallyHealth(t, reports, "gpu-0", kubeletplugin.HealthStatusUnhealthy)
 
 	// Cancelling the context ends the stream and deregisters the subscriber.
@@ -224,7 +229,7 @@ func TestConcurrentHealthAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			for j := 0; j < 50; j++ {
-				d.applyHealthOverrides(logger, map[string]string{
+				d.applyHealthOverrides(context.Background(), logger, map[string]string{
 					fmt.Sprintf("health.example.com/gpu-%d", i%3): values[j%len(values)],
 				})
 			}
@@ -629,4 +634,231 @@ func TestWatchHealthOverridesReturnsOnShutdownDuringBackoff(t *testing.T) {
 	close(d.stopHealthCh)
 	waitForHealthGoroutines(t, d)
 	assert.Equal(t, int32(1), attempts.Load(), "shutdown during back-off must not reconnect")
+}
+
+const healthTestNamespace = "default"
+
+func allocationResult(device string, shareID *types.UID) resourceapi.DeviceRequestAllocationResult {
+	return resourceapi.DeviceRequestAllocationResult{
+		Request: "req",
+		Driver:  testDriverName,
+		Pool:    testNodeName,
+		Device:  device,
+		ShareID: shareID,
+	}
+}
+
+func healthTestClaim(name string, results ...resourceapi.DeviceRequestAllocationResult) *resourceapi.ResourceClaim {
+	return &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{UID: types.UID("uid-" + name), Namespace: healthTestNamespace, Name: name},
+		Status: resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{Results: results},
+			},
+		},
+	}
+}
+
+// newConditionTestDriver returns a test driver wired to a fake clientset seeded
+// with claims, plus a counter of ResourceClaim status updates sent to it.
+func newConditionTestDriver(devices []string, claims ...*resourceapi.ResourceClaim) (*driver, *fakeclient.Clientset, *atomic.Int32) {
+	objs := make([]runtime.Object, 0, len(claims))
+	for _, c := range claims {
+		objs = append(objs, c.DeepCopy())
+	}
+	client := fakeclient.NewClientset(objs...)
+	writes := &atomic.Int32{}
+	client.PrependReactor("update", "resourceclaims", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() == "status" {
+			writes.Add(1)
+		}
+		return false, nil, nil
+	})
+
+	d := newTestDriver(devices)
+	d.poolName = testNodeName
+	d.state = &DeviceState{driverName: testDriverName, coreClient: client}
+	return d, client, writes
+}
+
+// deviceStatusOf returns the claim's status.devices entry for the device/share.
+func deviceStatusOf(t *testing.T, client coreclientset.Interface, claim, device string, shareID *types.UID) *resourceapi.AllocatedDeviceStatus {
+	t.Helper()
+	rc, err := client.ResourceV1().ResourceClaims(healthTestNamespace).Get(context.Background(), claim, metav1.GetOptions{})
+	require.NoError(t, err)
+	for i := range rc.Status.Devices {
+		ds := &rc.Status.Devices[i]
+		if ds.Device == device && ((ds.ShareID == nil) == (shareID == nil)) && (shareID == nil || *ds.ShareID == string(*shareID)) {
+			return ds
+		}
+	}
+	return nil
+}
+
+func healthyConditionOf(t *testing.T, client coreclientset.Interface, claim, device string, shareID *types.UID) *metav1.Condition {
+	t.Helper()
+	ds := deviceStatusOf(t, client, claim, device, shareID)
+	if ds == nil {
+		return nil
+	}
+	return meta.FindStatusCondition(ds.Conditions, deviceHealthyConditionType)
+}
+
+func TestHealthConditionFollowsDeviceHealth(t *testing.T) {
+	logger := klog.Background()
+	ctx := context.Background()
+	share := types.UID("11111111-1111-1111-1111-111111111111")
+	bindingCond := metav1.Condition{
+		Type: "BindingConditions", Status: metav1.ConditionTrue, Reason: "Ready",
+		LastTransitionTime: metav1.NewTime(time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)),
+	}
+	data := &runtime.RawExtension{Raw: []byte(`{"uuid":"x"}`)}
+
+	a := healthTestClaim("a", allocationResult("gpu-0", nil))
+	// Pre-existing status from other actors that the health path must not clobber.
+	a.Status.Devices = []resourceapi.AllocatedDeviceStatus{{
+		Driver: testDriverName, Pool: testNodeName, Device: "gpu-0",
+		Data: data, Conditions: []metav1.Condition{bindingCond},
+	}}
+	b := healthTestClaim("b", allocationResult("gpu-1", nil))
+	c := healthTestClaim("c", allocationResult("gpu-0", &share))
+	d, client, writes := newConditionTestDriver([]string{"gpu-0", "gpu-1"}, a, b, c)
+
+	// With nothing prepared there is nothing to write.
+	d.pollDeviceHealth(ctx, logger)
+	assert.EqualValues(t, 0, writes.Load())
+
+	// Claims prepared after the first poll get their condition on the next one.
+	for _, claim := range []*resourceapi.ResourceClaim{a, b, c} {
+		d.trackClaim(claim)
+	}
+	d.pollDeviceHealth(ctx, logger)
+	assert.EqualValues(t, 3, writes.Load(), "one write per claim")
+	got := healthyConditionOf(t, client, "b", "gpu-1", nil)
+	require.NotNil(t, got)
+	assert.Equal(t, metav1.ConditionTrue, got.Status)
+	assert.Equal(t, "Healthy", got.Reason)
+
+	d.pollDeviceHealth(ctx, logger)
+	d.pollDeviceHealth(ctx, logger)
+	assert.EqualValues(t, 3, writes.Load(), "unchanged health must not write")
+
+	// Healthy -> Unhealthy on gpu-0 touches the claims holding gpu-0 only.
+	d.applyHealthOverrides(ctx, logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	_, msg := d.simulator.PeekDeviceHealth("gpu-0")
+	assert.EqualValues(t, 5, writes.Load(), "one write per claim using gpu-0")
+
+	got = healthyConditionOf(t, client, "a", "gpu-0", nil)
+	require.NotNil(t, got)
+	assert.Equal(t, metav1.ConditionFalse, got.Status)
+	assert.Equal(t, "Unhealthy", got.Reason)
+	assert.Equal(t, msg, got.Message)
+	assert.False(t, got.LastTransitionTime.IsZero())
+	assert.NotNil(t, healthyConditionOf(t, client, "c", "gpu-0", &share), "shared allocation is tracked by its ShareID")
+	assert.Equal(t, metav1.ConditionTrue, healthyConditionOf(t, client, "b", "gpu-1", nil).Status, "claim on another device is untouched")
+
+	ds := deviceStatusOf(t, client, "a", "gpu-0", nil)
+	require.NotNil(t, ds)
+	require.NotNil(t, ds.Data)
+	assert.Equal(t, data.Raw, ds.Data.Raw, "Data must be preserved")
+	assert.Equal(t, &bindingCond, meta.FindStatusCondition(ds.Conditions, "BindingConditions"), "other condition types must be preserved")
+
+	// Re-polling and re-applying the same override writes nothing.
+	d.pollDeviceHealth(ctx, logger)
+	d.applyHealthOverrides(ctx, logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	assert.EqualValues(t, 5, writes.Load(), "resends without a change must not write")
+
+	d.applyHealthOverrides(ctx, logger, map[string]string{"health.example.com/gpu-0": "unknown"})
+	got = healthyConditionOf(t, client, "a", "gpu-0", nil)
+	require.NotNil(t, got)
+	assert.Equal(t, metav1.ConditionUnknown, got.Status)
+	assert.Equal(t, "HealthUnknown", got.Reason)
+	assert.EqualValues(t, 7, writes.Load())
+
+	d.applyHealthOverrides(ctx, logger, map[string]string{})
+	got = healthyConditionOf(t, client, "a", "gpu-0", nil)
+	require.NotNil(t, got)
+	assert.Equal(t, metav1.ConditionTrue, got.Status)
+	assert.Equal(t, "Healthy", got.Reason)
+	assert.EqualValues(t, 9, writes.Load())
+	assert.Len(t, deviceStatusOf(t, client, "a", "gpu-0", nil).Conditions, 2, "Healthy is replaced in place, not duplicated")
+}
+
+func TestHealthConditionForClaimPreparedAfterTransition(t *testing.T) {
+	logger := klog.Background()
+	ctx := context.Background()
+	a := healthTestClaim("a", allocationResult("gpu-0", nil))
+	d, client, writes := newConditionTestDriver([]string{"gpu-0"}, a)
+
+	// The device is already unhealthy when the claim lands on it.
+	d.applyHealthOverrides(ctx, logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+	d.trackClaim(a)
+	assert.Nil(t, healthyConditionOf(t, client, "a", "gpu-0", nil), "nothing is written until the next poll")
+
+	d.pollDeviceHealth(ctx, logger)
+	got := healthyConditionOf(t, client, "a", "gpu-0", nil)
+	require.NotNil(t, got)
+	assert.Equal(t, metav1.ConditionFalse, got.Status)
+	assert.EqualValues(t, 1, writes.Load())
+}
+
+func TestHealthConditionSkipsUnpreparedClaims(t *testing.T) {
+	logger := klog.Background()
+	ctx := context.Background()
+	a := healthTestClaim("a", allocationResult("gpu-0", nil))
+	b := healthTestClaim("b", allocationResult("gpu-0", nil))
+	d, client, writes := newConditionTestDriver([]string{"gpu-0"}, a, b)
+	d.trackClaim(a)
+	d.trackClaim(b)
+
+	d.untrackClaim(a.UID)
+	d.untrackClaim("never-tracked") // must be a no-op
+	d.applyHealthOverrides(ctx, logger, map[string]string{"health.example.com/gpu-0": "unhealthy"})
+
+	assert.EqualValues(t, 1, writes.Load())
+	assert.Nil(t, deviceStatusOf(t, client, "a", "gpu-0", nil), "unprepared claim must not be written")
+	assert.NotNil(t, healthyConditionOf(t, client, "b", "gpu-0", nil))
+}
+
+func TestHealthConditionWriteFailuresAreRetried(t *testing.T) {
+	logger := klog.Background()
+	ctx := context.Background()
+	broken := healthTestClaim("broken", allocationResult("gpu-0", nil))
+	missing := healthTestClaim("missing", allocationResult("gpu-0", nil)) // tracked, not in the API
+	ok := healthTestClaim("ok", allocationResult("gpu-0", nil))
+	d, client, writes := newConditionTestDriver([]string{"gpu-0"}, broken, ok)
+	var failing atomic.Bool
+	failing.Store(true)
+	client.PrependReactor("update", "resourceclaims", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		ua, isUpdate := a.(k8stesting.UpdateAction)
+		if !isUpdate {
+			return false, nil, nil
+		}
+		rc, isClaim := ua.GetObject().(*resourceapi.ResourceClaim)
+		if isClaim && rc.Name == "broken" && failing.Load() {
+			return true, nil, errors.New("boom")
+		}
+		return false, nil, nil
+	})
+	sig := make(chan struct{}, 1)
+	d.subscribers[sig] = struct{}{}
+	for _, claim := range []*resourceapi.ResourceClaim{broken, missing, ok} {
+		d.trackClaim(claim)
+	}
+
+	d.pollDeviceHealth(ctx, logger)
+	assert.NotNil(t, healthyConditionOf(t, client, "ok", "gpu-0", nil), "one failing claim must not block the others")
+	assert.Nil(t, deviceStatusOf(t, client, "broken", "gpu-0", nil))
+	select {
+	case <-sig:
+	default:
+		t.Error("subscribers must still be woken when condition writes fail")
+	}
+
+	// The next poll retries the failed claim, and only that one.
+	before := writes.Load()
+	failing.Store(false)
+	d.pollDeviceHealth(ctx, logger)
+	assert.NotNil(t, healthyConditionOf(t, client, "broken", "gpu-0", nil))
+	assert.EqualValues(t, 1, writes.Load()-before, "only the claim that failed is rewritten")
 }
