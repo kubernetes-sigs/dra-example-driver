@@ -58,8 +58,14 @@ func (s *GpuSharing) Validate() error {
 	}
 	switch {
 	case s.IsTimeSlicing():
+		if s.TimeSlicingConfig == nil {
+			return fmt.Errorf("no time-slicing config set")
+		}
 		return s.TimeSlicingConfig.Validate()
 	case s.IsSpacePartitioning():
+		if s.SpacePartitioningConfig == nil {
+			return fmt.Errorf("no space-partitioning config set")
+		}
 		return s.SpacePartitioningConfig.Validate()
 	}
 	return fmt.Errorf("invalid GPU sharing settings: %v", s)

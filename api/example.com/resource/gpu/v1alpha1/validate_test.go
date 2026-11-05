@@ -46,6 +46,22 @@ func TestGpuConfigValidate(t *testing.T) {
 			},
 			expected: errors.New("unknown GPU sharing strategy: unknown"),
 		},
+		"missing GpuConfig.Sharing.TimeSlicingConfig": {
+			gpuConfig: &GpuConfig{
+				Sharing: &GpuSharing{
+					Strategy: TimeSlicingStrategy,
+				},
+			},
+			expected: errors.New("no time-slicing config set"),
+		},
+		"missing GpuConfig.Sharing.SpacePartitioningConfig": {
+			gpuConfig: &GpuConfig{
+				Sharing: &GpuSharing{
+					Strategy: SpacePartitioningStrategy,
+				},
+			},
+			expected: errors.New("no space-partitioning config set"),
+		},
 		"empty GpuConfig.Sharing.TimeSlicingConfig": {
 			gpuConfig: &GpuConfig{
 				Sharing: &GpuSharing{
