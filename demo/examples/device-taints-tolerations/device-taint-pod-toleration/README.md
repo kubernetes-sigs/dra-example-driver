@@ -2,7 +2,7 @@
 
 ## Overview
 
-This example demonstrates how device tolerations work in Dynamic Resource Allocation (DRA). When a device taint with `NoExecute` effect is applied, only pods with matching tolerations can continue using the tainted devices. Pods without tolerations are immediately evicted by the Device Taint Manager.
+This example demonstrates how device tolerations work in Dynamic Resource Allocation (DRA). When a device taint with `NoExecute` effect is applied, only pods with matching tolerations can continue using the tainted devices. Pods created after the taint is applied remain Pending if they do not have matching tolerations.
 
 **Setup**: Two pods requesting GPUs - one with toleration and one without - both created after a device taint rule is applied.
 
@@ -18,16 +18,16 @@ graph TD
     
     subgraph Pods["Pod Behavior"]
         P1[Pod: pod-with-toleration<br/>Has Toleration ✓<br/>Status: Running]
-        P2[Pod: pod-without-toleration<br/>No Toleration ✗<br/>Status: Evicted]
+        P2[Pod: pod-without-toleration<br/>No Toleration ✗<br/>Status: Pending]
         
         G1 -->|Allows| P1
-        G1 -->|Evicts| P2
+        G1 -->|Blocks scheduling| P2
     end
     
     style DTR fill:#e67e22,color:#fff,stroke:#d35400,stroke-width:2px
     style G1 fill:#e74c3c,color:#fff,stroke:#c0392b,stroke-width:3px
     style P1 fill:#d4edda,color:#000,stroke:#28a745,stroke-width:2px
-    style P2 fill:#f8d7da,color:#000,stroke:#dc3545,stroke-width:2px
+    style P2 fill:#fff3cd,color:#000,stroke:#ffc107,stroke-width:2px
 ```
 
 ## Requirements
@@ -36,20 +36,13 @@ graph TD
 
 - **Profile**: gpu
 - **GPUs**: 2+
-- **Feature**: Device Taint Manager enabled
 
 ### Cluster Requirements
 
-- **Kubernetes Version**: 1.35+
-- **API Version**: `resource.k8s.io/v1beta2` must be enabled
-- **Feature Gates** (must be enabled):
-  - [`DRADeviceTaints`](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#DRADeviceTaints): Enables device taints and tolerations for DRA
-  - [`DRADeviceTaintRules`](https://kubernetes.io/docs/reference/command-line-tools-reference/feature-gates/#DRADeviceTaintRules): Enables DeviceTaintRule API for managing device taints
-- **kube-apiserver Configuration**:
-  - Add `--runtime-config=resource.k8s.io/v1beta2=true` to enable the v1beta2 API version
-  - Reference: [kube-apiserver runtime-config](https://kubernetes.io/docs/reference/command-line-tools-reference/kube-apiserver/)
+- **Kubernetes Version**: 1.37+
+- **API Version**: `resource.k8s.io/v1`
 
-For more information about device taints and tolerations, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/scheduling-eviction/dynamic-resource-allocation/#device-taints-and-tolerations).
+For more information about device taints and tolerations, see the [Kubernetes documentation](https://kubernetes.io/docs/concepts/resource-management/dynamic-resource-allocation/device-taints/).
 
 ## How to Run
 
@@ -100,37 +93,33 @@ For more information about device taints and tolerations, see the [Kubernetes do
 
 ### Pod without Toleration (pod-without-toleration)
 - **ResourceClaimTemplate**: No toleration specified
-- **Scheduling**: Successfully assigned to a node
-- **Execution**: Container starts briefly
-- **Eviction**: Device Taint Manager marks it for deletion
-- **Final State**: Pod is killed and terminated
+- **Scheduling**: Blocked because the available devices have an untolerated taint
+- **Execution**: Container does not start
+- **Final State**: Remains Pending until the taint is removed or a suitable untainted device becomes available
 
 ## Event Timeline
 
 ```
 Event
-----   
+----
 DeviceTaintRule applied (NoExecute effect)
 Device Taint Manager processes the rule
 pod-with-toleration: Scheduled to taint-tolerate-worker2
-pod-without-toleration: Scheduled to taint-tolerate-worker
 pod-with-toleration: Container started, Running ✓
-pod-without-toleration: Container started
-pod-without-toleration: DeviceTaintManagerEviction - Marking for deletion
-pod-without-toleration: Killing container
+pod-without-toleration: FailedScheduling, remains Pending
 ```
 
 ## DeviceTaintRule Status
 
-The DeviceTaintRule tracks eviction activity:
+The DeviceTaintRule tracks eviction activity. If the pod without toleration remains unscheduled, no eviction starts:
 
 ```yaml
 status:
   conditions:
-  - lastTransitionTime: "2026-07-08T05:10:07Z"
-    message: 1 pod evicted since starting the controller.
+  - lastTransitionTime: "2026-10-16T08:45:00Z"
+    message: ""
     observedGeneration: 1
-    reason: Completed
+    reason: NotStarted
     status: "False"
     type: EvictionInProgress
 ```
@@ -163,6 +152,6 @@ spec:
 ## Cleanup
 
 ```bash
-kubectl delete -f 2-basic-resourceclaimtemplate.yaml
+kubectl delete --ignore-not-found -f 2-basic-resourceclaimtemplate.yaml
 kubectl delete -f 1-device-taint-rule.yaml
 ```

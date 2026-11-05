@@ -1,11 +1,10 @@
-apiVersion: resource.k8s.io/v1beta2
+apiVersion: resource.k8s.io/v1
 kind: DeviceTaintRule
 metadata:
   name: example
 spec:
-  # The entire hardware installation for this
-  # particular driver is broken.
-  # Evict all pods and don't schedule new ones.
+  # New device allocations require a matching toleration.
+  # Pods already using these devices keep running.
   deviceSelector:
     driver: gpu.example.com
   taint:
