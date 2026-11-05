@@ -17,11 +17,15 @@
 package main
 
 import (
+	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 
 	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
@@ -64,4 +68,48 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 	checkpoint, err = readCheckpoint(path, decoder)
 	require.NoError(t, err)
 	assert.Equal(t, updatedCheckpoint, checkpoint)
+}
+
+type failingEncoder struct{}
+
+func (failingEncoder) Encode(runtime.Object, io.Writer) error {
+	return errors.New("no space left on device")
+}
+func (failingEncoder) Identifier() runtime.Identifier { return "failing" }
+
+func TestWriteCheckpointRemovesTempFileOnFailure(t *testing.T) {
+	_, encoder, err := checkpointSerializer()
+	require.NoError(t, err)
+
+	tests := map[string]struct {
+		setup   func(t *testing.T, path string)
+		encoder runtime.Encoder
+	}{
+		"encode fails": {
+			encoder: failingEncoder{},
+		},
+		"rename fails": {
+			// A non-empty directory at path makes the rename fail.
+			setup: func(t *testing.T, path string) {
+				require.NoError(t, os.MkdirAll(filepath.Join(path, "keep"), 0o755))
+			},
+			encoder: encoder,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			path := filepath.Join(dir, DriverPluginCheckpointFile)
+			if test.setup != nil {
+				test.setup(t, path)
+			}
+
+			err := writeCheckpoint(path, test.encoder, &checkpointapi.Checkpoint{})
+			require.Error(t, err)
+
+			leftovers, err := filepath.Glob(filepath.Join(dir, "tmp-checkpoint-*"))
+			require.NoError(t, err)
+			assert.Empty(t, leftovers, "temp files left in the plugin directory")
+		})
+	}
 }
