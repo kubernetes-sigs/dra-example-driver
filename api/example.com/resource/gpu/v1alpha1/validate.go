@@ -61,10 +61,16 @@ func (s *GpuSharing) Validate() error {
 		if s.TimeSlicingConfig == nil {
 			return fmt.Errorf("no time-slicing config set")
 		}
+		if s.SpacePartitioningConfig != nil {
+			return fmt.Errorf("cannot use SpacePartitioningConfig with the '%v' strategy", TimeSlicingStrategy)
+		}
 		return s.TimeSlicingConfig.Validate()
 	case s.IsSpacePartitioning():
 		if s.SpacePartitioningConfig == nil {
 			return fmt.Errorf("no space-partitioning config set")
+		}
+		if s.TimeSlicingConfig != nil {
+			return fmt.Errorf("cannot use TimeSlicingConfig with the '%v' strategy", SpacePartitioningStrategy)
 		}
 		return s.SpacePartitioningConfig.Validate()
 	}

@@ -108,7 +108,7 @@ func TestGpuConfigValidate(t *testing.T) {
 			gpuConfig: DefaultGpuConfig(),
 			expected:  nil,
 		},
-		"invalid TimeSlicingConfig ignored with strategy is SpacePartitioning": {
+		"TimeSlicingConfig set with strategy SpacePartitioning": {
 			gpuConfig: &GpuConfig{
 				Sharing: &GpuSharing{
 					Strategy:          SpacePartitioningStrategy,
@@ -118,9 +118,9 @@ func TestGpuConfigValidate(t *testing.T) {
 					},
 				},
 			},
-			expected: nil,
+			expected: errors.New("cannot use TimeSlicingConfig with the 'SpacePartitioning' strategy"),
 		},
-		"invalid SpacePartitioningConfig ignored with strategy is TimeSlicing": {
+		"SpacePartitioningConfig set with strategy TimeSlicing": {
 			gpuConfig: &GpuConfig{
 				Sharing: &GpuSharing{
 					Strategy: TimeSlicingStrategy,
@@ -132,7 +132,7 @@ func TestGpuConfigValidate(t *testing.T) {
 					},
 				},
 			},
-			expected: nil,
+			expected: errors.New("cannot use SpacePartitioningConfig with the 'TimeSlicing' strategy"),
 		},
 	}
 
