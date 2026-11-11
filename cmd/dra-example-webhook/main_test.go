@@ -172,6 +172,36 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 			expectedAllowed: false,
 			expectedMessage: "2 configs failed to validate: object at spec.spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
 		},
+		"invalid GpuConfigs in ResourceClaim on UPDATE": {
+			admissionReview: withOperation(admissionReviewWithObject(
+				resourceClaimWithGpuConfigs(invalidGPUConfigs...),
+				resourceClaimResourceV1,
+			), admissionv1.Update),
+			expectedAllowed: true,
+		},
+		"invalid GpuConfigs in ResourceClaim on CREATE": {
+			admissionReview: withOperation(admissionReviewWithObject(
+				resourceClaimWithGpuConfigs(invalidGPUConfigs...),
+				resourceClaimResourceV1,
+			), admissionv1.Create),
+			expectedAllowed: false,
+			expectedMessage: "2 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: unknown time-slice interval: InvalidInterval; object at spec.devices.config[1].opaque.parameters is invalid: invalid partition count: -1",
+		},
+		"invalid GpuConfigs in ResourceClaimTemplate on UPDATE": {
+			admissionReview: withOperation(admissionReviewWithObject(
+				resourceClaimTemplateWithGpuConfigs(invalidGPUConfigs...),
+				resourceClaimTemplateResourceV1,
+			), admissionv1.Update),
+			expectedAllowed: true,
+		},
+		"unknown resource type on UPDATE": {
+			admissionReview: withOperation(admissionReviewWithObject(
+				resourceClaimWithGpuConfigs(validGPUConfig),
+				unknownResource,
+			), admissionv1.Update),
+			expectedAllowed: false,
+			expectedMessage: "expected resource to be one of [{resource.k8s.io v1 resourceclaims} {resource.k8s.io v1beta1 resourceclaims} {resource.k8s.io v1beta2 resourceclaims} {resource.k8s.io v1 resourceclaimtemplates} {resource.k8s.io v1beta1 resourceclaimtemplates} {resource.k8s.io v1beta2 resourceclaimtemplates}], got {resource.k8s.io v1 unknownresources}",
+		},
 		"unknown resource type": {
 			admissionReview: admissionReviewWithObject(
 				resourceClaimWithGpuConfigs(validGPUConfig),
@@ -236,6 +266,11 @@ func admissionReviewWithObject(obj runtime.Object, resource metav1.GroupVersionR
 	}
 	requestedAdmissionReview.SetGroupVersionKind(admissionv1.SchemeGroupVersion.WithKind("AdmissionReview"))
 	return requestedAdmissionReview
+}
+
+func withOperation(ar *admissionv1.AdmissionReview, op admissionv1.Operation) *admissionv1.AdmissionReview {
+	ar.Request.Operation = op
+	return ar
 }
 
 func resourceClaimWithGpuConfigs(gpuConfigs ...*configapi.GpuConfig) *resourceapi.ResourceClaim {

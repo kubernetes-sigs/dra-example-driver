@@ -303,6 +303,19 @@ func admitResourceClaimParameters(configDecoder runtime.Decoder, validate valida
 			}
 		}
 
+		// The spec of ResourceClaims and ResourceClaimTemplates is immutable,
+		// and the API server rejects a changed spec before calling validating
+		// webhooks, so an UPDATE carries the same configs that were admitted
+		// on CREATE. Validating them again would only block metadata updates,
+		// such as removing the resource.kubernetes.io/delete-protection
+		// finalizer, for objects stored before the webhook was installed or
+		// before a validation rule was tightened.
+		if ar.Request.Operation == admissionv1.Update {
+			return &admissionv1.AdmissionResponse{
+				Allowed: true,
+			}
+		}
+
 		var errs []error
 		for configIndex, config := range deviceConfigs {
 			if config.Opaque == nil || config.Opaque.Driver != driverName {
