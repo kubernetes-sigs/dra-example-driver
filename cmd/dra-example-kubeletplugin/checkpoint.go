@@ -56,6 +56,16 @@ func writeCheckpoint(path string, encoder runtime.Encoder, checkpoint *checkpoin
 	if err != nil {
 		return fmt.Errorf("create temp file in %s: %w", dir, err)
 	}
+	// Remove the temp file unless it was renamed to path, so that a failed
+	// write (a full disk, for instance) does not leave one behind in the
+	// plugin directory on every retry. Deferred first, it runs after Close.
+	defer func() {
+		if err != nil {
+			if err1 := os.Remove(tmp.Name()); err1 != nil && !errors.Is(err1, fs.ErrNotExist) {
+				err = errors.Join(err, fmt.Errorf("remove temp file: %w", err1))
+			}
+		}
+	}()
 	defer func() {
 		if err1 := tmp.Close(); err1 != nil && err == nil {
 			err = fmt.Errorf("close temp file: %w", err1)
