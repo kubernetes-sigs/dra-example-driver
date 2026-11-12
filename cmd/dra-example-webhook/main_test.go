@@ -127,6 +127,24 @@ func TestResourceClaimValidatingWebhook(t *testing.T) {
 			expectedAllowed: false,
 			expectedMessage: "1 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: no time-slicing config set",
 		},
+		"GpuConfig with spacePartitioningConfig and TimeSlicing strategy in ResourceClaim": {
+			admissionReview: admissionReviewWithObject(
+				resourceClaimWithGpuConfigs(&configapi.GpuConfig{
+					Sharing: &configapi.GpuSharing{
+						Strategy: configapi.TimeSlicingStrategy,
+						TimeSlicingConfig: &configapi.TimeSlicingConfig{
+							Interval: configapi.LongTimeSlice,
+						},
+						SpacePartitioningConfig: &configapi.SpacePartitioningConfig{
+							PartitionCount: 2,
+						},
+					},
+				}),
+				resourceClaimResourceV1,
+			),
+			expectedAllowed: false,
+			expectedMessage: "1 configs failed to validate: object at spec.devices.config[0].opaque.parameters is invalid: cannot use SpacePartitioningConfig with the 'TimeSlicing' strategy",
+		},
 		"valid GpuConfig in ResourceClaimTemplate": {
 			admissionReview: admissionReviewWithObject(
 				resourceClaimTemplateWithGpuConfigs(validGPUConfig),
