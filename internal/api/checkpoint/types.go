@@ -26,10 +26,11 @@ import (
 // be read by the driver to recover intermediate state.
 //
 // The example driver can deterministically reconstruct the entire CDI config
-// for any given claim from the ResourceClaim, so it doesn't need to persist any
-// other data. Other drivers may need to include more data in their checkpoints
-// if first-time setup produces non-deterministic data or side-effects that need
-// to be undone when the claim is unprepared.
+// for any given claim from the ResourceClaim. It stores the claim namespace
+// and name so a restart can fetch that object. Other drivers may need to
+// include more data in their checkpoints if first-time setup produces
+// non-deterministic data or side-effects that need to be undone when the
+// claim is unprepared.
 //
 // +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
 type Checkpoint struct {
@@ -40,4 +41,9 @@ type Checkpoint struct {
 
 type PreparedClaim struct {
 	UID types.UID
+	// Namespace and Name locate the ResourceClaim so a restarted driver can
+	// republish device status with a Get. Checkpoints written before these
+	// fields existed leave them empty.
+	Namespace string
+	Name      string
 }
