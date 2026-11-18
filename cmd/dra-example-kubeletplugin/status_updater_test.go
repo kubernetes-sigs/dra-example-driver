@@ -219,6 +219,60 @@ func TestDeviceStatusUpdaterCancelAbortsInFlightUpdate(t *testing.T) {
 	assert.Equal(t, float64(1), deviceStatusUpdates(t, metrics.DeviceStatusResultDropped)-droppedBefore)
 }
 
+func TestDeviceStatusUpdaterDropsEnqueueAfterStartContextCancelled(t *testing.T) {
+	started := make(chan struct{})
+	firstDone := make(chan struct{})
+	var mu sync.Mutex
+	calls := 0
+	u := newDeviceStatusUpdater(func(ctx context.Context, _, _ string, uid types.UID, _ ...resourceapi.AllocatedDeviceStatus) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		if uid == "uid-2" {
+			<-ctx.Done()
+			return ctx.Err()
+		}
+		close(started)
+		<-ctx.Done()
+		close(firstDone)
+		return ctx.Err()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	u.Start(ctx)
+
+	u.Enqueue(ctx, testStatusClaim("uid-1"), testDeviceStatuses)
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("update did not start")
+	}
+	// Parent cancellation stands in for SIGTERM. The gRPC server can still
+	// hand out a NodePrepareResources until it is stopped, which is later.
+	cancel()
+	select {
+	case <-firstDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("cancelling the start context did not abort the in-flight update")
+	}
+
+	u.Enqueue(context.Background(), testStatusClaim("uid-2"), testDeviceStatuses)
+	assert.False(t, u.hasPending("uid-2"), "an update enqueued after cancellation must be dropped")
+
+	stopped := make(chan struct{})
+	go func() {
+		u.Stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("Stop hung on an attempt enqueued after the start context was cancelled")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, 1, calls)
+}
+
 func TestDeviceStatusUpdaterStopAbortsInFlightUpdate(t *testing.T) {
 	started := make(chan struct{})
 	u := newDeviceStatusUpdater(func(ctx context.Context, _, _ string, _ types.UID, _ ...resourceapi.AllocatedDeviceStatus) error {

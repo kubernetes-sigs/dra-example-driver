@@ -34,6 +34,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	fakeclient "k8s.io/client-go/kubernetes/fake"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
@@ -444,6 +445,52 @@ func TestPrepareRestoredClaimRepublishesDeviceStatus(t *testing.T) {
 	require.NotEmpty(t, restored)
 	require.Eventually(t, func() bool { return len(second.UIDs()) == 1 }, time.Second, time.Millisecond)
 	assert.Equal(t, []types.UID{claim.UID}, second.UIDs())
+}
+
+func TestDriverRestartRepublishesDeviceStatusWithoutPrepare(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	first := installRecordingStatusPublisher(t, state)
+
+	prepared, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+	require.NotEmpty(t, prepared)
+	require.Eventually(t, func() bool { return len(first.UIDs()) == 1 }, time.Second, time.Millisecond)
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	restarted.coreClient = fakeclient.NewClientset(claim)
+	second := installRecordingStatusPublisher(t, restarted)
+
+	// Kubelet does not call Prepare again after a driver-only restart.
+	require.NoError(t, restarted.republishCheckpointedClaims(context.Background()))
+	require.Eventually(t, func() bool { return len(second.UIDs()) == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, []types.UID{claim.UID}, second.UIDs())
+}
+
+func TestDriverRestartSkipsStatusWhenCheckpointedClaimIsGone(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	restarted.coreClient = fakeclient.NewClientset()
+	published := installRecordingStatusPublisher(t, restarted)
+
+	require.NoError(t, restarted.republishCheckpointedClaims(context.Background()))
+	require.Never(t, func() bool { return len(published.UIDs()) > 0 }, 50*time.Millisecond, 5*time.Millisecond)
 }
 
 func TestPrepareDoesNotPublishDeviceStatusWhenRestoredClaimSpecCannotBeRecreated(t *testing.T) {

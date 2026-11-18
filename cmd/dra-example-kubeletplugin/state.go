@@ -177,9 +177,12 @@ func (s *DeviceState) Prepare(ctx context.Context, claim *resourceapi.ResourceCl
 		if err = s.cdi.CreateClaimSpecFile(string(claim.UID), restoredDevices); err != nil {
 			return nil, fmt.Errorf("unable to recreate CDI spec file for claim from checkpoint: %v", err)
 		}
-		// In-memory retries do not survive a restart. Status is derived from
-		// the claim, so publish it again now that the prepared claim is back.
-		// Republishing is idempotent.
+		// Kubelet calls Prepare again after its own restart (the prepared bit
+		// is not checkpointed) and when the previous Prepare failed. In-memory
+		// retries are gone, and status is derived from the claim, so publish
+		// it again. Republishing is idempotent. A driver-only restart does not
+		// get another Prepare; startup covers that in
+		// republishCheckpointedClaims.
 		s.prepareDevices(ctx, claim)
 		return restoredDevices, nil
 	}
@@ -251,10 +254,10 @@ func (s *DeviceState) Unprepare(claimUID types.UID) error {
 // deterministic and side-effect free.
 //
 // Callers invoke it only after the CDI spec and checkpoint write have
-// succeeded, and again when a prepared claim is restored after a restart.
-// Publishing is non-fatal and must not block NodePrepareResources: the device
-// is prepared either way. The update is retried in the background; see
-// [deviceStatusUpdater].
+// succeeded, when a prepared claim is restored, and on startup for claims
+// already in the checkpoint. Publishing is non-fatal and must not block
+// NodePrepareResources: the device is prepared either way. The update is
+// retried in the background; see [deviceStatusUpdater].
 func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.ResourceClaim) {
 	builder, ok := s.configHandler.(profiles.DeviceStatusBuilder)
 	if !ok || claim.Status.Allocation == nil {
@@ -276,6 +279,51 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	klog.FromContext(ctx).V(2).Info("Queueing device status for ResourceClaim",
 		"namespace", claim.Namespace, "name", claim.Name, "uid", claim.UID, "devices", len(deviceStatuses))
 	s.statusUpdater.Enqueue(ctx, claim, deviceStatuses)
+}
+
+// republishCheckpointedClaims enqueues device status for claims already
+// recorded in the checkpoint. Kubelet skips NodePrepareResources when its
+// in-memory prepared flag is set, and that flag survives a driver restart,
+// so this is the path that finishes a status update lost with the process.
+// The checkpoint stores only claim UIDs, so the claims are found with a list.
+// Republishing is idempotent.
+func (s *DeviceState) republishCheckpointedClaims(ctx context.Context) error {
+	if s.coreClient == nil {
+		return nil
+	}
+	checkpoint, err := readCheckpoint(s.checkpointPath, s.checkpointDecoder)
+	if err != nil {
+		return fmt.Errorf("read checkpoint: %w", err)
+	}
+	if len(checkpoint.PreparedClaims) == 0 {
+		return nil
+	}
+	prepared := make(map[types.UID]struct{}, len(checkpoint.PreparedClaims))
+	for _, claim := range checkpoint.PreparedClaims {
+		prepared[claim.UID] = struct{}{}
+	}
+
+	rc := draclient.New(s.coreClient).ResourceClaims(metav1.NamespaceAll)
+	var cont string
+	for {
+		list, err := rc.List(ctx, metav1.ListOptions{Limit: 500, Continue: cont})
+		if err != nil {
+			return fmt.Errorf("list ResourceClaims: %w", err)
+		}
+		for i := range list.Items {
+			claim := &list.Items[i]
+			if _, ok := prepared[claim.UID]; !ok {
+				continue
+			}
+			delete(prepared, claim.UID)
+			s.prepareDevices(ctx, claim)
+		}
+		if list.Continue == "" || len(prepared) == 0 {
+			break
+		}
+		cont = list.Continue
+	}
+	return nil
 }
 
 // unprepareDevices undoes any side-effects produced by

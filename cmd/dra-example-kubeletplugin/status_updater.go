@@ -83,6 +83,10 @@ type deviceStatusUpdater struct {
 	attemptTimeout time.Duration
 	backoff        wait.Backoff
 
+	// done is closed when the context passed to Start is cancelled. Enqueue
+	// consults it so a NodePrepareResources that arrives after that
+	// cancellation, while gRPC is still serving, does not start an attempt
+	// the shutdown watcher has already missed.
 	mu       sync.Mutex
 	cancel   context.CancelFunc
 	done     <-chan struct{}
@@ -132,8 +136,15 @@ func (u *deviceStatusUpdater) Stop() {
 	u.mu.Lock()
 	cancel := u.cancel
 	// Clear cancel before waiting so an Enqueue that has not yet called wg.Add
-	// cannot start a goroutine this Wait would miss.
+	// cannot start a goroutine this Wait would miss. Cancel the attempts here
+	// as well as from the Start watcher. Once that watcher has observed
+	// cancellation and returned, calling cancel again does not run it, and an
+	// attempt detached with WithoutCancel would otherwise keep running while
+	// Wait blocked.
 	u.cancel = nil
+	for _, attempt := range u.attempts {
+		attempt.cancel()
+	}
 	u.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -147,14 +158,25 @@ func (u *deviceStatusUpdater) Stop() {
 //
 // ctx carries the caller's logging values. Cancellation of ctx does not stop
 // the update: WithoutCancel detaches it from the gRPC context, which ends
-// when NodePrepareResources returns. Stop and a cancelled Start context still
-// abort the attempt.
+// when NodePrepareResources returns. Unprepare, a newer Enqueue, a cancelled
+// Start context, and Stop abort the attempt. Once the Start context is
+// cancelled, further calls are dropped. The gRPC server can still accept
+// NodePrepareResources until it stops, and that request context is not a
+// child of the Start context, so an attempt created there would otherwise
+// have nothing left to cancel it.
 func (u *deviceStatusUpdater) Enqueue(ctx context.Context, claim *resourceapi.ResourceClaim, devices []resourceapi.AllocatedDeviceStatus) {
 	u.mu.Lock()
 	if u.cancel == nil {
 		u.mu.Unlock()
 		klog.FromContext(ctx).Error(nil, "device status updater is not started; dropping device status update", "uid", claim.UID)
 		return
+	}
+	select {
+	case <-u.done:
+		u.mu.Unlock()
+		klog.FromContext(ctx).V(2).Info("device status updater is stopping; dropping device status update", "uid", claim.UID)
+		return
+	default:
 	}
 	if prev := u.attempts[claim.UID]; prev != nil {
 		prev.cancel()

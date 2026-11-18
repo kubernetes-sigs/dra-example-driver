@@ -130,11 +130,19 @@ func NewDriver(ctx context.Context, config *Config) (_ *driver, err error) {
 		}
 	}()
 
+	// Kubelet does not call Prepare again when only this process restarts
+	// after a successful Prepare. Finish any status publish that was still
+	// in memory. Failure is logged: device status is best-effort and must
+	// not keep the plugin from registering.
+	logger := klog.FromContext(ctx)
+	if repErr := state.republishCheckpointedClaims(ctx); repErr != nil {
+		logger.Error(repErr, "Republishing device status for checkpointed claims failed")
+	}
+
 	// Device health reporting (KEP-4680) is opt-out: on by default, disabled with
 	// --device-health=false (DEVICE_HEALTH). When disabled we build no simulator
 	// and start no health goroutines; WatchHealthStatus returns
 	// ErrHealthNotSupported and the kubelet never subscribes.
-	logger := klog.FromContext(ctx)
 	driver.deviceHealth = config.flags.deviceHealth
 	if driver.deviceHealth {
 		for deviceName := range state.allocatable {
