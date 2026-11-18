@@ -22,12 +22,15 @@ import (
 	"path/filepath"
 	"slices"
 	"sync"
+	"time"
 
 	resourceapi "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/runtime/serializer/json"
+	"k8s.io/apimachinery/pkg/util/wait"
 
 	"k8s.io/apimachinery/pkg/types"
 	coreclientset "k8s.io/client-go/kubernetes"
@@ -90,6 +93,13 @@ type DeviceState struct {
 
 	// statusUpdater publishes ResourceClaim device status in the background.
 	statusUpdater *deviceStatusUpdater
+
+	// recoveryBackoff, recoveryAttempts and recoveryGetTimeout bound the
+	// background Get of checkpointed claims after a restart. The zero value
+	// uses the device status retry bounds.
+	recoveryBackoff    wait.Backoff
+	recoveryAttempts   int
+	recoveryGetTimeout time.Duration
 }
 
 func NewDeviceState(config *Config) (*DeviceState, error) {
@@ -281,49 +291,119 @@ func (s *DeviceState) prepareDevices(ctx context.Context, claim *resourceapi.Res
 	s.statusUpdater.Enqueue(ctx, claim, deviceStatuses)
 }
 
-// republishCheckpointedClaims enqueues device status for claims already
-// recorded in the checkpoint. Kubelet skips NodePrepareResources when its
-// in-memory prepared flag is set, and that flag survives a driver restart,
-// so this is the path that finishes a status update lost with the process.
-// The checkpoint stores only claim UIDs, so the claims are found with a list.
-// Republishing is idempotent.
-func (s *DeviceState) republishCheckpointedClaims(ctx context.Context) error {
-	if s.coreClient == nil {
-		return nil
+// startStatusRecovery republishes device status for checkpointed claims in
+// the background. The returned function cancels that work and waits for it
+// to exit. Profiles that do not publish device status return a cancel with
+// no goroutine, so startup does not touch the API server.
+//
+// Kubelet skips NodePrepareResources when its in-memory prepared flag is
+// set, and that flag survives a driver restart. This is the path that
+// finishes a status update lost with the process. Republishing is idempotent.
+func (s *DeviceState) startStatusRecovery(ctx context.Context) func() {
+	ctx, cancel := context.WithCancel(ctx)
+	if _, ok := s.configHandler.(profiles.DeviceStatusBuilder); !ok || s.coreClient == nil {
+		return cancel
 	}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		s.republishCheckpointedClaims(ctx)
+	}()
+	return func() {
+		cancel()
+		wg.Wait()
+	}
+}
+
+// republishCheckpointedClaims Gets each checkpointed claim and enqueues its
+// device status. Transient Get failures are retried with a capped backoff for
+// the claims still outstanding. A missing claim, a replaced UID, and a
+// checkpoint entry written without a namespace and name are skipped.
+func (s *DeviceState) republishCheckpointedClaims(ctx context.Context) {
+	if _, ok := s.configHandler.(profiles.DeviceStatusBuilder); !ok || s.coreClient == nil {
+		return
+	}
+	logger := klog.FromContext(ctx)
 	checkpoint, err := readCheckpoint(s.checkpointPath, s.checkpointDecoder)
 	if err != nil {
-		return fmt.Errorf("read checkpoint: %w", err)
-	}
-	if len(checkpoint.PreparedClaims) == 0 {
-		return nil
-	}
-	prepared := make(map[types.UID]struct{}, len(checkpoint.PreparedClaims))
-	for _, claim := range checkpoint.PreparedClaims {
-		prepared[claim.UID] = struct{}{}
+		logger.Error(err, "Reading checkpoint for device status republish failed")
+		return
 	}
 
-	rc := draclient.New(s.coreClient).ResourceClaims(metav1.NamespaceAll)
-	var cont string
-	for {
-		list, err := rc.List(ctx, metav1.ListOptions{Limit: 500, Continue: cont})
-		if err != nil {
-			return fmt.Errorf("list ResourceClaims: %w", err)
+	var pending []checkpointapi.PreparedClaim
+	for _, claim := range checkpoint.PreparedClaims {
+		if claim.Namespace == "" || claim.Name == "" {
+			logger.V(2).Info("Skipping device status republish for checkpointed claim without namespace and name", "uid", claim.UID)
+			continue
 		}
-		for i := range list.Items {
-			claim := &list.Items[i]
-			if _, ok := prepared[claim.UID]; !ok {
-				continue
+		pending = append(pending, claim)
+	}
+	if len(pending) == 0 {
+		return
+	}
+
+	attempts := s.recoveryAttempts
+	if attempts <= 0 {
+		attempts = deviceStatusMaxRetries + 1
+	}
+	timeout := s.recoveryGetTimeout
+	if timeout <= 0 {
+		timeout = deviceStatusAttemptTimeout
+	}
+	backoff := s.recoveryBackoff
+	if backoff.Duration <= 0 {
+		backoff = wait.Backoff{
+			Duration: deviceStatusBaseDelay,
+			Factor:   2,
+			Cap:      deviceStatusMaxDelay,
+		}
+	}
+
+	rc := draclient.New(s.coreClient)
+	for attempt := 1; attempt <= attempts && len(pending) > 0; attempt++ {
+		var retry []checkpointapi.PreparedClaim
+		for _, prepared := range pending {
+			if ctx.Err() != nil {
+				return
 			}
-			delete(prepared, claim.UID)
-			s.prepareDevices(ctx, claim)
+			getCtx, cancel := context.WithTimeout(ctx, timeout)
+			claim, err := rc.ResourceClaims(prepared.Namespace).Get(getCtx, prepared.Name, metav1.GetOptions{})
+			cancel()
+			switch {
+			case err == nil:
+				if claim.UID != prepared.UID {
+					logger.V(2).Info("Skipping device status republish; ResourceClaim UID changed",
+						"namespace", prepared.Namespace, "name", prepared.Name, "uid", prepared.UID, "found", claim.UID)
+					continue
+				}
+				s.prepareDevices(ctx, claim)
+			case apierrors.IsNotFound(err) || apierrors.IsGone(err):
+				logger.V(2).Info("Skipping device status republish; ResourceClaim no longer exists",
+					"namespace", prepared.Namespace, "name", prepared.Name, "uid", prepared.UID)
+			case ctx.Err() != nil:
+				return
+			default:
+				logger.V(1).Info("Failed to get ResourceClaim for device status republish, will retry",
+					"namespace", prepared.Namespace, "name", prepared.Name, "uid", prepared.UID, "err", err, "attempt", attempt)
+				retry = append(retry, prepared)
+			}
 		}
-		if list.Continue == "" || len(prepared) == 0 {
+		pending = retry
+		if len(pending) == 0 || attempt == attempts {
 			break
 		}
-		cont = list.Continue
+		timer := time.NewTimer(backoff.Step())
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
 	}
-	return nil
+	if len(pending) > 0 && ctx.Err() == nil {
+		logger.Error(nil, "Giving up on device status republish for checkpointed claims", "claims", len(pending))
+	}
 }
 
 // unprepareDevices undoes any side-effects produced by
@@ -426,7 +506,11 @@ func (s *DeviceState) computeDeviceConfig(claim *resourceapi.ResourceClaim) (Pre
 // non-deterministic or expensive to recompute, then those should also be added
 // to the checkpoint here.
 func (*DeviceState) addClaimToCheckpoint(checkpoint *checkpointapi.Checkpoint, claim *resourceapi.ResourceClaim, _ PreparedDevices) {
-	checkpoint.PreparedClaims = append(checkpoint.PreparedClaims, checkpointapi.PreparedClaim{UID: claim.UID})
+	checkpoint.PreparedClaims = append(checkpoint.PreparedClaims, checkpointapi.PreparedClaim{
+		UID:       claim.UID,
+		Namespace: claim.Namespace,
+		Name:      claim.Name,
+	})
 }
 
 // removeClaimFromCheckpoint updates the checkpoint to remove all data

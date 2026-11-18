@@ -30,11 +30,14 @@ import (
 	"github.com/stretchr/testify/require"
 
 	resourceapi "k8s.io/api/resource/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
 	fakeclient "k8s.io/client-go/kubernetes/fake"
+	clienttesting "k8s.io/client-go/testing"
 	drapbv1 "k8s.io/kubelet/pkg/apis/dra/v1"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/yaml"
@@ -42,6 +45,7 @@ import (
 	cdiparser "tags.cncf.io/container-device-interface/pkg/parser"
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
+	checkpointapi "sigs.k8s.io/dra-example-driver/internal/api/checkpoint"
 	"sigs.k8s.io/dra-example-driver/internal/profiles"
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
 )
@@ -347,7 +351,7 @@ func TestPrepareRestoredClaimRecreatesMissingClaimSpec(t *testing.T) {
 	checkpoint, err := readCheckpoint(restartedState.checkpointPath, restartedState.checkpointDecoder)
 	require.NoError(t, err)
 	require.Len(t, checkpoint.PreparedClaims, 1)
-	assert.Equal(t, claim.UID, checkpoint.PreparedClaims[0].UID)
+	assert.Equal(t, checkpointapi.PreparedClaim{UID: claim.UID, Namespace: claim.Namespace, Name: claim.Name}, checkpoint.PreparedClaims[0])
 }
 
 func TestPrepareRestoredClaimIsIdempotentWhenClaimSpecExists(t *testing.T) {
@@ -400,7 +404,7 @@ func TestPrepareRestoredClaimFailsWhenClaimSpecCannotBeRecreated(t *testing.T) {
 	checkpoint, readErr := readCheckpoint(restartedState.checkpointPath, restartedState.checkpointDecoder)
 	require.NoError(t, readErr)
 	require.Len(t, checkpoint.PreparedClaims, 1)
-	assert.Equal(t, claim.UID, checkpoint.PreparedClaims[0].UID)
+	assert.Equal(t, checkpointapi.PreparedClaim{UID: claim.UID, Namespace: claim.Namespace, Name: claim.Name}, checkpoint.PreparedClaims[0])
 }
 
 func TestPrepareDoesNotPublishDeviceStatusWhenCheckpointWriteFails(t *testing.T) {
@@ -468,7 +472,7 @@ func TestDriverRestartRepublishesDeviceStatusWithoutPrepare(t *testing.T) {
 	second := installRecordingStatusPublisher(t, restarted)
 
 	// Kubelet does not call Prepare again after a driver-only restart.
-	require.NoError(t, restarted.republishCheckpointedClaims(context.Background()))
+	restarted.republishCheckpointedClaims(context.Background())
 	require.Eventually(t, func() bool { return len(second.UIDs()) == 1 }, time.Second, time.Millisecond)
 	assert.Equal(t, []types.UID{claim.UID}, second.UIDs())
 }
@@ -489,8 +493,146 @@ func TestDriverRestartSkipsStatusWhenCheckpointedClaimIsGone(t *testing.T) {
 	restarted.coreClient = fakeclient.NewClientset()
 	published := installRecordingStatusPublisher(t, restarted)
 
-	require.NoError(t, restarted.republishCheckpointedClaims(context.Background()))
+	restarted.republishCheckpointedClaims(context.Background())
 	require.Never(t, func() bool { return len(published.UIDs()) > 0 }, 50*time.Millisecond, 5*time.Millisecond)
+}
+
+func TestRepublishSkipsCheckpointEntriesWithoutName(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	checkpoint, err := readCheckpoint(state.checkpointPath, state.checkpointDecoder)
+	require.NoError(t, err)
+	require.Len(t, checkpoint.PreparedClaims, 1)
+	checkpoint.PreparedClaims[0].Namespace = ""
+	checkpoint.PreparedClaims[0].Name = ""
+	require.NoError(t, writeCheckpoint(state.checkpointPath, state.checkpointEncoder, checkpoint))
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	var gets int
+	client := fakeclient.NewClientset(claim)
+	client.PrependReactor("get", "resourceclaims", func(clienttesting.Action) (bool, runtime.Object, error) {
+		gets++
+		return true, nil, apierrors.NewServiceUnavailable("unavailable")
+	})
+	restarted.coreClient = client
+	published := installRecordingStatusPublisher(t, restarted)
+
+	restarted.republishCheckpointedClaims(context.Background())
+	assert.Equal(t, 0, gets)
+	require.Never(t, func() bool { return len(published.UIDs()) > 0 }, 50*time.Millisecond, 5*time.Millisecond)
+}
+
+func TestRepublishRetriesTransientGet(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	gets := 0
+	client := fakeclient.NewClientset(claim)
+	client.PrependReactor("get", "resourceclaims", func(clienttesting.Action) (bool, runtime.Object, error) {
+		mu.Lock()
+		gets++
+		call := gets
+		mu.Unlock()
+		if call < 3 {
+			return true, nil, apierrors.NewServiceUnavailable("unavailable")
+		}
+		return false, nil, nil
+	})
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	restarted.coreClient = client
+	restarted.recoveryAttempts = 4
+	restarted.recoveryBackoff = wait.Backoff{Duration: time.Millisecond, Factor: 1, Cap: time.Millisecond}
+	published := installRecordingStatusPublisher(t, restarted)
+
+	restarted.republishCheckpointedClaims(context.Background())
+	require.Eventually(t, func() bool { return len(published.UIDs()) == 1 }, time.Second, time.Millisecond)
+	assert.Equal(t, []types.UID{claim.UID}, published.UIDs())
+	mu.Lock()
+	defer mu.Unlock()
+	assert.GreaterOrEqual(t, gets, 3)
+}
+
+func TestStatusRecoveryDoesNotBlockStartup(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "cpu.example.com"
+	)
+
+	root := t.TempDir()
+	state := newTestCPUDeviceState(t, root, nodeName, driverName)
+	claim := testCPUClaim(driverName, nodeName)
+	_, err := state.Prepare(context.Background(), claim)
+	require.NoError(t, err)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	client := fakeclient.NewClientset(claim)
+	client.PrependReactor("get", "resourceclaims", func(clienttesting.Action) (bool, runtime.Object, error) {
+		close(started)
+		<-release
+		return true, nil, apierrors.NewServiceUnavailable("unavailable")
+	})
+
+	restarted := newTestCPUDeviceState(t, root, nodeName, driverName)
+	restarted.coreClient = client
+	restarted.recoveryAttempts = 1
+	installRecordingStatusPublisher(t, restarted)
+
+	startedCall := make(chan func(), 1)
+	go func() {
+		startedCall <- restarted.startStatusRecovery(context.Background())
+	}()
+	var stop func()
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(func() {
+		releaseOnce()
+		if stop != nil {
+			stop()
+		}
+	})
+	select {
+	case stop = <-startedCall:
+	case <-time.After(time.Second):
+		t.Fatal("startStatusRecovery blocked on the ResourceClaim get")
+	}
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("recovery did not call the API")
+	}
+	releaseOnce()
+
+	stopped := make(chan struct{})
+	go func() {
+		stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("stopping status recovery hung after the get returned")
+	}
+	stop = nil
 }
 
 func TestPrepareDoesNotPublishDeviceStatusWhenRestoredClaimSpecCannotBeRecreated(t *testing.T) {

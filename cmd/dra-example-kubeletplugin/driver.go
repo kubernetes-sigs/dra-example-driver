@@ -98,6 +98,11 @@ type driver struct {
 	// tests shorten them to exercise the periodic and reconnect paths.
 	healthPollInterval time.Duration
 	healthWatchBackoff time.Duration
+
+	// stopStatusRecovery cancels the background republish of device status
+	// for checkpointed claims and waits for it to exit. It is safe to call
+	// when recovery was not started.
+	stopStatusRecovery func()
 }
 
 func NewDriver(ctx context.Context, config *Config) (_ *driver, err error) {
@@ -121,23 +126,21 @@ func NewDriver(ctx context.Context, config *Config) (_ *driver, err error) {
 	}
 	driver.state = state
 	state.statusUpdater.Start(ctx)
+	// Republish in the background. Kubelet does not call Prepare again when
+	// only this process restarts after a successful Prepare, and a Get of
+	// each checkpointed claim must not delay registration or the healthcheck.
 	// NewDriver returns no driver when a later step fails, so Shutdown is
-	// never called. Stop the updater on those paths or its goroutines leak
-	// for the life of ctx.
+	// never called. Stop both on those paths or their goroutines leak for
+	// the life of ctx.
+	driver.stopStatusRecovery = state.startStatusRecovery(ctx)
 	defer func() {
 		if err != nil {
+			driver.stopStatusRecovery()
 			state.statusUpdater.Stop()
 		}
 	}()
 
-	// Kubelet does not call Prepare again when only this process restarts
-	// after a successful Prepare. Finish any status publish that was still
-	// in memory. Failure is logged: device status is best-effort and must
-	// not keep the plugin from registering.
 	logger := klog.FromContext(ctx)
-	if repErr := state.republishCheckpointedClaims(ctx); repErr != nil {
-		logger.Error(repErr, "Republishing device status for checkpointed claims failed")
-	}
 
 	// Device health reporting (KEP-4680) is opt-out: on by default, disabled with
 	// --device-health=false (DEVICE_HEALTH). When disabled we build no simulator
@@ -212,6 +215,9 @@ func (d *driver) Shutdown(logger klog.Logger) error {
 		d.healthWg.Wait()
 	}
 
+	if d.stopStatusRecovery != nil {
+		d.stopStatusRecovery()
+	}
 	d.helper.Stop()
 	d.state.statusUpdater.Stop()
 	return nil

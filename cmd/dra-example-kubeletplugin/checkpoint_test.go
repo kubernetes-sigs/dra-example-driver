@@ -43,7 +43,7 @@ func TestReadWriteCheckpointRoundtrip(t *testing.T) {
 	// "prepare" some claims
 	updatedCheckpoint := &checkpointapi.Checkpoint{
 		PreparedClaims: []checkpointapi.PreparedClaim{
-			{UID: types.UID("123")},
+			{UID: types.UID("123"), Namespace: "default", Name: "claim-a"},
 			{UID: types.UID("456")},
 		},
 	}
