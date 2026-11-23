@@ -143,7 +143,7 @@ require (
 	k8s.io/kubectl v0.37.2 // indirect
 	k8s.io/utils v0.0.0-20260626114624-be93311217bd // indirect
 	oras.land/oras-go/v2 v2.6.2 // indirect
-	sigs.k8s.io/controller-runtime v0.25.2 // indirect
+	sigs.k8s.io/controller-runtime v0.25.3 // indirect
 	sigs.k8s.io/controller-tools v0.22.0 // indirect
 	sigs.k8s.io/json v0.0.0-20250730193827-2d320260d730 // indirect
 	sigs.k8s.io/kind v0.33.0 // indirect
