@@ -86,8 +86,22 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 
 	var partitionMemory, partitionCompute resource.Quantity
 	if p.partitionsPerGPU > 0 {
-		partitionMemory = *resource.NewQuantity(memoryPerGPU.Value()/int64(p.partitionsPerGPU), resource.BinarySI)
+		memoryPerPartition := memoryPerGPU.Value() / int64(p.partitionsPerGPU)
+		if p.allowMultipleAllocations {
+			// The memory RequestPolicy uses ValidRange{Min: 1Gi, Step: 1Gi},
+			// and the API server rejects a capacity whose value is not
+			// min plus a whole number of steps. Round the partition down
+			// to a whole number of GiB so that partition counts that do
+			// not divide 80Gi evenly (e.g. 3) still publish.
+			memoryPerPartition = memoryPerPartition / gibibyte * gibibyte
+		}
+		partitionMemory = *resource.NewQuantity(memoryPerPartition, resource.BinarySI)
 		partitionCompute = *resource.NewQuantity(computePerGPU.Value()/int64(p.partitionsPerGPU), resource.DecimalSI)
+		if p.allowMultipleAllocations {
+			if err := validatePartitionCapacity(partitionMemory, partitionCompute); err != nil {
+				return resourceslice.DriverResources{}, fmt.Errorf("%d partitions per GPU cannot be used with multiple allocations: %w", p.partitionsPerGPU, err)
+			}
+		}
 	}
 
 	for i, uuid := range uuids {
@@ -218,6 +232,22 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 	return resources, nil
 }
 
+const gibibyte = int64(1) << 30
+
+// validatePartitionCapacity checks that a partition's memory and compute can
+// carry the RequestPolicy built by memoryCapacity and computeCapacity. The API
+// server requires min + step <= value, so each partition needs at least 2Gi of
+// memory and 2 units of compute.
+func validatePartitionCapacity(memory, compute resource.Quantity) error {
+	if memory.Value() < 2*gibibyte {
+		return fmt.Errorf("partition memory %s is less than the 2Gi needed for a 1Gi min and 1Gi step", memory.String())
+	}
+	if compute.Value() < 2 {
+		return fmt.Errorf("partition compute %s is less than the 2 needed for a min and step of 1", compute.String())
+	}
+	return nil
+}
+
 // memoryCapacity builds a DeviceCapacity for a memory quantity.
 // When allowMultipleAllocations is enabled it attaches a RequestPolicy with
 // ValidRange{Min: 1Gi, Step: 1Gi, Max: value} so consumers can request any
@@ -225,7 +255,8 @@ func (p Profile) EnumerateDevices() (resourceslice.DriverResources, error) {
 //
 // 1Gi is chosen as both the minimum and step for flexibility: when used with a
 // PartitionableDevice the number of partitions can be any number.
-// partitionMemory must be >= 1Gi.
+// partitionMemory must be a whole number of GiB and at least 2Gi (see
+// validatePartitionCapacity).
 func (p Profile) memoryCapacity(value resource.Quantity) resourceapi.DeviceCapacity {
 	dc := resourceapi.DeviceCapacity{Value: value}
 	if p.allowMultipleAllocations {
@@ -252,7 +283,7 @@ func (p Profile) memoryCapacity(value resource.Quantity) resourceapi.DeviceCapac
 //
 // 1 is chosen as both the minimum and step for flexibility: when used with a
 // PartitionableDevice the number of partitions can be any number.
-// partitionCompute must be >= 1.
+// partitionCompute must be at least 2 (see validatePartitionCapacity).
 func (p Profile) computeCapacity(value resource.Quantity) resourceapi.DeviceCapacity {
 	dc := resourceapi.DeviceCapacity{Value: value}
 	if p.allowMultipleAllocations {

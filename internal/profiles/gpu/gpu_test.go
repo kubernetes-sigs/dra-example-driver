@@ -559,3 +559,82 @@ func TestApplyConfig(t *testing.T) {
 		})
 	}
 }
+
+// assertValidRequestPolicy mirrors the API server's ValidRange checks for
+// consumable capacity: min + step must fit in the value, and both the default
+// and the max must be min plus a whole number of steps.
+func assertValidRequestPolicy(t *testing.T, device string, name resourceapi.QualifiedName, dc resourceapi.DeviceCapacity) {
+	t.Helper()
+	require.NotNil(t, dc.RequestPolicy, "%s %s: missing RequestPolicy", device, name)
+	r := dc.RequestPolicy.ValidRange
+	require.NotNil(t, r, "%s %s: missing ValidRange", device, name)
+	minVal, step := r.Min.Value(), r.Step.Value()
+	assert.LessOrEqual(t, minVal+step, dc.Value.Value(), "%s %s: one step is larger than the capacity value", device, name)
+	assert.Zero(t, (dc.RequestPolicy.Default.Value()-minVal)%step, "%s %s: default %s is not a multiple of step", device, name, dc.RequestPolicy.Default.String())
+	assert.Zero(t, (r.Max.Value()-minVal)%step, "%s %s: max %s is not a multiple of step", device, name, r.Max.String())
+}
+
+func TestEnumerateDevices_PartitionableWithAllowMultipleAllocations_ValidRequestPolicy(t *testing.T) {
+	for partitions := 1; partitions <= 40; partitions++ {
+		t.Run(fmt.Sprintf("partitions=%d", partitions), func(t *testing.T) {
+			profile := NewProfile("test-node", 1, partitions, false, false, true, false, nil)
+			resources, err := profile.EnumerateDevices()
+			require.NoError(t, err)
+
+			devices := resources.Pools["test-node"].Slices[1].Devices
+			require.Len(t, devices, partitions+1)
+
+			var consumedMemory resource.Quantity
+			for _, device := range devices {
+				for name, dc := range device.Capacity {
+					assertValidRequestPolicy(t, device.Name, name, dc)
+				}
+				if _, ok := device.Attributes["full"]; !ok {
+					consumedMemory.Add(device.ConsumesCounters[0].Counters["memory"].Value)
+				}
+			}
+			assert.LessOrEqual(t, consumedMemory.Cmp(resource.MustParse("80Gi")), 0, "partitions consume more memory than the GPU has")
+		})
+	}
+}
+
+func TestEnumerateDevices_PartitionableWithAllowMultipleAllocations_RoundsMemoryToGi(t *testing.T) {
+	profile := NewProfile("test-node", 1, 3, false, false, true, false, nil)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	for _, device := range resources.Pools["test-node"].Slices[1].Devices {
+		if _, ok := device.Attributes["full"]; ok {
+			continue
+		}
+		memoryCap := device.Capacity["memory"]
+		consumedMemory := device.ConsumesCounters[0].Counters["memory"].Value
+		computeCap := device.Capacity["compute"]
+		assert.Equal(t, "26Gi", memoryCap.Value.String(), "device %s", device.Name)
+		assert.Equal(t, "26Gi", consumedMemory.String(), "device %s", device.Name)
+		assert.Equal(t, "33", computeCap.Value.String(), "device %s", device.Name)
+	}
+}
+
+func TestEnumerateDevices_PartitionableWithoutAllowMultipleAllocations_KeepsExactSplit(t *testing.T) {
+	profile := NewProfile("test-node", 1, 3, false, false, false, false, nil)
+	resources, err := profile.EnumerateDevices()
+	require.NoError(t, err)
+
+	memoryPerGPU := resource.MustParse("80Gi")
+	expected := *resource.NewQuantity(memoryPerGPU.Value()/3, resource.BinarySI)
+	device := resources.Pools["test-node"].Slices[1].Devices[0]
+	memoryCap := device.Capacity["memory"]
+	assert.Zero(t, expected.Cmp(memoryCap.Value), "got %s, want %s", memoryCap.Value.String(), expected.String())
+}
+
+func TestEnumerateDevices_PartitionableWithAllowMultipleAllocations_TooManyPartitions(t *testing.T) {
+	for _, partitions := range []int{41, 50, 51, 100, 200} {
+		t.Run(fmt.Sprintf("partitions=%d", partitions), func(t *testing.T) {
+			profile := NewProfile("test-node", 1, partitions, false, false, true, false, nil)
+			_, err := profile.EnumerateDevices()
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), fmt.Sprintf("%d partitions per GPU", partitions))
+		})
+	}
+}
