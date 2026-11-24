@@ -922,8 +922,9 @@ func verifyResourceSliceAllowMultipleAllocations(ctx context.Context, driverName
 // verifyGPUConsumedCapacity verifies that two pods sharing a GPU each have a
 // distinct non-empty ShareID and that ConsumedCapacity is reported for both
 // "memory" and "compute" on every allocation result. It also checks that the
-// driver injected GPU_DEVICE_<ID>_MEMORY and GPU_DEVICE_<ID>_COMPUTE env vars
-// into the container.
+// driver injected GPU_DEVICE_<ID>_SHARE_<SHAREID>_MEMORY and
+// GPU_DEVICE_<ID>_SHARE_<SHAREID>_COMPUTE env vars matching each share's
+// consumed capacity into the container.
 func verifyGPUConsumedCapacity(ctx context.Context, namespace, driverName string) {
 	GinkgoHelper()
 	Eventually(func(g Gomega) {
@@ -944,7 +945,6 @@ func verifyGPUConsumedCapacity(ctx context.Context, namespace, driverName string
 			// Fetch pod logs once per pod to verify injected env vars.
 			gpus, logs := getGPUsFromPodLogs(ctx, g, namespace, pod.Name, "ctr0")
 			g.Expect(gpus).NotTo(BeEmpty(), "pod %s: no GPU env vars found in logs", pod.Name)
-			gpuID := getGPUID(gpus[0])
 
 			for _, prc := range pod.Spec.ResourceClaims {
 				g.Expect(prc.ResourceClaimName).NotTo(BeNil(),
@@ -988,20 +988,17 @@ func verifyGPUConsumedCapacity(ctx context.Context, namespace, driverName string
 							"claim %s device %s: ConsumedCapacity[%q] should be non-zero", claimName, r.Device, capName)
 						fmt.Fprintf(GinkgoWriter, "pod %s claim %s device %s: consumed %s=%s\n",
 							pod.Name, claimName, r.Device, capName, qty.String())
+
+						// The driver injects GPU_DEVICE_<ID>_SHARE_<SHAREID>_<CAPACITY>
+						// so that shares of one device never overwrite each other.
+						envID := getGPUID(r.Device) + "_SHARE_" + strings.ToUpper(strings.ReplaceAll(shareID, "-", "_"))
+						property := strings.ToUpper(string(capName))
+						envValue := extractGPUProperty(logs, envID, property)
+						g.Expect(envValue).To(Equal(qty.String()),
+							"pod %s: GPU_DEVICE_%s_%s env var should match the consumed capacity", pod.Name, envID, property)
 					}
 				}
 			}
-
-			// Verify that GPU_DEVICE_<ID>_MEMORY and GPU_DEVICE_<ID>_COMPUTE were
-			// injected into the container by the driver.
-			memoryEnv := extractGPUProperty(logs, gpuID, "MEMORY")
-			g.Expect(memoryEnv).NotTo(BeEmpty(),
-				"pod %s: GPU_DEVICE_%s_MEMORY env var not found in container logs", pod.Name, gpuID)
-			computeEnv := extractGPUProperty(logs, gpuID, "COMPUTE")
-			g.Expect(computeEnv).NotTo(BeEmpty(),
-				"pod %s: GPU_DEVICE_%s_COMPUTE env var not found in container logs", pod.Name, gpuID)
-			fmt.Fprintf(GinkgoWriter, "pod %s: GPU_DEVICE_%s_MEMORY=%s GPU_DEVICE_%s_COMPUTE=%s\n",
-				pod.Name, gpuID, memoryEnv, gpuID, computeEnv)
 		}
 
 		// All pods must have received distinct ShareIDs.

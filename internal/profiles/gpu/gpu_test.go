@@ -537,11 +537,49 @@ func TestApplyConfig(t *testing.T) {
 			// state.go looks up edits by helpers.GetCDIDeviceID = "gpu-0-share-abc"
 			wantEnvs: map[string][]string{
 				"gpu-0-share-abc": {
-					"GPU_DEVICE_0=gpu-0",
-					"GPU_DEVICE_0_SHARING_STRATEGY=TimeSlicing",
-					"GPU_DEVICE_0_TIMESLICE_INTERVAL=Default",
-					"GPU_DEVICE_0_MEMORY=16Gi",
-					"GPU_DEVICE_0_COMPUTE=20",
+					"GPU_DEVICE_0_SHARE_SHARE_ABC=gpu-0",
+					"GPU_DEVICE_0_SHARE_SHARE_ABC_SHARING_STRATEGY=TimeSlicing",
+					"GPU_DEVICE_0_SHARE_SHARE_ABC_TIMESLICE_INTERVAL=Default",
+					"GPU_DEVICE_0_SHARE_SHARE_ABC_MEMORY=16Gi",
+					"GPU_DEVICE_0_SHARE_SHARE_ABC_COMPUTE=20",
+				},
+			},
+		},
+		{
+			name:   "AllowMultipleAllocations: shares of one device get distinct env var names",
+			config: nil,
+			results: []*resourceapi.DeviceRequestAllocationResult{
+				{
+					Device:  "gpu-0",
+					ShareID: ptr.To(types.UID("share-a")),
+					ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+						"memory":  resource.MustParse("8Gi"),
+						"compute": resource.MustParse("10"),
+					},
+				},
+				{
+					Device:  "gpu-0",
+					ShareID: ptr.To(types.UID("share-b")),
+					ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+						"memory":  resource.MustParse("32Gi"),
+						"compute": resource.MustParse("40"),
+					},
+				},
+			},
+			wantEnvs: map[string][]string{
+				"gpu-0-share-a": {
+					"GPU_DEVICE_0_SHARE_SHARE_A=gpu-0",
+					"GPU_DEVICE_0_SHARE_SHARE_A_SHARING_STRATEGY=TimeSlicing",
+					"GPU_DEVICE_0_SHARE_SHARE_A_TIMESLICE_INTERVAL=Default",
+					"GPU_DEVICE_0_SHARE_SHARE_A_MEMORY=8Gi",
+					"GPU_DEVICE_0_SHARE_SHARE_A_COMPUTE=10",
+				},
+				"gpu-0-share-b": {
+					"GPU_DEVICE_0_SHARE_SHARE_B=gpu-0",
+					"GPU_DEVICE_0_SHARE_SHARE_B_SHARING_STRATEGY=TimeSlicing",
+					"GPU_DEVICE_0_SHARE_SHARE_B_TIMESLICE_INTERVAL=Default",
+					"GPU_DEVICE_0_SHARE_SHARE_B_MEMORY=32Gi",
+					"GPU_DEVICE_0_SHARE_SHARE_B_COMPUTE=40",
 				},
 			},
 		},

@@ -325,6 +325,21 @@ func envVarSafeID(id string) string {
 	return strings.ToUpper(strings.ReplaceAll(id, "-", "_"))
 }
 
+// envVarID returns the <ID> used in the GPU_DEVICE_<ID>* environment variables
+// for an allocation result. Several shares of one device (AllowMultipleAllocations)
+// can be visible in the same container, either from one claim with several
+// requests or from several claims, so a share's variables carry its ShareID.
+// Otherwise the shares would set the same variable names and the container
+// would only see the values of whichever share was applied last.
+func envVarID(result *resourceapi.DeviceRequestAllocationResult) string {
+	// Device names are prefixed with "gpu-" (e.g. "gpu-0", "gpu-0-partition-1", "gpu-0-full").
+	id := envVarSafeID(result.Device[4:])
+	if result.ShareID != nil {
+		id += "_SHARE_" + envVarSafeID(string(*result.ShareID))
+	}
+	return id
+}
+
 // In this example driver there is no actual configuration applied. We simply
 // define a set of environment variables to be injected into the containers
 // that include a given device. A real driver would likely need to do some sort
@@ -343,8 +358,7 @@ func applyGpuConfig(config *configapi.GpuConfig, results []*resourceapi.DeviceRe
 	}
 
 	for _, result := range results {
-		// Device names are prefixed with "gpu-" (e.g. "gpu-0", "gpu-0-partition-1", "gpu-0-full").
-		envID := envVarSafeID(result.Device[4:])
+		envID := envVarID(result)
 		envs := []string{
 			fmt.Sprintf("GPU_DEVICE_%s=%s", envID, result.Device),
 		}
