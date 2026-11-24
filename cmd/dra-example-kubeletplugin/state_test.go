@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	oci "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -40,6 +41,7 @@ import (
 	cdispec "tags.cncf.io/container-device-interface/specs-go"
 
 	"sigs.k8s.io/dra-example-driver/internal/profiles/cpu"
+	"sigs.k8s.io/dra-example-driver/internal/profiles/gpu"
 )
 
 var (
@@ -245,6 +247,78 @@ func TestComputeDeviceConfigSharedDeviceContainerEdits(t *testing.T) {
 	}
 	assert.Equal(t, "1", consumedByShare["share-0"], "share-0 should keep its own consumed CPU edit")
 	assert.Equal(t, "3", consumedByShare["share-1"], "share-1 should keep its own consumed CPU edit")
+}
+
+// TestPrepareSharedGPUSharesKeepDistinctEnvInContainer prepares one claim
+// whose two requests were both allocated a share of gpu-0, injects the
+// resulting CDI devices into an OCI spec the way a container runtime does,
+// and checks that the container still sees the consumed capacity of each share.
+func TestPrepareSharedGPUSharesKeepDistinctEnvInContainer(t *testing.T) {
+	const (
+		nodeName   = "test-node"
+		driverName = "gpu.example.com"
+	)
+	root := t.TempDir()
+	flags := &Flags{
+		cdiRoot:                     root,
+		driverName:                  driverName,
+		profile:                     "gpu",
+		nodeName:                    nodeName,
+		numDevices:                  1,
+		gpuAllowMultipleAllocations: true,
+		kubeletPluginsDirectoryPath: root,
+	}
+	require.NoError(t, os.MkdirAll(filepath.Join(root, driverName), 0750))
+	state, err := NewDeviceState(&Config{
+		flags:   flags,
+		profile: gpu.NewProfile(nodeName, flags.numDevices, 0, false, false, flags.gpuAllowMultipleAllocations, false, nil),
+	})
+	require.NoError(t, err)
+
+	share := func(request string, shareID types.UID, memory, compute string) resourceapi.DeviceRequestAllocationResult {
+		return resourceapi.DeviceRequestAllocationResult{
+			Request: request,
+			Driver:  driverName,
+			Pool:    nodeName,
+			Device:  "gpu-0",
+			ShareID: ptr.To(shareID),
+			ConsumedCapacity: map[resourceapi.QualifiedName]resource.Quantity{
+				"memory":  resource.MustParse(memory),
+				"compute": resource.MustParse(compute),
+			},
+		}
+	}
+	claim := &resourceapi.ResourceClaim{
+		ObjectMeta: metav1.ObjectMeta{UID: "claim-uid", Name: "claim", Namespace: "default"},
+		Status: resourceapi.ResourceClaimStatus{
+			Allocation: &resourceapi.AllocationResult{
+				Devices: resourceapi.DeviceAllocationResult{Results: []resourceapi.DeviceRequestAllocationResult{
+					share("small", "11111111-1111-1111-1111-111111111111", "8Gi", "10"),
+					share("large", "22222222-2222-2222-2222-222222222222", "32Gi", "40"),
+				}},
+			},
+		},
+	}
+
+	prepared, err := state.Prepare(t.Context(), claim)
+	require.NoError(t, err)
+	require.Len(t, prepared, 2)
+
+	var cdiDeviceIDs []string
+	for _, device := range prepared {
+		cdiDeviceIDs = append(cdiDeviceIDs, device.CdiDeviceIds...)
+	}
+	cache, err := cdiapi.NewCache(cdiapi.WithSpecDirs(root), cdiapi.WithAutoRefresh(false))
+	require.NoError(t, err)
+	ociSpec := &oci.Spec{Process: &oci.Process{}}
+	_, err = cache.InjectDevices(ociSpec, cdiDeviceIDs...)
+	require.NoError(t, err)
+
+	env := ociSpec.Process.Env
+	assert.Contains(t, env, "GPU_DEVICE_0_SHARE_11111111_1111_1111_1111_111111111111_MEMORY=8Gi")
+	assert.Contains(t, env, "GPU_DEVICE_0_SHARE_11111111_1111_1111_1111_111111111111_COMPUTE=10")
+	assert.Contains(t, env, "GPU_DEVICE_0_SHARE_22222222_2222_2222_2222_222222222222_MEMORY=32Gi")
+	assert.Contains(t, env, "GPU_DEVICE_0_SHARE_22222222_2222_2222_2222_222222222222_COMPUTE=40")
 }
 
 func TestPreparePerDeviceAdminAccess(t *testing.T) {

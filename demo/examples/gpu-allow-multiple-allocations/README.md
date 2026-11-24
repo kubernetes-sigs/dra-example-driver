@@ -102,11 +102,17 @@ Example output:
 
 ```
 # Pod pod0
-GPU_DEVICE_0=gpu-0
+GPU_DEVICE_0_SHARE_<POD0_SHARE_ID>=gpu-0
+GPU_DEVICE_0_SHARE_<POD0_SHARE_ID>_MEMORY=16Gi
+GPU_DEVICE_0_SHARE_<POD0_SHARE_ID>_COMPUTE=20
 
 # Pod pod1
-GPU_DEVICE_0=gpu-0
+GPU_DEVICE_0_SHARE_<POD1_SHARE_ID>=gpu-0
+GPU_DEVICE_0_SHARE_<POD1_SHARE_ID>_MEMORY=16Gi
+GPU_DEVICE_0_SHARE_<POD1_SHARE_ID>_COMPUTE=20
 ```
+
+Each share's variables carry its ShareID (uppercased, with `-` replaced by `_`), so several shares of one device visible in the same container keep their own values instead of overwriting each other.
 
 ## Cleanup
 
