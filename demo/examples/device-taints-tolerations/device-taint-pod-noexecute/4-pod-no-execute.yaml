@@ -1,4 +1,4 @@
-# Provided the device taint rule is created, this pod will be scheduled and killed immediately.
+# Provided the device taint rule is created, this pod will remain unscheduled.
 apiVersion: v1
 kind: Pod
 metadata:
